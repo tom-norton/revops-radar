@@ -317,7 +317,8 @@ def main():
         print(f"  [{j.get('score','-')}] {j['title']} @ {j.get('company') or j['source']} | {j['sponsor'] or 'n/a'}")
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)).isoformat()
-    merged = scored + [j for j in existing if j.get("found_at", "") >= cutoff]
+    merged = scored + [j for j in existing
+                     if j.get("found_at", "") >= cutoff and not str(j.get("id", "")).startswith("demo-")]
     merged.sort(key=lambda j: j.get("found_at", ""), reverse=True)
 
     json.dump(sorted(seen), open("seen.json", "w"))
