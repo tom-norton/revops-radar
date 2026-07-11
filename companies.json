@@ -1,0 +1,9 @@
+{
+  "_comment": "OPTIONAL. Adzuna already scans all boards across NL/UK/IE/DE/ES, so you don't need this list. It only exists to force-watch a few high-signal companies with clean names + full job descriptions (useful for sponsor matching). Leave the array empty to rely purely on Adzuna. ats must be greenhouse/lever/ashby; find the slug in the careers URL. Run `python scan.py --verify` to test entries.",
+  "companies": [
+    { "name": "Adyen", "ats": "greenhouse", "slug": "adyen" },
+    { "name": "Mollie", "ats": "greenhouse", "slug": "mollie" },
+    { "name": "Lucid Software", "ats": "greenhouse", "slug": "lucidsoftware" },
+    { "name": "MongoDB", "ats": "greenhouse", "slug": "mongodb" }
+  ]
+}
