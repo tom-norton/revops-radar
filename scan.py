@@ -34,10 +34,17 @@ import sponsors as spon
 
 # Adzuna covers NL + UK only (its API has no Ireland). Ireland comes from JobSpy + ATS.
 ADZUNA_COUNTRIES = {"nl": "Netherlands", "gb": "United Kingdom"}
-ADZUNA_WHAT_OR = ("revenue operations sales operations gtm go-to-market customer "
-                  "success revenue strategy enablement business operations")
-ADZUNA_MAX_DAYS = 4      # only fresh postings -> low volume, low cost
-ADZUNA_PAGES = 2         # 2 x 50 = up to 100 per country before filtering
+# Targeted phrase queries. A broad word-OR query sorted by date just surfaces the
+# freshest generic "operations/customer/revenue" noise, none of which passes the title
+# filter (that was the original "Adzuna returned nothing" bug). Precise phrases return
+# on-target roles. Each phrase is sent as Adzuna `what` (matches the words together).
+ADZUNA_PHRASES = [
+    "revenue operations", "sales operations", "revenue strategy", "sales strategy",
+    "go to market strategy", "revenue enablement", "customer success operations",
+    "business operations manager", "commercial operations",
+]
+ADZUNA_MAX_DAYS = 10     # precise queries return few; a wider window keeps volume up
+ADZUNA_PER_PAGE = 30     # per phrase
 
 # Reed (UK). Free key acts as the HTTP basic-auth username, blank password.
 REED_KEYWORDS = ("revenue operations OR sales operations OR gtm OR go-to-market OR "
@@ -195,29 +202,26 @@ def prefilter(title, location, country=""):
 # ---------------------------------------------------------------- Adzuna (NL + UK)
 
 def fetch_adzuna(app_id, app_key, diag):
-    out = []
+    out, ids = [], set()
     for cc, label in ADZUNA_COUNTRIES.items():
         raw = title_ok = kept = 0
-        total = None
         err = None
-        for page in range(1, ADZUNA_PAGES + 1):
+        for phrase in ADZUNA_PHRASES:
             try:
-                r = get(f"https://api.adzuna.com/v1/api/jobs/{cc}/search/{page}", params={
+                r = get(f"https://api.adzuna.com/v1/api/jobs/{cc}/search/1", params={
                     "app_id": app_id, "app_key": app_key,
-                    "what_or": ADZUNA_WHAT_OR, "results_per_page": 50,
+                    "what": phrase, "results_per_page": ADZUNA_PER_PAGE,
                     "max_days_old": ADZUNA_MAX_DAYS, "sort_by": "date",
                 })
                 if r.status_code != 200:
                     err = f"HTTP {r.status_code}: {r.text[:100]}"
                     break
-                body = r.json()
-                if total is None:
-                    total = body.get("count")
-                results = body.get("results", [])
-                if not results:
-                    break
+                results = r.json().get("results", [])
                 raw += len(results)
                 for j in results:
+                    jid = f"az-{cc}-{j.get('id')}"
+                    if jid in ids:
+                        continue
                     title = j.get("title", "")
                     loc = (j.get("location") or {}).get("display_name", "")
                     if not (INCLUDE_TITLE.search(title or "") and not EXCLUDE_TITLE.search(title or "")):
@@ -225,11 +229,12 @@ def fetch_adzuna(app_id, app_key, diag):
                     title_ok += 1
                     if not location_ok(cc, loc):
                         continue
+                    ids.add(jid)
                     sal = ""
                     if j.get("salary_min"):
                         sal = f"{int(j['salary_min'])}-{int(j.get('salary_max') or j['salary_min'])} {label} local"
                     out.append({
-                        "id": f"az-{cc}-{j.get('id')}",
+                        "id": jid,
                         "company": (j.get("company") or {}).get("display_name", ""),
                         "title": title, "location": loc, "country": cc,
                         "url": j.get("redirect_url", ""), "source": "adzuna",
@@ -237,12 +242,12 @@ def fetch_adzuna(app_id, app_key, diag):
                         "salary": sal,
                     })
                     kept += 1
-                time.sleep(0.3)
+                time.sleep(0.25)
             except Exception as e:
                 err = f"error: {e}"
                 break
-        # rich diagnostic: raw results -> passed title filter -> passed location filter
-        diag[f"adzuna:{cc}"] = err or f"total~{total}, raw {raw}, title-ok {title_ok}, kept {kept}"
+        # diagnostic: raw results across phrases -> passed title filter -> kept after location
+        diag[f"adzuna:{cc}"] = err or f"raw {raw}, title-ok {title_ok}, kept {kept}"
     return out
 
 # ---------------------------------------------------------------- Reed (UK)
