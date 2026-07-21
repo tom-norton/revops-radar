@@ -60,3 +60,4 @@ export async function onRequestPost({ request, env }) {
   await env.STATE_KV.put(KEY, JSON.stringify(next));
   return json(next);
 }
+// trigger: deploy command now set explicitly to 'npx wrangler pages deploy docs'
