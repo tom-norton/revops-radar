@@ -48,12 +48,22 @@
         margin-top:11px; font-size:12px}
   .foot a{font-weight:650; text-decoration:none}
   .foot .src{color:var(--mut)}
-  details.borderline>summary{cursor:pointer; color:var(--sub); font-size:13px;
-        list-style:none; user-select:none}
-  details.borderline>summary::-webkit-details-marker{display:none}
-  details.borderline>summary::before{content:"\25B8 "; color:var(--mut)}
-  details.borderline[open]>summary::before{content:"\25BE "}
+  .actions{display:flex; gap:8px; margin-top:11px}
+  .actions button{font:600 11.5px -apple-system,"Segoe UI",Roboto,sans-serif;
+        padding:6px 11px; border-radius:20px; border:1px solid var(--line);
+        background:transparent; color:var(--sub); cursor:pointer}
+  .actions button:hover{border-color:var(--teal); color:var(--teal)}
+  .actions button[data-act="applied"]:hover{border-color:var(--good); color:var(--good)}
+  .actions .status{font-size:11px; padding:3px 8px; border-radius:20px; color:var(--sub)}
+  .job.reviewed{opacity:.6}
+  details.borderline>summary,details.reviewed>summary{cursor:pointer; color:var(--sub);
+        font-size:13px; list-style:none; user-select:none}
+  details.borderline>summary::-webkit-details-marker,
+  details.reviewed>summary::-webkit-details-marker{display:none}
+  details.borderline>summary::before,details.reviewed>summary::before{content:"\25B8 "; color:var(--mut)}
+  details.borderline[open]>summary::before,details.reviewed[open]>summary::before{content:"\25BE "}
   .empty{color:var(--sub); font-size:14px; padding:14px 0}
+  .note{color:var(--mut); font-size:11.5px; margin:-14px 0 20px}
   .sources{margin-top:34px; border-top:1px solid var(--line); padding-top:14px;
         font-size:11.5px; color:var(--mut)}
   .sources div{margin:3px 0}
@@ -63,6 +73,7 @@
 <body>
   <h1><span>RevOps</span> Radar</h1>
   <div class="meta" id="meta">Loading…</div>
+  <div class="note">Hide / Mark applied are saved in this browser only — they won't follow you to another device.</div>
 
   <div id="apply-wrap">
     <h2 id="apply-h">Apply — 6.0 and up</h2>
@@ -70,6 +81,7 @@
   </div>
 
   <div id="border-wrap"></div>
+  <div id="reviewed-wrap"></div>
 
   <div class="sources" id="sources"></div>
 
@@ -77,6 +89,14 @@
 const GATE = 6.0, FLOOR = 5.0;
 const DIMS = [["experience","Exp"],["skills","Skills"],["seniority","Sen"],
               ["domain","Domain"],["location_visa","Loc/Visa"],["trajectory","Traj"]];
+
+function loadSet(key){
+  try{ return new Set(JSON.parse(localStorage.getItem(key)||"[]")); }
+  catch(e){ return new Set(); }
+}
+function saveSet(key,set){ localStorage.setItem(key, JSON.stringify([...set])); }
+let hiddenIds = loadSet("rr_hidden");
+let appliedIds = loadSet("rr_applied");
 
 function fresh(iso){
   if(!iso) return "";
@@ -86,9 +106,10 @@ function fresh(iso){
 }
 function scoreClass(s){ return s >= 8 ? "s-apply" : s >= GATE ? "" : "s-border"; }
 
-function card(j){
+function card(j, reviewed){
+  const id = String(j.id||"");
   const s = (j.score ?? 0).toFixed(1);
-  const el = document.createElement("div"); el.className = "job";
+  const el = document.createElement("div"); el.className = "job" + (reviewed ? " reviewed" : "");
   const dims = (j.dimensions && Object.keys(j.dimensions).length)
     ? `<div class="dims">${DIMS.map(([k,l])=>`${l} <b>${(j.dimensions[k]??0)}</b>`).join("")}</div>` : "";
   let spon = "";
@@ -97,6 +118,13 @@ function card(j){
     spon = `<span class="tag ${good?'spon':'nospon'}">${j.sponsor}</span>`;
   }
   const flags = (j.flags||[]).map(f=>`<span class="tag flag">${f}</span>`).join("");
+  const actions = reviewed
+    ? `<div class="actions"><span class="status">${appliedIds.has(id) ? "Applied" : "Hidden"}</span>
+        <button data-act="restore" data-id="${id}">Restore</button></div>`
+    : `<div class="actions">
+        <button data-act="hide" data-id="${id}">Hide</button>
+        <button data-act="applied" data-id="${id}">Mark applied</button>
+      </div>`;
   el.innerHTML = `
     <div class="row1">
       <div class="score ${scoreClass(j.score)}">${s}</div>
@@ -111,9 +139,58 @@ function card(j){
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
       <span class="src">${j.source||""} · ${fresh(j.found_at)}</span>
-    </div>`;
+    </div>
+    ${actions}`;
   return el;
 }
+
+let allJobs = [], allStatus = {};
+
+function renderAll(){
+  const jobs = allJobs.filter(j=>!hiddenIds.has(String(j.id)) && !appliedIds.has(String(j.id)));
+  const reviewed = allJobs.filter(j=>hiddenIds.has(String(j.id)) || appliedIds.has(String(j.id)));
+
+  const apply = jobs.filter(j=>(j.score??0) >= GATE);
+  const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);
+
+  const lr = allStatus.last_run ? new Date(allStatus.last_run).toLocaleString("en-GB",
+      {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
+  document.getElementById("meta").textContent =
+      `Netherlands · London · Dublin  ·  ${apply.length} to apply, ${border.length} borderline  ·  last run ${lr}`;
+
+  const a = document.getElementById("apply"); a.innerHTML = "";
+  if(apply.length) apply.forEach(j=>a.appendChild(card(j, false)));
+  else a.innerHTML = `<div class="empty">No roles at ${GATE}+ yet. The next daily run may surface some.</div>`;
+
+  const borderWrap = document.getElementById("border-wrap"); borderWrap.innerHTML = "";
+  if(border.length){
+    const d = document.createElement("details"); d.className = "borderline";
+    d.innerHTML = `<summary>${border.length} borderline (${FLOOR.toFixed(1)}–${(GATE-0.1).toFixed(1)}) — volume plays, weaker fit</summary>`;
+    const box = document.createElement("div"); box.style.marginTop = "10px";
+    border.forEach(j=>box.appendChild(card(j, false)));
+    d.appendChild(box); borderWrap.appendChild(d);
+  }
+
+  const revWrap = document.getElementById("reviewed-wrap"); revWrap.innerHTML = "";
+  if(reviewed.length){
+    const d = document.createElement("details"); d.className = "reviewed";
+    d.innerHTML = `<summary>${reviewed.length} hidden / applied</summary>`;
+    const box = document.createElement("div"); box.style.marginTop = "10px";
+    reviewed.forEach(j=>box.appendChild(card(j, true)));
+    d.appendChild(box); revWrap.appendChild(d);
+  }
+}
+
+document.body.addEventListener("click", (e)=>{
+  const btn = e.target.closest("button[data-act]");
+  if(!btn) return;
+  const id = btn.dataset.id, act = btn.dataset.act;
+  if(act === "hide"){ hiddenIds.add(id); saveSet("rr_hidden", hiddenIds); }
+  else if(act === "applied"){ appliedIds.add(id); saveSet("rr_applied", appliedIds); }
+  else if(act === "restore"){ hiddenIds.delete(id); appliedIds.delete(id);
+    saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds); }
+  renderAll();
+});
 
 Promise.all([
   fetch("jobs.json").then(r=>r.json()).catch(()=>[]),
@@ -121,29 +198,10 @@ Promise.all([
 ]).then(([jobs, status])=>{
   jobs = (jobs||[]).filter(j=>!String(j.id||"").startsWith("demo-"));
   jobs.sort((a,b)=>(b.score??0)-(a.score??0) || String(b.found_at||"").localeCompare(String(a.found_at||"")));
+  allJobs = jobs; allStatus = status || {};
+  renderAll();
 
-  const apply = jobs.filter(j=>(j.score??0) >= GATE);
-  const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);
-
-  const lr = status.last_run ? new Date(status.last_run).toLocaleString("en-GB",
-      {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
-  document.getElementById("meta").textContent =
-      `Netherlands · London · Dublin  ·  ${apply.length} to apply, ${border.length} borderline  ·  last run ${lr}`;
-
-  const a = document.getElementById("apply");
-  if(apply.length) apply.forEach(j=>a.appendChild(card(j)));
-  else a.innerHTML = `<div class="empty">No roles at ${GATE}+ yet. The next daily run may surface some.</div>`;
-
-  if(border.length){
-    const wrap = document.getElementById("border-wrap");
-    const d = document.createElement("details"); d.className = "borderline";
-    d.innerHTML = `<summary>${border.length} borderline (${FLOOR.toFixed(1)}–${(GATE-0.1).toFixed(1)}) — volume plays, weaker fit</summary>`;
-    const box = document.createElement("div"); box.style.marginTop = "10px";
-    border.forEach(j=>box.appendChild(card(j)));
-    d.appendChild(box); wrap.appendChild(d);
-  }
-
-  const s = status.sources || {};
+  const s = allStatus.sources || {};
   document.getElementById("sources").innerHTML = "<div style='margin-bottom:6px;font-weight:650'>Sources this run</div>" +
     Object.entries(s).map(([k,v])=>{
       const bad = /fail|skipped|degraded/i.test(v);
