@@ -1,9 +1,24 @@
 {
-  "_comment": "OPTIONAL. Adzuna already scans all boards across NL/UK/IE/DE/ES, so you don't need this list. It only exists to force-watch a few high-signal companies with clean names + full job descriptions (useful for sponsor matching). Leave the array empty to rely purely on Adzuna. ats must be greenhouse/lever/ashby; find the slug in the careers URL. Run `python scan.py --verify` to test entries.",
+  "_comment": "Companies whose ATS boards are scanned directly, on top of Adzuna/Reed/Indeed. These give clean company names and full job descriptions (better sponsor matching), and they close the Ireland gap since many US SaaS firms hire RevOps/CS in Dublin via Greenhouse/Ashby. The location filter in scan.py keeps only NL / London / Dublin roles, so a broad list is safe. 'ats' must be greenhouse/lever/ashby; the slug is in the careers URL. Run `python scan.py --verify` to test entries. All slugs below were verified live.",
   "companies": [
     { "name": "Adyen", "ats": "greenhouse", "slug": "adyen" },
-    { "name": "Mollie", "ats": "greenhouse", "slug": "mollie" },
+    { "name": "MongoDB", "ats": "greenhouse", "slug": "mongodb" },
+    { "name": "Datadog", "ats": "greenhouse", "slug": "datadog" },
+    { "name": "Stripe", "ats": "greenhouse", "slug": "stripe" },
+    { "name": "Intercom", "ats": "greenhouse", "slug": "intercom" },
+    { "name": "GoCardless", "ats": "greenhouse", "slug": "gocardless" },
+    { "name": "Monzo", "ats": "greenhouse", "slug": "monzo" },
+    { "name": "Cloudflare", "ats": "greenhouse", "slug": "cloudflare" },
+    { "name": "Amplitude", "ats": "greenhouse", "slug": "amplitude" },
+    { "name": "Braze", "ats": "greenhouse", "slug": "braze" },
+    { "name": "Contentful", "ats": "greenhouse", "slug": "contentful" },
+    { "name": "Elastic", "ats": "greenhouse", "slug": "elastic" },
+    { "name": "Twilio", "ats": "greenhouse", "slug": "twilio" },
+    { "name": "Asana", "ats": "greenhouse", "slug": "asana" },
     { "name": "Lucid Software", "ats": "greenhouse", "slug": "lucidsoftware" },
-    { "name": "MongoDB", "ats": "greenhouse", "slug": "mongodb" }
+    { "name": "Udemy", "ats": "greenhouse", "slug": "udemy" },
+    { "name": "GitLab", "ats": "greenhouse", "slug": "gitlab" },
+    { "name": "Notion", "ats": "ashby", "slug": "notion" },
+    { "name": "OpenAI", "ats": "ashby", "slug": "openai" }
   ]
 }
