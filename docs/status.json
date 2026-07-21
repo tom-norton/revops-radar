@@ -1,1 +1,14 @@
-{"last_run": null, "new_this_run": 0, "sources": {"status": "not run yet under the new pipeline"}}
+{
+ "last_run": "2026-07-21T10:27:59.702145+00:00",
+ "new_this_run": 11,
+ "sources": {
+  "Adzuna (NL+UK)": "ok (0) | nl=ok, 0 kept; gb=ok, 0 kept",
+  "Reed (UK)": "skipped: no REED_API_KEY set",
+  "Indeed/JobSpy (Dublin)": "ok (2)",
+  "Company ATS (19 watched)": "ok (15)",
+  "hiring.cafe": "skipped: blocked (405)",
+  "UK sponsor register": "ok - 142534 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-07-21.csv",
+  "NL sponsor register": "ok - 12650 names (IND + override)",
+  "screening": "stage1 kept 11, killed 6; stage2 scored 11"
+ }
+}
