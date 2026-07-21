@@ -197,7 +197,9 @@ def prefilter(title, location, country=""):
 def fetch_adzuna(app_id, app_key, diag):
     out = []
     for cc, label in ADZUNA_COUNTRIES.items():
-        got = 0
+        raw = title_ok = kept = 0
+        total = None
+        err = None
         for page in range(1, ADZUNA_PAGES + 1):
             try:
                 r = get(f"https://api.adzuna.com/v1/api/jobs/{cc}/search/{page}", params={
@@ -206,15 +208,22 @@ def fetch_adzuna(app_id, app_key, diag):
                     "max_days_old": ADZUNA_MAX_DAYS, "sort_by": "date",
                 })
                 if r.status_code != 200:
-                    diag[f"adzuna:{cc}"] = f"HTTP {r.status_code}: {r.text[:120]}"
+                    err = f"HTTP {r.status_code}: {r.text[:100]}"
                     break
-                results = r.json().get("results", [])
+                body = r.json()
+                if total is None:
+                    total = body.get("count")
+                results = body.get("results", [])
                 if not results:
                     break
+                raw += len(results)
                 for j in results:
                     title = j.get("title", "")
                     loc = (j.get("location") or {}).get("display_name", "")
-                    if not prefilter(title, loc, cc):
+                    if not (INCLUDE_TITLE.search(title or "") and not EXCLUDE_TITLE.search(title or "")):
+                        continue
+                    title_ok += 1
+                    if not location_ok(cc, loc):
                         continue
                     sal = ""
                     if j.get("salary_min"):
@@ -227,12 +236,13 @@ def fetch_adzuna(app_id, app_key, diag):
                         "description": strip_html(j.get("description", "")),
                         "salary": sal,
                     })
-                    got += 1
+                    kept += 1
                 time.sleep(0.3)
             except Exception as e:
-                diag[f"adzuna:{cc}"] = f"error: {e}"
+                err = f"error: {e}"
                 break
-        diag.setdefault(f"adzuna:{cc}", f"ok, {got} kept")
+        # rich diagnostic: raw results -> passed title filter -> passed location filter
+        diag[f"adzuna:{cc}"] = err or f"total~{total}, raw {raw}, title-ok {title_ok}, kept {kept}"
     return out
 
 # ---------------------------------------------------------------- Reed (UK)
@@ -478,6 +488,23 @@ def main():
         jobs = fetch_hiringcafe(); found += jobs; src_status["hiring.cafe"] = f"ok ({len(jobs)})"
     except Exception as e:
         src_status["hiring.cafe"] = f"skipped: {e}"
+
+    # cross-source dedupe: the same role can arrive from Indeed + Greenhouse etc.
+    def dkey(j):
+        norm = lambda s: re.sub(r"[^a-z0-9]", "", (s or "").lower())
+        city = ""
+        for pat in (r"amsterdam|rotterdam|utrecht|eindhoven|hague|den haag",
+                    r"dublin", r"london"):
+            if re.search(pat, (j.get("location") or ""), re.I):
+                city = pat[:6]; break
+        return (norm(j.get("company")), norm(j.get("title"))[:40], city)
+    deduped, dseen = [], set()
+    for j in found:
+        k = dkey(j)
+        if k in dseen and all(k):   # only dedupe when company+title+city all present
+            continue
+        dseen.add(k); deduped.append(j)
+    found = deduped
 
     new_jobs = [j for j in found if j["id"] not in seen]
     print(f"Fetched {len(found)} relevant, {len(new_jobs)} new.")
