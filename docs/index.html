@@ -73,7 +73,7 @@
 <body>
   <h1><span>RevOps</span> Radar</h1>
   <div class="meta" id="meta">Loading…</div>
-  <div class="note">Hide / Mark applied are saved in this browser only — they won't follow you to another device.</div>
+  <div class="note" id="synclabel">Hide / Mark applied are saved in this browser only — they won't follow you to another device.</div>
 
   <div id="apply-wrap">
     <h2 id="apply-h">Apply — 6.0 and up</h2>
@@ -97,6 +97,31 @@ function loadSet(key){
 function saveSet(key,set){ localStorage.setItem(key, JSON.stringify([...set])); }
 let hiddenIds = loadSet("rr_hidden");
 let appliedIds = loadSet("rr_applied");
+let syncApi = false; // becomes true once /api/state responds (Cloudflare Pages Functions live)
+
+// Cross-device sync: /api/state is a Cloudflare Pages Function backed by KV.
+// Until that's set up (or if it's briefly unreachable), everything still works
+// on localStorage alone -- this is a strict enhancement layer, never a hard dependency.
+async function syncFromServer(){
+  try{
+    const r = await fetch("/api/state");
+    if(!r.ok) return;
+    const server = await r.json();
+    if(!server || !Array.isArray(server.hidden) || !Array.isArray(server.applied)) return;
+    syncApi = true;
+    // merge (union) so nothing recorded locally before sync existed gets lost
+    server.hidden.forEach(id=>hiddenIds.add(id));
+    server.applied.forEach(id=>appliedIds.add(id));
+    saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
+    const note = document.getElementById("synclabel");
+    if(note) note.textContent = "Hide / Mark applied sync across your devices.";
+  }catch(e){ /* API not set up yet or unreachable -- stay on localStorage only */ }
+}
+function pushAction(act, id){
+  if(!syncApi) return;
+  fetch("/api/state", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({act, id})}).catch(()=>{});
+}
 
 function fresh(iso){
   if(!iso) return "";
@@ -189,8 +214,11 @@ document.body.addEventListener("click", (e)=>{
   else if(act === "applied"){ appliedIds.add(id); saveSet("rr_applied", appliedIds); }
   else if(act === "restore"){ hiddenIds.delete(id); appliedIds.delete(id);
     saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds); }
+  pushAction(act, id);
   renderAll();
 });
+
+syncFromServer().then(renderAll);
 
 Promise.all([
   fetch("jobs.json").then(r=>r.json()).catch(()=>[]),
