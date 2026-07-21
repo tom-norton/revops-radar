@@ -1,6 +1,7 @@
 // Cloudflare Pages Function — cross-device Hide/Applied state for the dashboard.
-// Requires a KV namespace bound to this Pages project as "STATE_KV"
-// (Pages project -> Settings -> Functions -> KV namespace bindings).
+// Requires a KV namespace bound to this Pages project as "STATE_KV", added via
+// the project's Bindings tab in the dashboard (not wrangler.toml -- that file
+// causes the Workers Builds CI system to mishandle the deploy command here).
 //
 // GET  /api/state           -> { hidden: [...ids], applied: [...ids] }
 // POST /api/state           body: { act: "hide"|"applied"|"restore", id: "<job id>" }
