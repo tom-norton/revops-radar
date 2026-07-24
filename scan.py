@@ -43,7 +43,7 @@ ADZUNA_PHRASES = [
     "go to market strategy", "revenue enablement", "customer success operations",
     "business operations manager", "commercial operations",
 ]
-ADZUNA_MAX_DAYS = 10     # precise queries return few; a wider window keeps volume up
+ADZUNA_MAX_DAYS = 7      # Tom doesn't want postings older than a week
 ADZUNA_PER_PAGE = 30     # per phrase
 
 # Reed (UK). Free key acts as the HTTP basic-auth username, blank password.
@@ -92,6 +92,7 @@ CLAUDE_SCORE_MODEL = "claude-sonnet-5"          # stage 2: deep weighted rubric
 API_URL = "https://api.anthropic.com/v1/messages"
 API_HEADERS_VERSION = "2023-06-01"
 KEEP_DAYS = 45
+MAX_POST_AGE_DAYS = 7    # drop postings older than this when the source gives us a date
 DESC_CHAR_CAP = 2200
 MAX_SCREENED_PER_RUN = 80     # cap stage-1 Haiku calls
 MAX_SCORED_PER_RUN = 30       # cap stage-2 Sonnet calls (survivors only)
@@ -199,6 +200,37 @@ def prefilter(title, location, country=""):
         return False
     return location_ok(country, location)
 
+def parse_date_loose(v):
+    """Best-effort parse of a source's posted-date value. Returns an aware datetime or None."""
+    if v is None or v == "":
+        return None
+    if isinstance(v, (int, float)):
+        try:
+            return datetime.fromtimestamp(v / 1000 if v > 1e12 else v, tz=timezone.utc)
+        except Exception:
+            return None
+    s = str(v).strip()
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", s)   # Reed: dd/mm/yyyy
+    if m:
+        d, mo, y = map(int, m.groups())
+        try:
+            return datetime(y, mo, d, tzinfo=timezone.utc)
+        except Exception:
+            return None
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+def recent_enough(posted_raw, max_days=MAX_POST_AGE_DAYS):
+    """True if within max_days old. Fails open (keeps the job) when the source gives no
+    usable date at all, so a missing field never silently wipes out a whole source."""
+    dt = parse_date_loose(posted_raw)
+    if dt is None:
+        return True
+    return (datetime.now(timezone.utc) - dt) <= timedelta(days=max_days)
+
 # ---------------------------------------------------------------- Adzuna (NL + UK)
 
 def fetch_adzuna(app_id, app_key, diag):
@@ -239,7 +271,7 @@ def fetch_adzuna(app_id, app_key, diag):
                         "title": title, "location": loc, "country": cc,
                         "url": j.get("redirect_url", ""), "source": "adzuna",
                         "description": strip_html(j.get("description", "")),
-                        "salary": sal,
+                        "salary": sal, "posted_at": j.get("created", ""),
                     })
                     kept += 1
                 time.sleep(0.25)
@@ -273,6 +305,7 @@ def fetch_reed(api_key):
             "title": title, "location": loc or "London", "country": "gb",
             "url": j.get("jobUrl", ""), "source": "reed",
             "description": strip_html(j.get("jobDescription", "")), "salary": sal,
+            "posted_at": j.get("date", ""),
         })
     return out
 
@@ -286,7 +319,7 @@ def fetch_jobspy_ireland():
         try:
             df = scrape_jobs(site_name=["indeed"], search_term=term,
                              location="Dublin, Ireland", results_wanted=20,
-                             country_indeed="Ireland", hours_old=96)
+                             country_indeed="Ireland", hours_old=MAX_POST_AGE_DAYS * 24)
         except Exception:
             continue
         if df is None or len(df) == 0:
@@ -308,6 +341,7 @@ def fetch_jobspy_ireland():
                 "title": title, "location": loc, "country": "ie",
                 "url": str(row.get("job_url") or ""), "source": "indeed",
                 "description": strip_html(str(row.get("description") or "")), "salary": sal,
+                "posted_at": str(row.get("date_posted") or ""),
             })
     return out
 
@@ -321,7 +355,7 @@ def fetch_greenhouse(name, slug):
         if not prefilter(j.get("title", ""), loc): continue
         out.append({"id": f"gh-{slug}-{j['id']}", "company": name, "title": j["title"],
                     "location": loc, "country": "", "url": j.get("absolute_url", ""),
-                    "source": "greenhouse",
+                    "source": "greenhouse", "posted_at": j.get("updated_at", ""),
                     "_detail": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{j['id']}"})
     return out
 
@@ -339,7 +373,7 @@ def fetch_lever(name, slug):
         if not prefilter(j.get("text", ""), loc): continue
         out.append({"id": f"lv-{slug}-{j['id']}", "company": name, "title": j["text"],
                     "location": loc, "country": "", "url": j.get("hostedUrl", ""),
-                    "source": "lever",
+                    "source": "lever", "posted_at": j.get("createdAt", ""),
                     "description": strip_html(j.get("descriptionPlain") or j.get("description", ""))})
     return out
 
@@ -351,7 +385,8 @@ def fetch_ashby(name, slug):
         if not prefilter(j.get("title", ""), loc): continue
         out.append({"id": f"as-{slug}-{j.get('id')}", "company": name, "title": j["title"],
                     "location": loc, "country": "", "url": j.get("jobUrl") or j.get("applyUrl", ""),
-                    "source": "ashby", "description": strip_html(j.get("descriptionPlain") or "")})
+                    "source": "ashby", "posted_at": j.get("publishedAt", ""),
+                    "description": strip_html(j.get("descriptionPlain") or "")})
     return out
 
 ATS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby}
@@ -494,16 +529,25 @@ def main():
     except Exception as e:
         src_status["hiring.cafe"] = f"skipped: {e}"
 
-    # cross-source dedupe: the same role can arrive from Indeed + Greenhouse etc.
+    # age filter: drop anything older than a week when the source told us its post date
+    before_age = len(found)
+    found = [j for j in found if recent_enough(j.get("posted_at"))]
+    src_status["age filter"] = f"dropped {before_age - len(found)} older than {MAX_POST_AGE_DAYS}d"
+
+    # cross-source dedupe: the same role can arrive from Indeed + Greenhouse etc, and
+    # can also resurface via a different source in a later run than the one that first
+    # found it -- so seed dseen with everything already on the dashboard, not just this run.
+    COMPANY_SUFFIX = re.compile(r"\b(inc|ltd|llc|bv|gmbh|corp|co|plc|nv)\b\.?", re.I)
     def dkey(j):
-        norm = lambda s: re.sub(r"[^a-z0-9]", "", (s or "").lower())
+        norm = lambda s: re.sub(r"\s+", "", COMPANY_SUFFIX.sub("", re.sub(r"[^a-z0-9 ]", "", (s or "").lower())))
         city = ""
         for pat in (r"amsterdam|rotterdam|utrecht|eindhoven|hague|den haag",
                     r"dublin", r"london"):
             if re.search(pat, (j.get("location") or ""), re.I):
                 city = pat[:6]; break
-        return (norm(j.get("company")), norm(j.get("title"))[:40], city)
-    deduped, dseen = [], set()
+        return (norm(j.get("company")), re.sub(r"[^a-z0-9]", "", (j.get("title") or "").lower())[:40], city)
+    dseen = {dkey(j) for j in existing if all(dkey(j))}
+    deduped = []
     for j in found:
         k = dkey(j)
         if k in dseen and all(k):   # only dedupe when company+title+city all present
