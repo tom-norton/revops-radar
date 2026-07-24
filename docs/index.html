@@ -97,30 +97,33 @@ function loadSet(key){
 function saveSet(key,set){ localStorage.setItem(key, JSON.stringify([...set])); }
 let hiddenIds = loadSet("rr_hidden");
 let appliedIds = loadSet("rr_applied");
-let syncApi = false; // becomes true once /api/state responds (Cloudflare Pages Functions live)
+let syncApi = false; // becomes true once Firebase responds
 
-// Cross-device sync: /api/state is a Cloudflare Pages Function backed by KV.
-// Until that's set up (or if it's briefly unreachable), everything still works
-// on localStorage alone -- this is a strict enhancement layer, never a hard dependency.
+// Cross-device sync: a Firebase Realtime Database node holds the shared state.
+// If it's unreachable, everything still works on localStorage alone -- this is
+// a strict enhancement layer, never a hard dependency.
+const FIREBASE_STATE_URL = "https://revops-radar-2822a-default-rtdb.europe-west1.firebasedatabase.app/revops-radar-state.json";
+
 async function syncFromServer(){
   try{
-    const r = await fetch("/api/state");
+    const r = await fetch(FIREBASE_STATE_URL);
     if(!r.ok) return;
     const server = await r.json();
-    if(!server || !Array.isArray(server.hidden) || !Array.isArray(server.applied)) return;
     syncApi = true;
-    // merge (union) so nothing recorded locally before sync existed gets lost
-    server.hidden.forEach(id=>hiddenIds.add(id));
-    server.applied.forEach(id=>appliedIds.add(id));
-    saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
+    if(server && Array.isArray(server.hidden) && Array.isArray(server.applied)){
+      // merge (union) so nothing recorded locally before sync existed gets lost
+      server.hidden.forEach(id=>hiddenIds.add(id));
+      server.applied.forEach(id=>appliedIds.add(id));
+      saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
+    }
     const note = document.getElementById("synclabel");
     if(note) note.textContent = "Hide / Mark applied sync across your devices.";
-  }catch(e){ /* API not set up yet or unreachable -- stay on localStorage only */ }
+  }catch(e){ /* Firebase unreachable -- stay on localStorage only */ }
 }
-function pushAction(act, id){
+function pushState(){
   if(!syncApi) return;
-  fetch("/api/state", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({act, id})}).catch(()=>{});
+  fetch(FIREBASE_STATE_URL, {method:"PUT", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({hidden:[...hiddenIds], applied:[...appliedIds]})}).catch(()=>{});
 }
 
 function fresh(iso){
@@ -214,7 +217,7 @@ document.body.addEventListener("click", (e)=>{
   else if(act === "applied"){ appliedIds.add(id); saveSet("rr_applied", appliedIds); }
   else if(act === "restore"){ hiddenIds.delete(id); appliedIds.delete(id);
     saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds); }
-  pushAction(act, id);
+  pushState();
   renderAll();
 });
 
