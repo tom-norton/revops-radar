@@ -14,6 +14,10 @@ Data layer (multi-source so no single source can break the run):
   - hiring.cafe      : via the Apify actor memo23/apify-hiring-cafe-scraper, run
                        against Tom's saved hiring.cafe searches (the direct API
                        blocks datacenter IPs, so this replaced that attempt)
+  - LinkedIn         : mirrors Tom's "Jobs based on your preferences" search via
+                       LinkedIn's public, unauthenticated guest job-search endpoint
+                       (same keywords/geoId/24h filter that page itself uses) -
+                       no login or session cookie involved
 
 Pipeline:
   fetch -> title/location prefilter (free) -> dedupe -> UK/NL sponsor-register check
@@ -56,6 +60,21 @@ REED_KEYWORDS = ("revenue operations OR sales operations OR gtm OR go-to-market 
 # JobSpy / Indeed for Ireland (Dublin). Best-effort: never breaks the run.
 JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
                 "revenue strategy", "customer success operations"]
+
+# LinkedIn "Jobs based on your preferences" is personalized off account-level preference
+# data, not a literal text search -- replaying that natural-language phrase as a keyword
+# query against the guest endpoint matched nothing (verified). REED_KEYWORDS-style OR
+# terms work as an actual literal search, so that's what's used here instead.
+# geoIds captured from Tom's preferences page URL: London Area UK, Belgium, Netherlands,
+# Amsterdam, Ireland. Queried per-geoId: the guest endpoint doesn't paginate correctly
+# when multiple geoIds are combined into one request, but works fine one market at a
+# time. Belgium/Amsterdam results still pass through the same location_ok() gate as
+# every other source, so anything outside NL/UK-London/Dublin gets filtered downstream.
+LINKEDIN_KEYWORDS = ("revenue operations OR sales operations OR gtm OR go-to-market OR "
+                     "revenue strategy OR sales strategy OR revenue enablement OR "
+                     "customer success operations OR business operations")
+LINKEDIN_GEO_IDS = ["90009496", "100565514", "102890719", "103100785", "104738515"]
+LINKEDIN_PAGES = 3       # 10 results/page per market
 
 INCLUDE_TITLE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
@@ -150,6 +169,10 @@ After the weighted total, apply these deterministic CAPS to the final score (tak
 - Salary stated and below the market's visa floor: cap 4, and add a "below visa floor" flag.
 - Wrong function (deal desk, quote-to-cash, billing, marketing-ops admin, quota-carrying sales): cap 4.
 - CSM role in UK or Ireland at a non-standout company: cap 6 (see CSM track weighting in the profile).
+- Description states another language (Dutch, German, French, etc) as a hard requirement
+  to do the job -- fluency, "must speak", "native/business-level X required", or similar:
+  cap 3, and add a "requires non-English fluency" flag. Do NOT cap when the language is
+  merely "preferred", "a plus", "advantageous", "nice to have", or similar -- that's fine.
 
 Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles. Ignore sponsor for Ireland.
 
@@ -393,6 +416,67 @@ def fetch_ashby(name, slug):
 
 ATS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby}
 
+# ---------------------------------------------------------------- LinkedIn (public guest search)
+
+def fetch_linkedin():
+    """Mirrors Tom's own 'Jobs based on your preferences' page via LinkedIn's public,
+    unauthenticated guest job-search endpoint. No login/session cookie -- this is the
+    same endpoint LinkedIn serves to logged-out visitors, so there's no account risk.
+    The first call against it is unreliable cold, hence the throwaway warm-up request."""
+    out, seen_ids = [], set()
+    s = requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    ep = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+    for geo_id in LINKEDIN_GEO_IDS:
+        params = {"keywords": LINKEDIN_KEYWORDS, "geoId": geo_id, "f_TPR": "r86400"}
+        s.get(ep, params={**params, "start": 0}, timeout=20)   # cold first call is unreliable
+        for page in range(LINKEDIN_PAGES):
+            cards = []
+            for attempt in range(3):   # this endpoint is known to be flaky/throttly; retry before giving up
+                time.sleep(0.5 if attempt == 0 else 2)
+                r = s.get(ep, params={**params, "start": page * 10}, timeout=20)
+                if r.status_code != 200:
+                    continue
+                cards = re.split(r"<li>", r.text)[1:]
+                if cards:
+                    break
+            if not cards:
+                break
+            new_ids_this_page = 0
+            for c in cards:
+                m_id = re.search(r'data-entity-urn="urn:li:jobPosting:(\d+)"', c)
+                m_title = re.search(r'<h3 class="base-search-card__title">\s*([^<]+?)\s*</h3>', c)
+                if not (m_id and m_title):
+                    continue
+                jid = m_id.group(1)
+                if jid in seen_ids:
+                    continue
+                seen_ids.add(jid); new_ids_this_page += 1
+                m_company = re.search(r'<h4 class="base-search-card__subtitle">.*?>\s*([^<]+?)\s*</a>', c, re.S)
+                m_loc = re.search(r'<span class="job-search-card__location">\s*([^<]+?)\s*</span>', c)
+                m_date = re.search(r'<time class="job-search-card__listdate[^"]*"\s+datetime="([^"]+)"', c)
+                title, loc = m_title.group(1), (m_loc.group(1) if m_loc else "")
+                if not prefilter(title, loc):
+                    continue
+                detail_url = f"https://www.linkedin.com/jobs/view/{jid}"
+                out.append({
+                    "id": f"li-{jid}", "company": (m_company.group(1) if m_company else ""),
+                    "title": title, "location": loc, "country": "", "url": detail_url,
+                    "source": "linkedin", "posted_at": (m_date.group(1) if m_date else ""),
+                    "_detail": detail_url,
+                })
+            if new_ids_this_page == 0:   # exhausted this market's real results, stop paginating
+                break
+    return out
+
+def linkedin_desc(url):
+    try:
+        r = get(url); r.raise_for_status()
+        m = re.search(r'<div class="show-more-less-html__markup[^"]*"[^>]*>(.*?)</div>\s*</div>', r.text, re.S)
+        return strip_html(m.group(1)) if m else ""
+    except Exception:
+        return ""
+
 APIFY_ACTOR = "memo23~apify-hiring-cafe-scraper"
 # Tom's saved hiring.cafe searches (address-bar URLs, each encodes its own location/
 # title/language filters). Add or edit searches here as his targeting evolves.
@@ -556,6 +640,13 @@ def main():
     else:
         src_status["hiring.cafe (Apify)"] = "skipped: no APIFY_API_TOKEN set"
 
+    # 6. LinkedIn (public guest search, mirrors Tom's own "based on your preferences" page)
+    try:
+        jobs = fetch_linkedin(); found += jobs
+        src_status["LinkedIn"] = f"ok ({len(jobs)})"
+    except Exception as e:
+        src_status["LinkedIn"] = f"skipped: {e}"
+
     # age filter: drop anything older than a week when the source told us its post date
     before_age = len(found)
     found = [j for j in found if recent_enough(j.get("posted_at"))]
@@ -605,10 +696,14 @@ def main():
     system_score = score_system()
     scored, kept, killed = [], 0, 0
 
+    detail_fetchers = {"greenhouse": greenhouse_desc, "linkedin": linkedin_desc}
     for j in new_jobs[:MAX_SCREENED_PER_RUN]:
-        # fill ATS descriptions before any scoring
+        # fill lazily-fetched descriptions (Greenhouse, LinkedIn) before any scoring --
+        # only for survivors of the title/location prefilter, same as every other source
         if j.get("_detail") and not j.get("description"):
-            j["description"] = greenhouse_desc(j.pop("_detail"))
+            fetcher = detail_fetchers.get(j.get("source"))
+            if fetcher:
+                j["description"] = fetcher(j["_detail"])
         j.pop("_detail", None)
 
         which, raw, label = sponsor_for(j)
