@@ -110,10 +110,11 @@ async function syncFromServer(){
     if(!r.ok) return;
     const server = await r.json();
     syncApi = true;
-    if(server && Array.isArray(server.hidden) && Array.isArray(server.applied)){
+    if(server){
       // merge (union) so nothing recorded locally before sync existed gets lost
-      server.hidden.forEach(id=>hiddenIds.add(id));
-      server.applied.forEach(id=>appliedIds.add(id));
+      // Firebase omits empty-array fields entirely, so treat missing as []
+      (Array.isArray(server.hidden) ? server.hidden : []).forEach(id=>hiddenIds.add(id));
+      (Array.isArray(server.applied) ? server.applied : []).forEach(id=>appliedIds.add(id));
       saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
     }
     const note = document.getElementById("synclabel");
