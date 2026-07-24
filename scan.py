@@ -11,7 +11,9 @@ Data layer (multi-source so no single source can break the run):
   - JobSpy / Indeed : Dublin/Ireland coverage (the Adzuna gap)
   - Company ATS      : Greenhouse / Lever / Ashby for named companies (clean names,
                        full descriptions, strong sponsor matching) - companies.json
-  - hiring.cafe      : best-effort only (its API blocks datacenter IPs)
+  - hiring.cafe      : via the Apify actor memo23/apify-hiring-cafe-scraper, run
+                       against Tom's saved hiring.cafe searches (the direct API
+                       blocks datacenter IPs, so this replaced that attempt)
 
 Pipeline:
   fetch -> title/location prefilter (free) -> dedupe -> UK/NL sponsor-register check
@@ -391,29 +393,48 @@ def fetch_ashby(name, slug):
 
 ATS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby}
 
-def fetch_hiringcafe():
-    """Best-effort. hiring.cafe's internal API blocks datacenter IPs and its shape
-    shifts; wrapped so it can never break the run."""
+APIFY_ACTOR = "memo23~apify-hiring-cafe-scraper"
+# Tom's saved hiring.cafe searches (address-bar URLs, each encodes its own location/
+# title/language filters). Add or edit searches here as his targeting evolves.
+APIFY_HIRINGCAFE_SEARCHES = [
+    # revops/gtm ops titles across NL, IE, UK-London, BE
+    "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22kxY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Ireland%22%2C%22short_name%22%3A%22IE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Ireland%22%2C%22population%22%3A4853506%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22xRg1yZQBoEtHp_8UXQ1z%22%2C%22types%22%3A%5B%22locality%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22London%22%2C%22short_name%22%3A%22London%22%2C%22types%22%3A%5B%22locality%22%5D%7D%2C%7B%22long_name%22%3A%22England%22%2C%22short_name%22%3A%22ENG%22%2C%22types%22%3A%5B%22administrative_area_level_1%22%5D%7D%2C%7B%22long_name%22%3A%22United+Kingdom%22%2C%22short_name%22%3A%22GB%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22geometry%22%3A%7B%22location%22%3A%7B%22lat%22%3A51.50853%2C%22lon%22%3A-0.12574%7D%7D%2C%22formatted_address%22%3A%22London%2C+England%2C+GB%22%2C%22population%22%3A8961989%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22radius%22%3A25%2C%22radius_unit%22%3A%22miles%22%2C%22ignore_radius%22%3Afalse%7D%7D%2C%7B%22id%22%3A%22QRY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Belgium%22%2C%22short_name%22%3A%22BE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Belgium%22%2C%22population%22%3A11422068%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%5D%2C%22commitmentTypes%22%3A%5B%22Full+Time%22%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%2C%22spanish%22%2C%22french%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22revenue+operations%5C%22+OR+%5C%22RevOps%5C%22+OR+%5C%22sales+operations%5C%22+OR+%5C%22sales+ops%5C%22+OR+%5C%22CS+operations%5C%22+OR+%5C%22customer+success+operations%5C%22+OR+%5C%22GTM+operations%5C%22+OR+%5C%22go-to-market+operations%5C%22+OR+%5C%22GTM+strategy%5C%22+OR+%5C%22go-to-market+strategy%5C%22+OR+%5C%22revenue+strategy%5C%22+OR+%5C%22sales+enablement%5C%22+OR+%5C%22revenue+enablement%5C%22+OR+%5C%22commercial+operations%5C%22+OR+%5C%22sales+strategy%5C%22+OR+%5C%22revenue+strategy+%26+operations%5C%22+OR+%5C%22sales+strategy+%26+operations%5C%22+OR+%5C%22GTM+strategy+%26+operations%5C%22%22%7D",
+    # CS titles, Netherlands only
+    "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22Customer+success%5C%22%22%7D",
+    # senior/principal/lead/enterprise/strategic CS titles across NL, IE, UK-London
+    "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22kxY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Ireland%22%2C%22short_name%22%3A%22IE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Ireland%22%2C%22population%22%3A4853506%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%22anywhere_in_continent%22%2C%22anywhere_in_world%22%5D%7D%7D%2C%7B%22id%22%3A%22xRg1yZQBoEtHp_8UXQ1z%22%2C%22types%22%3A%5B%22locality%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22London%22%2C%22short_name%22%3A%22London%22%2C%22types%22%3A%5B%22locality%22%5D%7D%2C%7B%22long_name%22%3A%22England%22%2C%22short_name%22%3A%22ENG%22%2C%22types%22%3A%5B%22administrative_area_level_1%22%5D%7D%2C%7B%22long_name%22%3A%22United+Kingdom%22%2C%22short_name%22%3A%22GB%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22geometry%22%3A%7B%22location%22%3A%7B%22lat%22%3A51.50853%2C%22lon%22%3A-0.12574%7D%7D%2C%22formatted_address%22%3A%22London%2C+England%2C+GB%22%2C%22population%22%3A8961989%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22radius%22%3A50%2C%22radius_unit%22%3A%22miles%22%2C%22ignore_radius%22%3Afalse%7D%7D%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%2C%22french%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22Customer+success%5C%22+AND+%28senior+OR+principal+OR+lead+OR+enterprise+OR+strategic%29%22%7D",
+    # CS titles at GRC/compliance/legaltech companies, NL/IE/UK-London
+    "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22kxY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Ireland%22%2C%22short_name%22%3A%22IE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Ireland%22%2C%22population%22%3A4853506%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22xRg1yZQBoEtHp_8UXQ1z%22%2C%22types%22%3A%5B%22locality%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22London%22%2C%22short_name%22%3A%22London%22%2C%22types%22%3A%5B%22locality%22%5D%7D%2C%7B%22long_name%22%3A%22England%22%2C%22short_name%22%3A%22ENG%22%2C%22types%22%3A%5B%22administrative_area_level_1%22%5D%7D%2C%7B%22long_name%22%3A%22United+Kingdom%22%2C%22short_name%22%3A%22GB%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22geometry%22%3A%7B%22location%22%3A%7B%22lat%22%3A51.50853%2C%22lon%22%3A-0.12574%7D%7D%2C%22formatted_address%22%3A%22London%2C+England%2C+GB%22%2C%22population%22%3A8961989%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22radius%22%3A50%2C%22radius_unit%22%3A%22miles%22%2C%22ignore_radius%22%3Afalse%7D%7D%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22Customer+success%5C%22%22%2C%22jobDescriptionQuery%22%3A%22GRC+OR+compliance+OR+legaltech%22%7D",
+]
+APIFY_MAX_ITEMS = 200   # across all four searches combined; ~$0.25/run at $1.25/1000 results
+
+def fetch_apify_hiringcafe(token):
+    """Runs Tom's saved hiring.cafe searches through the Apify actor
+    memo23/apify-hiring-cafe-scraper. Each search already encodes its own
+    location/title/language filters; dateFetchedPastNDays=21 in the searches is wider
+    than our own MAX_POST_AGE_DAYS, so the age filter downstream still applies."""
     out = []
-    payload = {"size": 40, "page": 0, "searchState": {
-        "searchQuery": "revenue operations OR sales operations OR gtm OR customer success operations",
-        "locations": [{"formatted_address": c, "types": ["country"]} for c in
-                      ["Netherlands", "United Kingdom", "Ireland"]],
-        "sortBy": "date"}}
-    r = requests.post("https://hiring.cafe/api/search-jobs", json=payload, timeout=30,
-                      headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/json",
-                               "Accept": "application/json"})
-    if r.status_code != 200:
-        raise RuntimeError(f"blocked ({r.status_code})")
-    for j in r.json().get("results", []):
+    r = requests.post(
+        f"https://api.apify.com/v2/acts/{APIFY_ACTOR}/run-sync-get-dataset-items",
+        params={"token": token},
+        json={"startUrls": APIFY_HIRINGCAFE_SEARCHES, "maxItems": APIFY_MAX_ITEMS,
+              "enrichDescription": True},
+        timeout=280)
+    r.raise_for_status()
+    for j in r.json():
         info = j.get("job_information", {}) or {}; proc = j.get("v5_processed_job_data", {}) or {}
         title = info.get("title") or proc.get("core_job_title", "")
         loc = proc.get("formatted_workplace_location", "")
         if not prefilter(title, loc): continue
+        sal = ""
+        if proc.get("yearly_min_compensation"):
+            cur = proc.get("listed_compensation_currency") or ""
+            sal = f"{int(proc['yearly_min_compensation'])}-{int(proc.get('yearly_max_compensation') or proc['yearly_min_compensation'])} {cur}".strip()
         out.append({"id": "hc-" + str(j.get("id", ""))[:60], "company": proc.get("company_name", ""),
-                    "title": title, "location": loc, "country": "",
-                    "url": j.get("apply_url") or info.get("url", ""), "source": "hiring.cafe",
-                    "description": strip_html(info.get("description", ""))})
+                    "title": title, "location": loc, "country": "", "salary": sal,
+                    "url": j.get("apply_url") or "", "source": "hiring.cafe",
+                    "description": strip_html(info.get("description", "")),
+                    "posted_at": proc.get("estimated_publish_date", "")})
     return out
 
 # ---------------------------------------------------------------- Claude scoring
@@ -523,11 +544,17 @@ def main():
             pass
     src_status[f"Company ATS ({len(companies)} watched)"] = f"ok ({ats_n})"
 
-    # 5. hiring.cafe (best-effort)
-    try:
-        jobs = fetch_hiringcafe(); found += jobs; src_status["hiring.cafe"] = f"ok ({len(jobs)})"
-    except Exception as e:
-        src_status["hiring.cafe"] = f"skipped: {e}"
+    # 5. hiring.cafe via Apify (direct API blocks datacenter IPs, so this runs
+    # Tom's saved searches through the Apify actor instead)
+    apify_token = os.environ.get("APIFY_API_TOKEN", "")
+    if apify_token:
+        try:
+            jobs = fetch_apify_hiringcafe(apify_token); found += jobs
+            src_status["hiring.cafe (Apify)"] = f"ok ({len(jobs)})"
+        except Exception as e:
+            src_status["hiring.cafe (Apify)"] = f"FAIL: {e}"
+    else:
+        src_status["hiring.cafe (Apify)"] = "skipped: no APIFY_API_TOKEN set"
 
     # age filter: drop anything older than a week when the source told us its post date
     before_age = len(found)
