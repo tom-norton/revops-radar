@@ -1,16 +1,17 @@
 {
- "last_run": "2026-07-25T08:20:22.579079+00:00",
- "new_this_run": 6,
+ "last_run": "2026-07-25T11:50:37.620631+00:00",
+ "new_this_run": 15,
  "sources": {
-  "Adzuna (NL+UK)": "ok (16) | nl=raw 156, title-ok 10, kept 10; gb=raw 270, title-ok 8, kept 6",
+  "Adzuna (NL+UK)": "ok (14) | nl=raw 156, title-ok 10, kept 10; gb=raw 270, title-ok 6, kept 4",
   "Reed (UK)": "ok (5)",
   "Indeed/JobSpy (Dublin)": "ok (2)",
   "Company ATS (19 watched)": "ok (15)",
-  "hiring.cafe (Apify)": "skipped: no APIFY_API_TOKEN set",
-  "LinkedIn": "ok (14)",
-  "age filter": "dropped 6 older than 7d",
+  "hiring.cafe (Apify)": "ok (26)",
+  "LinkedIn": "ok (9)",
+  "revopsroles.com": "ok (24)",
+  "age filter": "dropped 17 older than 7d",
   "UK sponsor register": "ok - 142567 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-07-24.csv",
   "NL sponsor register": "ok - 12650 names (IND + override)",
-  "screening": "stage1 kept 6, killed 15; stage2 scored 6"
+  "screening": "stage1 kept 15, killed 16; stage2 scored 15"
  }
 }
