@@ -118,6 +118,9 @@ CLAUDE_SCREEN_MODEL = "claude-haiku-4-5"        # stage 1: cheap kill/keep
 CLAUDE_SCORE_MODEL = "claude-sonnet-5"          # stage 2: deep weighted rubric
 API_URL = "https://api.anthropic.com/v1/messages"
 API_HEADERS_VERSION = "2023-06-01"
+
+NTFY_TOPIC = "tom-revops-radar-c16aabb2"   # push notifications for strong matches (ntfy.sh)
+NTFY_SCORE_THRESHOLD = 7.5
 KEEP_DAYS = 45
 MAX_POST_AGE_DAYS = 7    # drop postings older than this when the source gives us a date
 DESC_CHAR_CAP = 2200
@@ -192,6 +195,22 @@ Reply with ONLY this JSON, nothing else:
 # ---------------------------------------------------------------- helpers
 
 def now_iso(): return datetime.now(timezone.utc).isoformat()
+
+def notify_strong_matches(jobs):
+    """Push a notification via ntfy.sh (free, no signup) for anything scoring high
+    enough this run. Never lets a notification failure affect the scan itself."""
+    strong = [j for j in jobs if (j.get("score") or 0) >= NTFY_SCORE_THRESHOLD]
+    if not strong:
+        return
+    strong.sort(key=lambda j: j.get("score", 0), reverse=True)
+    body = "\n".join(f"{j['score']} — {j['title']} @ {j.get('company') or j['source']}"
+                     for j in strong[:10])
+    try:
+        requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=body.encode("utf-8"), timeout=15,
+                      headers={"Title": f"{len(strong)} strong RevOps Radar match" + ("es" if len(strong) != 1 else ""),
+                               "Priority": "high", "Tags": "briefcase"})
+    except Exception:
+        pass
 
 def get(url, **kw):
     kw.setdefault("timeout", 30)
@@ -816,6 +835,8 @@ def main():
     json.dump(merged, open("docs/jobs.json", "w"), indent=1)
     json.dump({"last_run": now_iso(), "new_this_run": len(scored), "sources": src_status},
               open("docs/status.json", "w"), indent=1)
+    if not dry:
+        notify_strong_matches(scored)
     print(f"Done. {len(scored)} new on dashboard, {len(merged)} total.")
 
 if __name__ == "__main__":
