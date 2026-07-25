@@ -82,7 +82,7 @@ CSM role in the Netherlands is a primary target and should not be penalized as "
 ## CSM track weighting (important)
 - Netherlands: Senior/Principal CSM at an established company = primary target, score on par
   with RevOps roles.
-- UK (London) and Ireland (Dublin): a CSM role only scores highly if the company is a genuine
-  standout (tier-1 SaaS, strong brand, clear sponsor) or the fit is unusually strong. Otherwise
-  keep CSM in these two markets modest (around 5-6), because the pivot and relocation bar is
-  higher there.
+- UK (London), Ireland (Dublin), and Belgium: a CSM role only scores highly if the company
+  is a genuine standout (tier-1 SaaS, strong brand, clear sponsor) or the fit is unusually
+  strong. Otherwise keep CSM in these markets modest (around 5-6), because the pivot and
+  relocation bar is higher there.

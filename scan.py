@@ -177,7 +177,7 @@ After the weighted total, apply these deterministic CAPS to the final score (tak
 - Director+ or "Head of" title: cap 6 (stretch for a Manager/senior-IC target).
 - Salary stated and below the market's visa floor: cap 4, and add a "below visa floor" flag.
 - Wrong function (deal desk, quote-to-cash, billing, marketing-ops admin, quota-carrying sales): cap 4.
-- CSM role in UK or Ireland at a non-standout company: cap 6 (see CSM track weighting in the profile).
+- CSM role in UK, Ireland, or Belgium at a non-standout company: cap 6 (see CSM track weighting in the profile).
 - Description states another language (Dutch, German, French, etc) as a hard requirement
   to do the job -- fluency, "must speak", "native/business-level X required", or similar:
   cap 3, and add a "requires non-English fluency" flag. Do NOT cap when the language is
