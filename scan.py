@@ -504,6 +504,25 @@ def linkedin_desc(url):
     except Exception:
         return ""
 
+def jsonld_job_description(url):
+    """Generic schema.org JobPosting extractor. Widely used for SEO across ATS/career
+    platforms (Workday, iCIMS, SmartRecruiters, custom sites) regardless of how the
+    visible page itself renders, so this works across revopsroles.com's varied
+    source_url domains without needing per-ATS parsing. Returns "" if absent/unparseable."""
+    try:
+        r = get(url); r.raise_for_status()
+        for m in re.finditer(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', r.text, re.S):
+            try:
+                data = json.loads(m.group(1))
+            except Exception:
+                continue
+            for d in (data if isinstance(data, list) else [data]):
+                if isinstance(d, dict) and d.get("@type") == "JobPosting" and d.get("description"):
+                    return strip_html(d["description"])
+    except Exception:
+        pass
+    return ""
+
 # ---------------------------------------------------------------- revopsroles.com
 
 # robots.txt disallows the ?location_country= query-string filter (for every agent,
@@ -513,9 +532,10 @@ REVOPSROLES_LOCATIONS = ["netherlands", "belgium", "united-kingdom", "ireland"]
 def fetch_revopsroles():
     """Job metadata is embedded as an escaped JSON blob in the page's Next.js RSC
     payload rather than served through a documented API. No full description field is
-    present in this listing data, so a short synthesized summary (category/seniority/
-    work mode) stands in -- the same graceful-degradation the scorer already does for
-    any source with no description."""
+    present in this listing data, so the real JD is lazy-fetched from source_url (the
+    original posting) via jsonld_job_description() for survivors, same pattern as
+    Greenhouse/LinkedIn. A short synthesized summary (category/seniority/work mode) is
+    kept as a fallback only, for postings whose site doesn't expose JobPosting JSON-LD."""
     out, seen_ids = [], set()
     for slug in REVOPSROLES_LOCATIONS:
         try:
@@ -547,12 +567,13 @@ def fetch_revopsroles():
                 ("Work mode", field("work_mode")), ("Visa sponsorship", field("visa_sponsorship")),
             ) if v)
             posted = field("posted_at")
+            src_url = field("source_url") or f"https://revopsroles.com/jobs/{jid}"
             out.append({
                 "id": f"rr-{jid}", "company": field("company_name"),
                 "title": title, "location": loc, "country": field("location_country").lower(),
-                "url": field("source_url") or f"https://revopsroles.com/jobs/{jid}",
-                "source": "revopsroles", "salary": sal, "description": summary,
+                "url": src_url, "source": "revopsroles", "salary": sal,
                 "posted_at": float(posted) if posted else "",
+                "_detail": src_url, "_fallback_desc": summary,
             })
     return out
 
@@ -782,15 +803,20 @@ def main():
     system_score = score_system()
     scored, kept, killed = [], 0, 0
 
-    detail_fetchers = {"greenhouse": greenhouse_desc, "linkedin": linkedin_desc}
+    detail_fetchers = {"greenhouse": greenhouse_desc, "linkedin": linkedin_desc,
+                       "revopsroles": jsonld_job_description}
     for j in new_jobs[:MAX_SCREENED_PER_RUN]:
-        # fill lazily-fetched descriptions (Greenhouse, LinkedIn) before any scoring --
-        # only for survivors of the title/location prefilter, same as every other source
+        # fill lazily-fetched descriptions (Greenhouse, LinkedIn, revopsroles) before any
+        # scoring -- only for survivors of the title/location prefilter, same as every
+        # other source. revopsroles falls back to its synthesized summary if the source
+        # site has no JobPosting JSON-LD to pull a real description from.
         if j.get("_detail") and not j.get("description"):
             fetcher = detail_fetchers.get(j.get("source"))
             if fetcher:
                 j["description"] = fetcher(j["_detail"])
-        j.pop("_detail", None)
+        if not j.get("description") and j.get("_fallback_desc"):
+            j["description"] = j["_fallback_desc"]
+        j.pop("_detail", None); j.pop("_fallback_desc", None)
 
         which, raw, label = sponsor_for(j)
         j["sponsor_region"], j["sponsor_raw"], j["sponsor"] = which or "", raw, label
