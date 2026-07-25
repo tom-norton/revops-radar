@@ -2,7 +2,7 @@
 """
 RevOps Radar - daily job scanner for Tom Norton.
 
-Markets: Netherlands (anywhere), UK (London area only), Ireland (Dublin).
+Markets: Netherlands (anywhere), Belgium (anywhere), UK (London area only), Ireland (Dublin).
 Germany, Spain, and remote-anywhere/EMEA are deliberately excluded.
 
 Data layer (multi-source so no single source can break the run):
@@ -18,6 +18,8 @@ Data layer (multi-source so no single source can break the run):
                        LinkedIn's public, unauthenticated guest job-search endpoint
                        (same keywords/geoId/24h filter that page itself uses) -
                        no login or session cookie involved
+  - revopsroles.com  : per-country location pages (robots.txt allows these plain
+                       paths but disallows the ?location_country= query form)
 
 Pipeline:
   fetch -> title/location prefilter (free) -> dedupe -> UK/NL sponsor-register check
@@ -103,6 +105,10 @@ NL_LOC = re.compile(
     r"netherlands|nederland|amsterdam|rotterdam|utrecht|eindhoven|the hague"
     r"|den haag|hague|haarlem|delft|groningen|amersfoort|nijmegen|arnhem"
     r"|leiden|almere|breda|tilburg|zwolle|randstad|noord-holland|zuid-holland", re.I)
+BE_LOC = re.compile(
+    r"belgium|belgie|belgique|brussels|bruxelles|brussel|antwerp|antwerpen|ghent|gent"
+    r"|bruges|brugge|leuven|louvain|liege|luik|namur|mechelen|kortrijk|flemish|wallonia"
+    r"|flanders", re.I)
 IE_LOC = re.compile(r"dublin|ireland|ierland", re.I)
 IE_OTHER_CITY = re.compile(r"cork|galway|limerick|waterford", re.I)
 # reject pure-remote and EMEA-wide postings that aren't anchored to a target city
@@ -141,7 +147,7 @@ SCREEN_SYSTEM = """You are a fast pre-screen for a job-search pipeline. Decide i
 
 11 years B2B SaaS (Customer Success + Account Management), pivoting into Revenue Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior-IC level. Also open to Senior/Principal Customer Success Manager roles. US citizen needing EU visa sponsorship.
 
-Target markets ONLY: Netherlands (anywhere), UK London area only, Ireland/Dublin. Reject Germany, Spain, remote-from-anywhere, and remote-EMEA roles.
+Target markets ONLY: Netherlands (anywhere), Belgium (anywhere), UK London area only, Ireland/Dublin. Reject Germany, Spain, remote-from-anywhere, and remote-EMEA roles.
 
 KEEP if the role plausibly fits function AND market. KILL obvious no-fits: wrong function (deal desk, quote-to-cash, billing, pure marketing-ops admin, engineering, finance, quota-carrying AE/SDR), wrong seniority (intern, VP+, C-level), or wrong location (outside NL/London/Dublin, or remote-anywhere).
 
@@ -163,7 +169,7 @@ SCORING RUBRIC - score each dimension 0-10, then a weighted total:
 Weighted total = sum(dimension_score * weight) / 100, on a 0-10 scale.
 
 After the weighted total, apply these deterministic CAPS to the final score (take the lowest that applies):
-- Location outside NL / London / Dublin, or remote-anywhere/EMEA: cap 2.
+- Location outside NL / Belgium / London / Dublin, or remote-anywhere/EMEA: cap 2.
 - Analyst or Specialist title: cap 5 (comp risk vs visa salary floor).
 - Director+ or "Head of" title: cap 6 (stretch for a Manager/senior-IC target).
 - Salary stated and below the market's visa floor: cap 4, and add a "below visa floor" flag.
@@ -200,6 +206,8 @@ def location_ok(country, location):
     loc = location or ""
     cc = (country or "").lower()
     if cc == "nl" or NL_LOC.search(loc):
+        return True
+    if cc == "be" or BE_LOC.search(loc):
         return True
     if cc == "ie" or IE_LOC.search(loc):
         # a non-Dublin Irish city (Cork/Galway/...) is out even if "Ireland" also appears
@@ -477,6 +485,58 @@ def linkedin_desc(url):
     except Exception:
         return ""
 
+# ---------------------------------------------------------------- revopsroles.com
+
+# robots.txt disallows the ?location_country= query-string filter (for every agent,
+# named or "*") but NOT these plain per-country paths -- use these, never the query form.
+REVOPSROLES_LOCATIONS = ["netherlands", "belgium", "united-kingdom", "ireland"]
+
+def fetch_revopsroles():
+    """Job metadata is embedded as an escaped JSON blob in the page's Next.js RSC
+    payload rather than served through a documented API. No full description field is
+    present in this listing data, so a short synthesized summary (category/seniority/
+    work mode) stands in -- the same graceful-degradation the scorer already does for
+    any source with no description."""
+    out, seen_ids = [], set()
+    for slug in REVOPSROLES_LOCATIONS:
+        try:
+            r = get(f"https://revopsroles.com/locations/{slug}")
+            r.raise_for_status()
+        except Exception:
+            continue
+        for c in re.split(r'\\"_formatted\\":\{', r.text)[1:]:
+            def field(key):
+                m = re.search(r'\\"' + key + r'\\":\\"(.*?)\\"', c)
+                if not m:
+                    return ""
+                try:
+                    return json.loads('"' + m.group(1) + '"')
+                except Exception:
+                    return m.group(1)
+            jid = field("id")
+            if not jid or jid in seen_ids:
+                continue
+            seen_ids.add(jid)
+            title, loc = field("title"), field("location_raw")
+            if not prefilter(title, loc):
+                continue
+            sal = ""
+            if field("salary_min"):
+                sal = f"{field('salary_min')}-{field('salary_max') or field('salary_min')} {field('salary_currency')}"
+            summary = "; ".join(f"{label}: {v}" for label, v in (
+                ("Category", field("category")), ("Seniority", field("seniority")),
+                ("Work mode", field("work_mode")), ("Visa sponsorship", field("visa_sponsorship")),
+            ) if v)
+            posted = field("posted_at")
+            out.append({
+                "id": f"rr-{jid}", "company": field("company_name"),
+                "title": title, "location": loc, "country": field("location_country").lower(),
+                "url": field("source_url") or f"https://revopsroles.com/jobs/{jid}",
+                "source": "revopsroles", "salary": sal, "description": summary,
+                "posted_at": float(posted) if posted else "",
+            })
+    return out
+
 APIFY_ACTOR = "memo23~apify-hiring-cafe-scraper"
 # Tom's saved hiring.cafe searches (address-bar URLs, each encodes its own location/
 # title/language filters). Add or edit searches here as his targeting evolves.
@@ -646,6 +706,13 @@ def main():
         src_status["LinkedIn"] = f"ok ({len(jobs)})"
     except Exception as e:
         src_status["LinkedIn"] = f"skipped: {e}"
+
+    # 7. revopsroles.com (per-country location pages, robots.txt-compliant)
+    try:
+        jobs = fetch_revopsroles(); found += jobs
+        src_status["revopsroles.com"] = f"ok ({len(jobs)})"
+    except Exception as e:
+        src_status["revopsroles.com"] = f"skipped: {e}"
 
     # age filter: drop anything older than a week when the source told us its post date
     before_age = len(found)

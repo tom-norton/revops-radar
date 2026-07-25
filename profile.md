@@ -55,6 +55,8 @@ off-target. Prior domain: GRC / compliance software.
 Target markets ONLY:
 - Netherlands: anywhere in the country. Primary market. HSM salary floor ~EUR 71,304 base
   (2026, 30+ bracket).
+- Belgium: anywhere in the country. EU Blue Card salary floor (2026) varies by region:
+  ~EUR 56,976 Brussels, ~EUR 63,586 Flanders, ~EUR 68,815 Wallonia.
 - United Kingdom: London and the surrounding commuter area ONLY (exclude Manchester,
   Edinburgh, Leeds, Bristol, Glasgow, Birmingham, and other UK cities). Skilled Worker visa
   floor ~GBP 70,000.

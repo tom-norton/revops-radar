@@ -1,5 +1,5 @@
 {
-  "_comment": "Companies whose ATS boards are scanned directly, on top of Adzuna/Reed/Indeed. These give clean company names and full job descriptions (better sponsor matching), and they close the Ireland gap since many US SaaS firms hire RevOps/CS in Dublin via Greenhouse/Ashby. The location filter in scan.py keeps only NL / London / Dublin roles, so a broad list is safe. 'ats' must be greenhouse/lever/ashby; the slug is in the careers URL. Run `python scan.py --verify` to test entries. All slugs below were verified live.",
+  "_comment": "Companies whose ATS boards are scanned directly, on top of Adzuna/Reed/Indeed/hiring.cafe/LinkedIn. These give clean company names and full job descriptions (better sponsor matching), and they close the Ireland gap since many US SaaS firms hire RevOps/CS in Dublin via Greenhouse/Ashby. The location filter in scan.py keeps only NL / Belgium / London / Dublin roles, so a broad list is safe. 'ats' must be greenhouse/lever/ashby; the slug is in the careers URL. Run `python scan.py --verify` to test entries. All slugs below were verified live.",
   "companies": [
     { "name": "Adyen", "ats": "greenhouse", "slug": "adyen" },
     { "name": "MongoDB", "ats": "greenhouse", "slug": "mongodb" },

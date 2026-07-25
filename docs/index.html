@@ -185,7 +185,7 @@ function renderAll(){
   const lr = allStatus.last_run ? new Date(allStatus.last_run).toLocaleString("en-GB",
       {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
   document.getElementById("meta").textContent =
-      `Netherlands · London · Dublin  ·  ${apply.length} to apply, ${border.length} borderline  ·  last run ${lr}`;
+      `Netherlands · Belgium · London · Dublin  ·  ${apply.length} to apply, ${border.length} borderline  ·  last run ${lr}`;
 
   const a = document.getElementById("apply"); a.innerHTML = "";
   if(apply.length) apply.forEach(j=>a.appendChild(card(j, false)));
