@@ -19,6 +19,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests python-jobspy
+      - name: Scoring unit tests
+        # Pure functions only -- no network, no API key. Catches a broken cap or location
+        # rule before it spends tokens producing wrong scores.
+        run: python tests/test_scoring.py
       - name: Run scanner
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -31,6 +35,6 @@ jobs:
         run: |
           git config user.name "radar-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add seen.json docs/jobs.json docs/status.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json docs/jobs.json docs/status.json
+          git add seen.json docs/jobs.json docs/status.json docs/excluded.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json docs/jobs.json docs/status.json docs/excluded.json
           git diff --cached --quiet || git commit -m "scan: $(date -u +%F)"
           git push
