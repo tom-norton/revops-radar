@@ -122,6 +122,13 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
 - **Markets / keywords:** `ADZUNA_COUNTRIES`, `ADZUNA_PHRASES`, `OR_KEYWORDS` (shared by Reed
   and LinkedIn), `JOBSPY_TERMS`, and the location regexes in `scan.py`. Adding a market means
   touching `market_of()`, `VISA_FLOORS`, and `MARKETS_SENTENCE` — they sit together.
+- **Which titles get through:** `INCLUDE_TITLE` / `EXCLUDE_TITLE`. This gate is **market-aware,
+  not purely textual** — a plain "Customer Success Manager" is admitted in the Netherlands and
+  nowhere else (`CSM_ANY`, applied in `prefilter()`), mirroring the CSM track weighting in
+  `profile.md`. Widening it is now cheap: anything wrong gets screened, capped, and shown in
+  the excluded section rather than sitting on the dashboard, so prefer erring wide. Re-run the
+  live audit before and after a change — a widened alternative can silently break an existing
+  one, which is what `test_widening_did_not_lose_anything_previously_kept` guards.
 - **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
 - **Scoring:** what the model judges is in `profile.md` and `score_system()`; what the code
   decides is `RUBRIC`, `TITLE_BANDS`, `CAPS`, `VISA_FLOORS`, and `apply_caps()`.

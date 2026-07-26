@@ -212,6 +212,96 @@ def test_prefilter_returns_a_reason_not_a_bool():
     assert "title" in scan.prefilter("Chef de Cuisine", "Berlin", "")
 
 
+def test_include_title_is_word_order_agnostic_for_senior_csm():
+    """The bug: a seniority qualifier only counted before "customer success", so moving it
+    after the comma dropped the same job."""
+    for a, b in [("Enterprise Customer Success Manager", "Customer Success Manager, Enterprise"),
+                 ("Strategic Customer Success Manager", "Customer Success Manager, Strategic Accounts"),
+                 ("Senior Customer Success Manager", "Customer Success Manager, Senior"),
+                 ("Principal Customer Success Manager", "Customer Success Manager, Principal")]:
+        assert scan.INCLUDE_TITLE.search(a), a
+        assert scan.INCLUDE_TITLE.search(b), b
+
+
+def test_include_title_admits_cs_team_lead_roles():
+    """profile.md targets the Manager band, but every CS team-lead title was being dropped."""
+    for t in ["Manager, Customer Success", "Manager, Customer Success Management",
+              "Manager, Customer Success Managers, EMEA", "Manager, Customer Success, Scale EMEA",
+              "Senior Manager, Customer Success", "Head of Customer Success"]:
+        assert scan.INCLUDE_TITLE.search(t), t
+
+
+def test_plain_csm_is_not_matched_by_the_keyword_list():
+    """A plain CSM title must reach the market-conditional rule, not sneak in via the
+    team-lead pattern -- otherwise the NL-only restriction is meaningless."""
+    for t in ["Customer Success Manager", "Customer Success Manager - Denver",
+              "Customer Success Manager II", "Customer Success Associate",
+              "Scaled Customer Success Manager", "NA Customer Success Manager"]:
+        assert not scan.INCLUDE_TITLE.search(t), t
+
+
+def test_plain_csm_admitted_in_netherlands_only():
+    assert scan.prefilter("Customer Success Manager", "Amsterdam", "nl") is None
+    assert scan.prefilter("Customer Success Manager", "Netherlands", "nl") is None
+    assert scan.prefilter("Customer Success Manager II", "Utrecht", "") is None
+    for loc, cc in [("London", "gb"), ("Dublin", "ie"), ("Brussels", "be")]:
+        reason = scan.prefilter("Customer Success Manager", loc, cc)
+        assert reason and "title" in reason, f"{loc}: {reason}"
+    # the NL carve-out must not become a bypass for genuinely off-target titles
+    assert scan.prefilter("Software Engineer", "Amsterdam", "nl") is not None
+    # and a senior CSM still passes everywhere, as before
+    assert scan.prefilter("Senior Customer Success Manager", "London", "gb") is None
+
+
+def test_include_title_covers_the_newly_added_revops_vocabulary():
+    for t in ["Sales Compensation Manager", "Sales Compensation Design Lead",
+              "Incentive Compensation Analyst", "Quota Planning Manager",
+              "Territory Planning Manager", "Revenue Analytics Manager",
+              "Revenue Systems Manager", "Revenue Technology Analyst",
+              "Renewals Manager", "Renewals Specialist", "Strategy & Ops, Intercept",
+              "Strategy and Operations Manager", "BizOps Manager", "Biz Ops Lead"]:
+        assert scan.INCLUDE_TITLE.search(t), t
+
+
+def test_widened_terms_stay_narrow_enough():
+    """The additions must not drag in quota-carrying sales or unrelated ops roles."""
+    for t in ["Territory Sales Director", "Senior Manager, Territory Sales",
+              "Account Executive", "Business Development Representative",
+              "Technical Account Manager", "People Business Partner",
+              "Fraud Operations Manager", "Risk Operations Analyst",
+              "Software Engineer", "Product Manager"]:
+        assert not scan.INCLUDE_TITLE.search(t), t
+
+
+def test_widening_did_not_lose_anything_previously_kept():
+    """Regression guard. Every title the filter used to admit must still be admitted --
+    widening a regex is an easy way to accidentally break an existing alternative."""
+    previously_kept = [
+        "Revenue Operations Manager", "RevOps Lead", "Rev Ops Manager",
+        "Sales Operations Manager", "Sales Ops Analyst", "GTM Strategy Manager",
+        "Go-to-Market Operations Manager", "Growth Operations Manager",
+        "Marketing Operations Manager", "CS Operations Manager",
+        "Customer Success Operations Manager", "Strategy and Operations Manager",
+        "Strategy & Operations Manager", "Business Operations Manager",
+        "Commercial Operations Manager", "Sales Strategy Manager",
+        "Revenue Strategy Manager", "Revenue Enablement Manager",
+        "Sales Enablement Manager", "Senior Customer Success Manager",
+        "Principal Customer Success Manager, Enterprise", "Lead Customer Success - PropTech",
+        "Enterprise Customer Success Manager", "Strategic Customer Success Manager",
+    ]
+    for t in previously_kept:
+        assert scan.INCLUDE_TITLE.search(t), f"regression: {t} no longer matches"
+
+
+def test_exclude_list_still_wins_over_the_widened_include():
+    """Widening must not let an excluded seniority or an internship through."""
+    for t in ["VP Revenue Operations", "Vice President, Sales Operations",
+              "SVP Revenue Operations", "Sales Operations Intern",
+              "Revenue Operations Internship", "Deal Desk Manager",
+              "Working Student Sales Operations", "Renewals Manager Intern"]:
+        assert scan.prefilter(t, "Amsterdam", "nl") is not None, t
+
+
 def test_country_code_normalises_display_names():
     assert scan.country_code("Netherlands") == "nl"
     assert scan.country_code("The Netherlands") == "nl"

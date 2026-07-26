@@ -98,9 +98,34 @@ INCLUDE_TITLE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
     r"|gtm|go[- ]to[- ]market|growth operations|marketing operations"
     r"|cs operations|customer success operations"
-    r"|strategy (and|&) operations|business operations|commercial operations"
+    # "op(eration)?s" so the abbreviated "Strategy & Ops" isn't missed.
+    r"|strategy (and|&) op(eration)?s\b|business operations|commercial operations|biz ?ops"
     r"|sales strategy|revenue strategy|revenue enablement|sales enablement"
-    r"|(senior|principal|lead|enterprise|strategic).{0,20}customer success", re.I)
+    # Comp, quota and territory design are core RevOps work the filter had no words for --
+    # 5 of 5 sales-compensation roles on the watched boards were being dropped. "territory"
+    # is deliberately narrow so quota-carrying "Territory Sales Director" titles stay out.
+    r"|sales compensation|incentive compensation|quota"
+    r"|territory (planning|design|management|operations)"
+    r"|revenue analytics|revenue systems|revenue technology"
+    # Renewals: adjacent to the RevOps pivot, but a direct match for the renewal-forecasting
+    # and NRR record in profile.md.
+    r"|renewals?\b"
+    # Both word orders. "Enterprise Customer Success Manager" used to pass while
+    # "Customer Success Manager, Enterprise" -- the same job -- was dropped.
+    r"|(senior|principal|lead|enterprise|strategic).{0,20}customer success"
+    r"|customer success.{0,30}(senior|principal|lead|enterprise|strategic)"
+    # CS team-lead roles ("Manager, Customer Success"), which are the Manager band profile.md
+    # actually targets. Qualifier-before-noun only, so this never matches a plain
+    # "Customer Success Manager" -- that individual-contributor title is handled by the
+    # market-conditional rule in prefilter() instead.
+    r"|(manager|head of),?\s+(of\s+)?customer success", re.I)
+
+# A plain "Customer Success Manager" with no seniority wording is a target in the Netherlands
+# only -- profile.md's CSM track weighting makes NL Senior/Principal CSM a primary target and
+# keeps the same role modest elsewhere. Admitting it everywhere would put ~25 extra rows per
+# run on the dashboard; restricting it to NL admitted one. apply_caps() enforces the same
+# asymmetry later via the csm_secondary_market cap.
+CSM_ANY = re.compile(r"customer success", re.I)
 
 EXCLUDE_TITLE = re.compile(
     r"deal desk|quote[- ]to[- ]cash|order management|billing specialist"
@@ -580,14 +605,19 @@ def location_ok(country, location):
     return market_of(country, location) is not None
 
 def prefilter(title, location, country=""):
-    """None if the row passes the free filters; otherwise a short reason for the drop log."""
+    """None if the row passes the free filters; otherwise a short reason for the drop log.
+
+    The title half of this gate is market-aware, not purely textual: a plain "Customer Success
+    Manager" is admitted in the Netherlands and nowhere else (see CSM_ANY). The market is
+    resolved once here and reused for the location check below."""
     t = title or ""
-    if not INCLUDE_TITLE.search(t):
+    market = market_of(country, location)
+    if not (INCLUDE_TITLE.search(t) or (market == "NL" and CSM_ANY.search(t))):
         return "title: no target-function keyword"
     m = EXCLUDE_TITLE.search(t)
     if m:
         return f"title: excluded term '{m.group(0).strip()}'"
-    if market_of(country, location) is None:
+    if market is None:
         return f"location: outside target markets ({location or 'unspecified'})"
     return None
 
