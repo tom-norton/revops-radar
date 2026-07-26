@@ -43,9 +43,19 @@ def _key(name):
     return " ".join(normalize(name))
 
 class Register:
+    """A set of sponsor names, plus two independent trust flags.
+
+    ok               - the register loaded well enough to be consulted at all.
+    trust_negatives  - it is complete enough that "absent" means "not a sponsor". When a
+                       partial register loads (e.g. the NL override list without the IND
+                       parse behind it) a hit is still meaningful but a miss is not, so
+                       match() returns "unknown" rather than "not_found".
+    """
+
     def __init__(self, label):
         self.label = label
         self.ok = False
+        self.trust_negatives = True
         self.note = "not loaded"
         self._exact = set()          # normalized full-name keys
         self._token_index = {}       # distinctive token -> list of token-sets
@@ -63,7 +73,7 @@ class Register:
     def match(self, company):
         toks = normalize(company)
         if not toks:
-            return "not_found"
+            return "unknown"        # nothing left to match on after stripping suffixes
         key = " ".join(toks)
         if key in self._exact:
             return "on_register"
@@ -74,7 +84,7 @@ class Register:
                 # job company's tokens are a subset of a register entry's tokens
                 if cset <= set(tset):
                     return "likely"
-        return "not_found"
+        return "not_found" if self.trust_negatives else "unknown"
 
 def load_uk():
     reg = Register("UK")
@@ -117,15 +127,24 @@ def load_uk():
         reg.note = f"load failed: {e}"
     return reg
 
+# The IND page has to yield at least this many names before we'll treat the register as
+# usable. Without the floor, a failed parse left the handful of manual overrides standing in
+# for the whole register, and every other Dutch company came back "not on NL register" --
+# a confident-looking wrong answer that then cost the role points in the deep score. Below
+# the floor we report "unknown" instead, which scoring treats as no signal either way.
+NL_MIN_NAMES = 200
+
 def load_nl():
     """Best effort. IND register is monthly and awkward to parse; we try the
     public page and merge a manual override file. Degrades to 'unknown'."""
     reg = Register("NL")
     names = set()
+    overrides = set()
     # manual override: one company name per line
     if os.path.exists("nl_sponsors_extra.txt"):
         with open("nl_sponsors_extra.txt", encoding="utf-8") as f:
-            names.update(l.strip() for l in f if l.strip() and not l.startswith("#"))
+            overrides.update(l.strip() for l in f if l.strip() and not l.startswith("#"))
+        names.update(overrides)
     try:
         r = requests.get(
             "https://ind.nl/en/public-register-recognised-sponsors/public-register-work",
@@ -142,10 +161,15 @@ def load_nl():
         reg.note = f"IND fetch failed: {e}"
     for n in names:
         reg.add(n)
-    if names:
-        reg.ok = True
-        src = "IND + override" if os.path.exists("nl_sponsors_extra.txt") else "IND"
-        reg.note = f"{len(names)} names ({src})"
+    ind_count = len(names - overrides)
+    reg.ok = bool(names)
+    reg.trust_negatives = ind_count >= NL_MIN_NAMES
+    if reg.trust_negatives:
+        reg.note = f"{len(names)} names ({'IND + override' if overrides else 'IND'})"
+    elif names:
+        # Positive matches from the override list still stand; misses report "unknown".
+        reg.note = (f"partial: {ind_count} from IND (need {NL_MIN_NAMES}) + "
+                    f"{len(overrides)} override; hits count, misses report unknown")
     elif reg.note == "not loaded":
         reg.note = "no names parsed"
     return reg

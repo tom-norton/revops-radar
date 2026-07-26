@@ -22,18 +22,31 @@ Data layer (multi-source so no single source can break the run):
                        paths but disallows the ?location_country= query form)
 
 Pipeline:
-  fetch -> title/location prefilter (free) -> dedupe -> UK/NL sponsor-register check
+  fetch -> title/location prefilter (free) -> age filter -> dedupe
+        -> UK/NL sponsor-register check
         -> STAGE 1 cheap screen (Claude Haiku, kill/keep)
-        -> STAGE 2 deep score (Claude Sonnet, full weighted rubric vs profile.md)
-        -> deterministic caps -> write docs/jobs.json + docs/status.json
+        -> STAGE 2 deep score (Claude Opus, dimension scores vs profile.md)
+        -> weighted total + deterministic caps, computed here in Python
+        -> write docs/jobs.json + docs/status.json + docs/excluded.json
+
+Scoring split: the model scores the six rubric dimensions and reports facts it can only get
+by reading the posting (stated salary, hard language requirement, function match, whether
+the employer is a standout). Every piece of arithmetic and every cap is computed in
+apply_caps() below, so the score is reproducible and the reason for it is recorded.
+
+Every row the pipeline rejects is logged to docs/excluded.json with the stage and reason,
+and shown in a collapsed section on the dashboard.
 
 Usage:
-  python scan.py            normal run
-  python scan.py --dry      everything except the Claude calls
-  python scan.py --verify   test the optional ATS company slugs, no scoring
+  python scan.py             normal run
+  python scan.py --dry       everything except the Claude calls
+  python scan.py --verify    test the optional ATS company slugs, no scoring
+  python scan.py --selftest  replay stored dimension scores through the cap engine, offline
+  python scan.py --unkill    free stage-1 kills from seen.json so they get re-evaluated
+  python scan.py --rescore   clear scored rows so the corpus re-runs under the current engine
 """
 
-import json, os, re, sys, time
+import html, json, os, re, sys, time
 from datetime import datetime, timezone, timedelta
 import requests
 import sponsors as spon
@@ -53,11 +66,16 @@ ADZUNA_PHRASES = [
 ]
 ADZUNA_MAX_DAYS = 7      # Tom doesn't want postings older than a week
 ADZUNA_PER_PAGE = 30     # per phrase
+ADZUNA_PAGES = 2         # pages per phrase; page 1 alone capped the feed at 540 results/run
+
+# The literal OR-keyword search string. Reed and LinkedIn both take a single free-text
+# query, and both want the same terms -- one constant so they can't drift apart.
+OR_KEYWORDS = ("revenue operations OR sales operations OR gtm OR go-to-market OR "
+               "revenue strategy OR sales strategy OR revenue enablement OR "
+               "customer success operations OR business operations")
 
 # Reed (UK). Free key acts as the HTTP basic-auth username, blank password.
-REED_KEYWORDS = ("revenue operations OR sales operations OR gtm OR go-to-market OR "
-                 "revenue strategy OR sales strategy OR revenue enablement OR "
-                 "customer success operations OR business operations")
+REED_KEYWORDS = OR_KEYWORDS
 
 # JobSpy / Indeed for Ireland (Dublin). Best-effort: never breaks the run.
 JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
@@ -72,9 +90,7 @@ JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
 # when multiple geoIds are combined into one request, but works fine one market at a
 # time. Belgium/Amsterdam results still pass through the same location_ok() gate as
 # every other source, so anything outside NL/UK-London/Dublin gets filtered downstream.
-LINKEDIN_KEYWORDS = ("revenue operations OR sales operations OR gtm OR go-to-market OR "
-                     "revenue strategy OR sales strategy OR revenue enablement OR "
-                     "customer success operations OR business operations")
+LINKEDIN_KEYWORDS = OR_KEYWORDS
 LINKEDIN_GEO_IDS = ["90009496", "100565514", "102890719", "103100785", "104738515"]
 LINKEDIN_PAGES = 3       # 10 results/page per market
 
@@ -101,23 +117,35 @@ UK_OTHER_CITY = re.compile(
     r"manchester|edinburgh|glasgow|birmingham|leeds|bristol|liverpool|sheffield"
     r"|newcastle|cardiff|belfast|nottingham|leicester|coventry|brighton"
     r"|cambridge|oxford|aberdeen|dundee|reading berkshire", re.I)
-NL_LOC = re.compile(
-    r"netherlands|nederland|amsterdam|rotterdam|utrecht|eindhoven|the hague"
+# City/region signals are kept apart from bare country signals. A named city anchors a
+# posting to a market even when the text also says "remote" ("Amsterdam, remote-friendly"
+# is a real Amsterdam job); a bare country name next to "remote" or "EMEA" does not
+# ("Ireland or Europe" on an EMEA req is the remote-EMEA posting profile.md rejects).
+NL_CITY = re.compile(
+    r"amsterdam|rotterdam|utrecht|eindhoven|the hague"
     r"|den haag|hague|haarlem|delft|groningen|amersfoort|nijmegen|arnhem"
     r"|leiden|almere|breda|tilburg|zwolle|randstad|noord-holland|zuid-holland", re.I)
-BE_LOC = re.compile(
-    r"belgium|belgie|belgique|brussels|bruxelles|brussel|antwerp|antwerpen|ghent|gent"
+NL_COUNTRY = re.compile(r"netherlands|nederland", re.I)
+BE_CITY = re.compile(
+    r"brussels|bruxelles|brussel|antwerp|antwerpen|ghent|gent"
     r"|bruges|brugge|leuven|louvain|liege|luik|namur|mechelen|kortrijk|flemish|wallonia"
     r"|flanders", re.I)
-IE_LOC = re.compile(r"dublin|ireland|ierland", re.I)
+BE_COUNTRY = re.compile(r"belgium|belgie|belgique", re.I)
+IE_CITY = re.compile(r"dublin", re.I)
+IE_COUNTRY = re.compile(r"ireland|ierland", re.I)
 IE_OTHER_CITY = re.compile(r"cork|galway|limerick|waterford", re.I)
 # reject pure-remote and EMEA-wide postings that aren't anchored to a target city
 REMOTE_ONLY = re.compile(r"\b(remote|anywhere|work from home|wfh|emea|europe)\b", re.I)
 
 CLAUDE_SCREEN_MODEL = "claude-haiku-4-5"        # stage 1: cheap kill/keep
-CLAUDE_SCORE_MODEL = "claude-sonnet-5"          # stage 2: deep weighted rubric
+CLAUDE_SCORE_MODEL = "claude-opus-5"            # stage 2: deep weighted rubric
 API_URL = "https://api.anthropic.com/v1/messages"
 API_HEADERS_VERSION = "2023-06-01"
+# Opus 5 thinks by default and max_tokens caps thinking + response text together, so this
+# needs real headroom -- the old 900 would truncate mid-answer. Effort is the cost dial.
+SCORE_MAX_TOKENS = 4000
+SCORE_EFFORT = "medium"       # low | medium | high | xhigh | max
+CLAUDE_ATTEMPTS = 3           # per call, with exponential backoff on 429/5xx/timeout
 
 NTFY_TOPIC = "tom-revops-radar-c16aabb2"   # push notifications for strong matches (ntfy.sh)
 NTFY_SCORE_THRESHOLD = 7.5
@@ -125,8 +153,47 @@ KEEP_DAYS = 45
 MAX_POST_AGE_DAYS = 7    # drop postings older than this when the source gives us a date
 DESC_CHAR_CAP = 2200
 MAX_SCREENED_PER_RUN = 80     # cap stage-1 Haiku calls
-MAX_SCORED_PER_RUN = 30       # cap stage-2 Sonnet calls (survivors only)
+MAX_SCORED_PER_RUN = 30       # cap stage-2 Opus calls (survivors only)
 SPONSOR_REQUIRED = False      # if True, drop UK/NL jobs whose company isn't on a register
+
+# Dashboard bands. Mirrored in docs/index.html and written into docs/status.json each run
+# so the page reads them from here rather than keeping its own copy.
+GATE = 6.0     # 6.0+ -> "apply" section
+FLOOR = 5.0    # 5.0-5.9 -> collapsed "borderline"; below -> collapsed "excluded"
+
+# Annual base-salary floors per market, local currency (2026). The prose version lives in
+# profile.md for the model to reason with; this is the copy the below-floor cap uses.
+# Belgium takes the lowest of the three regional Blue Card floors (Brussels) so the cap
+# only fires when the salary is below every Belgian threshold.
+VISA_FLOORS = {
+    "NL": (71304, "EUR"),          # HSM, 30+ bracket
+    "BE": (56976, "EUR"),          # EU Blue Card, Brussels
+    "UK-London": (70000, "GBP"),   # Skilled Worker
+    "IE-Dublin": (68911, "EUR"),   # Critical Skills / General permit
+}
+
+# Title intelligence from the job-application-workflow skill, as code. First match wins,
+# so the most disqualifying bands are checked first.
+TITLE_BANDS = [
+    ("wrong_function", re.compile(r"deal desk|quote[- ]to[- ]cash|order management"
+                                 r"|billing|accounts (payable|receivable)", re.I)),
+    ("director_plus", re.compile(r"\bdirector\b|head of|\bvp\b|vice president|chief "
+                                 r"|\bsvp\b|\bevp\b|\bcro\b|\bcoo\b", re.I)),
+    ("analyst", re.compile(r"\banalyst\b", re.I)),
+    ("specialist", re.compile(r"\bspecialist\b|\bcoordinator\b", re.I)),
+]
+
+# Deterministic score ceilings. Lowest applicable cap wins.
+CAPS = {
+    "location": 2.0,               # outside NL / BE / London / Dublin
+    "analyst": 5.0,                # comp risk vs visa salary floor
+    "specialist": 5.0,
+    "director_plus": 6.0,          # stretch for a Manager/senior-IC target
+    "below_floor": 4.0,            # stated salary under the market's visa floor
+    "wrong_function": 4.0,         # deal desk / billing / quota-carrying sales
+    "csm_secondary_market": 6.0,   # CSM outside NL at a non-standout company
+    "language": 3.0,               # hard non-English fluency requirement
+}
 
 # The full candidate profile (profile.md) drives the deep score. Loaded at runtime.
 def load_profile():
@@ -136,65 +203,263 @@ def load_profile():
             return open(p, encoding="utf-8").read()
     return "Profile file missing."
 
-# Weighted rubric from the job-application-workflow skill.
+# Weighted rubric from the job-application-workflow skill. The fourth element is that
+# skill's "Evaluate" guidance, passed to the model so each dimension is judged on the same
+# criteria the skill uses rather than on the label alone.
 RUBRIC = [
-    ("experience", "Experience Alignment", 25),
-    ("skills", "Skills Match", 20),
-    ("seniority", "Seniority Fit", 15),
-    ("domain", "Domain / Industry Fit", 15),
-    ("location_visa", "Location & Visa", 15),
-    ("trajectory", "Career Trajectory", 10),
+    ("experience", "Experience Alignment", 25,
+     "11 years B2B SaaS (CSM + AM) vs the requirements. Distinguish hard prerequisite gaps "
+     "from soft gaps that the adjacent experience plus the MBA cover."),
+    ("skills", "Skills Match", 20,
+     "Judge required tools/certs (Salesforce, SQL, BI) and functional skills (territory "
+     "planning, quota modelling, pipeline analysis) separately."),
+    ("seniority", "Seniority Fit", 15,
+     "Manager is the target zone for this pivot. Too senior (Director/Head of, or 10+ years "
+     "of dedicated RevOps required) penalises hard. Analyst/Specialist is a double penalty: "
+     "overqualification plus comp below the visa floor. Senior Manager fits only when the "
+     "posting explicitly welcomes adjacent backgrounds. Associate/IC framing at a tier-1 "
+     "employer is viable if comp clears the floor."),
+    ("domain", "Domain / Industry Fit", 15,
+     "B2B SaaS or tech is strong (8-10). GRC/compliance/legal/regulatory adds a familiarity "
+     "bonus but is not required for a high score. Non-tech, non-SaaS (manufacturing, retail, "
+     "government) is weaker (4-6)."),
+    ("location_visa", "Location & Visa", 15,
+     "The market has already been resolved in code and is given to you; score sponsorship "
+     "realism and comp certainty within it, not whether the location qualifies. Netherlands "
+     "is the primary market; Dublin is structurally safest on salary thresholds; London is a "
+     "deep RevOps market with strong comp."),
+    ("trajectory", "Career Trajectory", 10,
+     "Does the role advance the RevOps/GTM pivot? Pure CS maintenance is a penalty -- except "
+     "that a strong Senior/Principal CSM role in the Netherlands is a primary target and is "
+     "not penalised as lateral."),
 ]
+RUBRIC_KEYS = [k for k, _, _, _ in RUBRIC]
 
-SCREEN_SYSTEM = """You are a fast pre-screen for a job-search pipeline. Decide if a role is worth a full evaluation for this candidate:
+# ---------------------------------------------------------------- deterministic scoring
+# Everything below is computed in code. The model supplies the six dimension scores and a
+# handful of facts it can only get by reading the posting; the arithmetic and every cap
+# happen here. Previously score_job() just trusted whatever total the model reported, and
+# on the 51 stored rows 21 of those totals were more than 0.6 off the weighted sum of
+# their own dimensions -- the worst by 3.8.
+
+def weighted_total(dims):
+    """sum(dimension * weight) / 100, on a 0-10 scale."""
+    total = sum(float(dims.get(k, 0) or 0) * w for k, _, w, _ in RUBRIC) / 100.0
+    return max(0.0, min(10.0, total))
+
+def title_band(title):
+    for band, rx in TITLE_BANDS:
+        if rx.search(title or ""):
+            return band
+    return "normal"
+
+def is_csm_title(title):
+    return bool(re.search(r"customer success", title or "", re.I))
+
+def below_visa_floor(market, obs):
+    """(True, note) only when a salary is actually stated, in the market's own currency,
+    and below its floor. No FX guessing: a GBP figure is never compared to a EUR floor."""
+    if not market or not obs.get("salary_stated"):
+        return False, ""
+    try:
+        low = float(obs.get("salary_min_base") or 0)
+    except (TypeError, ValueError):
+        return False, ""
+    floor, cur = VISA_FLOORS.get(market, (0, ""))
+    if low <= 0 or not floor:
+        return False, ""
+    stated = (obs.get("salary_currency") or "").upper()
+    if stated and stated != cur:
+        return False, ""
+    if low < floor:
+        return True, f"stated salary {int(low)} {cur} below the {market} visa floor ({floor} {cur})"
+    return False, ""
+
+def apply_caps(weighted, job, obs):
+    """Apply the rubric's deterministic ceilings; the lowest applicable cap wins.
+    Returns (score, caps_applied). Each cap is decided from a regex over the title, the
+    market the location gate already resolved, or one factual observation the model
+    reported -- never from the model's own arithmetic."""
+    caps = []
+    market = job.get("market")
+    title = job.get("title")
+
+    if market is None:
+        caps.append(("location outside target markets", CAPS["location"]))
+
+    band = title_band(title)
+    if band in ("analyst", "specialist"):
+        caps.append((f"{band} title (comp risk vs visa floor)", CAPS[band]))
+    elif band == "director_plus":
+        caps.append(("Director+/Head-of title (stretch vs Manager target)", CAPS["director_plus"]))
+    elif band == "wrong_function":
+        caps.append(("off-target function (title)", CAPS["wrong_function"]))
+
+    if obs.get("function_match") == "off_target":
+        caps.append(("off-target function (description)", CAPS["wrong_function"]))
+
+    if obs.get("language_hard_requirement"):
+        caps.append(("requires non-English fluency", CAPS["language"]))
+
+    low, note = below_visa_floor(market, obs)
+    if low:
+        caps.append((note, CAPS["below_floor"]))
+
+    # CSM track: a primary target in NL, a modest one elsewhere unless the company is a
+    # genuine standout (see the CSM track weighting section of profile.md).
+    if market in ("UK-London", "IE-Dublin", "BE") and is_csm_title(title) \
+            and not obs.get("company_standout"):
+        caps.append((f"CSM in {market} at a non-standout company", CAPS["csm_secondary_market"]))
+
+    if not caps:
+        return round(weighted, 1), []
+    return round(min(weighted, min(c[1] for c in caps)), 1), [c[0] for c in caps]
+
+# JSON schema for the deep score. Replaces "reply with ONLY this JSON" plus a regex that
+# scraped {.*} out of the response -- one row in the corpus is permanently stuck at score 0
+# because that salvage failed on a stray delimiter.
+SCORE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "dimensions": {
+            "type": "object",
+            "properties": {k: {"type": "number"} for k in RUBRIC_KEYS},
+            "required": RUBRIC_KEYS,
+            "additionalProperties": False,
+        },
+        "function_match": {"type": "string", "enum": ["core", "adjacent", "off_target"]},
+        "company_standout": {"type": "boolean"},
+        "language_hard_requirement": {"type": "boolean"},
+        "salary_stated": {"type": "boolean"},
+        "salary_min_base": {"type": "number"},
+        "salary_currency": {"type": "string"},
+        "flags": {"type": "array", "items": {"type": "string"}},
+        "verdict": {"type": "string"},
+    },
+    "required": ["dimensions", "function_match", "company_standout",
+                 "language_hard_requirement", "salary_stated", "salary_min_base",
+                 "salary_currency", "flags", "verdict"],
+    "additionalProperties": False,
+}
+
+# The one market list, used by both prompts. Kept next to VISA_FLOORS so adding a market
+# updates the floors, the caps, and both prompts together -- the old hardcoded copy in the
+# screen prompt had already drifted (it listed Belgium as a target but omitted it from the
+# reject clause).
+MARKETS_SENTENCE = ("Netherlands (anywhere), Belgium (anywhere), UK London area and commuter "
+                    "belt only, Ireland/Dublin")
+REJECT_SENTENCE = ("Germany, Spain, other UK cities, non-Dublin Ireland, remote-from-anywhere, "
+                   "and remote-EMEA roles")
+
+SCREEN_SYSTEM = f"""You are a fast pre-screen for a job-search pipeline. Decide if a role is worth a full evaluation for this candidate:
 
 11 years B2B SaaS (Customer Success + Account Management), pivoting into Revenue Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior-IC level. Also open to Senior/Principal Customer Success Manager roles. US citizen needing EU visa sponsorship.
 
-Target markets ONLY: Netherlands (anywhere), Belgium (anywhere), UK London area only, Ireland/Dublin. Reject Germany, Spain, remote-from-anywhere, and remote-EMEA roles.
+Target markets ONLY: {MARKETS_SENTENCE}. Reject {REJECT_SENTENCE}.
 
-KEEP if the role plausibly fits function AND market. KILL obvious no-fits: wrong function (deal desk, quote-to-cash, billing, pure marketing-ops admin, engineering, finance, quota-carrying AE/SDR), wrong seniority (intern, VP+, C-level), or wrong location (outside NL/London/Dublin, or remote-anywhere).
+KEEP if the role plausibly fits function AND market. KILL obvious no-fits: wrong function (deal desk, quote-to-cash, billing, pure marketing-ops admin, engineering, finance, quota-carrying AE/SDR), wrong seniority (intern, VP+, C-level), or wrong location (outside the target markets above).
 
 Be lenient at this stage - when unsure, keep it. The next stage does the real scoring.
 
-Reply with ONLY this JSON: {"keep": true or false, "reason": "<max 12 words>"}"""
+Reply with ONLY this JSON: {{"keep": true or false, "reason": "<max 12 words>"}}"""
 
 
 def score_system():
-    dims = "\n".join(f"- {label}: {w}%" for _, label, w in RUBRIC)
+    dims = "\n\n".join(f"- {label} ({w}%): {guide}" for _, label, w, guide in RUBRIC)
     return f"""You deeply score a job posting against this candidate's real profile. Be rigorous and honest; this gates whether the candidate spends time applying.
 
 CANDIDATE PROFILE:
 {load_profile()}
 
-SCORING RUBRIC - score each dimension 0-10, then a weighted total:
+SCORING RUBRIC - score each dimension 0-10 against the guidance given:
+
 {dims}
 
-Weighted total = sum(dimension_score * weight) / 100, on a 0-10 scale.
+Calibration, so the dimension scores land on a consistent scale: 8-10 is a bullseye worth applying to immediately, 7 a strong fit with manageable gaps, 6 borderline and worth it only when the pipeline is thin, 5 barely at the bar, 4 and below not worth applying to. Do not inflate to be encouraging.
 
-After the weighted total, apply these deterministic CAPS to the final score (take the lowest that applies):
-- Location outside NL / Belgium / London / Dublin, or remote-anywhere/EMEA: cap 2.
-- Analyst or Specialist title: cap 5 (comp risk vs visa salary floor).
-- Director+ or "Head of" title: cap 6 (stretch for a Manager/senior-IC target).
-- Salary stated and below the market's visa floor: cap 4, and add a "below visa floor" flag.
-- Wrong function (deal desk, quote-to-cash, billing, marketing-ops admin, quota-carrying sales): cap 4.
-- CSM role in UK, Ireland, or Belgium at a non-standout company: cap 6 (see CSM track weighting in the profile).
-- Description states another language (Dutch, German, French, etc) as a hard requirement
-  to do the job -- fluency, "must speak", "native/business-level X required", or similar:
-  cap 3, and add a "requires non-English fluency" flag. Do NOT cap when the language is
-  merely "preferred", "a plus", "advantageous", "nice to have", or similar -- that's fine.
+Do NOT compute a total, and do NOT apply any caps or ceilings. The weighted total and every deterministic cap (title band, location, salary floor, language requirement, CSM track) are computed in code from the facts you report below. Score each dimension on its own merits and report the facts accurately; adjusting a dimension downward to "pre-apply" a cap would double-count it.
 
-Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles. Ignore sponsor for Ireland.
+Alongside the dimensions, report these observations from the posting:
+- function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
+- company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands is capped.
+- language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have.
+- salary_stated / salary_min_base / salary_currency: the annual base-salary floor of any stated range, as a number, with its ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_currency "".
 
-Salary: if not stated, do NOT penalize on salary; estimate comp risk from seniority/company and add a "comp not listed, verify vs floor" flag.
+The market (Netherlands / Belgium / UK-London / Ireland-Dublin) has already been resolved in code and is given to you in the job details. Trust it. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted.
 
-Calibration for the final score: 8-10 apply immediately, 7 strong fit, 6 borderline/volume play, 5 or below do not apply.
+Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution on Location & Visa (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles. Ignore sponsor for Ireland.
 
-Reply with ONLY this JSON, nothing else:
-{{"dimensions": {{"experience": <0-10>, "skills": <0-10>, "seniority": <0-10>, "domain": <0-10>, "location_visa": <0-10>, "trajectory": <0-10>}}, "score": <final 0-10, one decimal, after caps>, "tier": "<location tier label>", "flags": ["<risk flags, [] if none>"], "verdict": "<one blunt sentence, max 22 words>"}}"""
+Salary: if not stated, do NOT penalise on salary; judge comp risk from the seniority and the company.
+
+flags: short risk notes, [] if none. Do not add a flag for missing comp or for a cap -- those are added in code.
+verdict: one blunt sentence, max 22 words."""
 
 # ---------------------------------------------------------------- helpers
 
 def now_iso(): return datetime.now(timezone.utc).isoformat()
+
+# ---------------------------------------------------------------- drop log
+# Every row this run rejects, so the dashboard can show what was thrown away and why.
+# Before this existed, prefilter/location/age/dedupe rejects vanished in memory and a
+# stage-1 kill left nothing behind but a line in the Actions log.
+DROPS = []
+DROP_COUNTS = {}
+RAW_COUNTS = {}
+# Title rejects are the highest-volume, lowest-signal stage (hundreds per run), so only a
+# sample is stored. Counts stay exact for every stage regardless.
+DROP_SAMPLE_CAP = {"prefilter": 60}
+DROP_MAX_ROWS = 400
+# How many rows of each stage to keep in the committed file, newest first. Stage-1 kills and
+# scoring errors are the ones worth actually reading, so they get the most room.
+DROP_KEEP_PER_STAGE = {"prefilter": 80, "age": 40, "dedupe": 40,
+                       "stage1-kill": 120, "score-error": 40, "sponsor-required": 40}
+DROP_KEEP_DEFAULT = 40
+
+_DROP_SEEN = set()
+
+def record_drop(job, stage, reason):
+    # A prefilter drop is counted as title-vs-location, so the footer says which half of the
+    # gate is doing the work rather than lumping thousands of rows under one number.
+    if stage == "prefilter":
+        stage = "prefilter:" + reason.split(":", 1)[0]
+    DROP_COUNTS[stage] = DROP_COUNTS.get(stage, 0) + 1
+    group = stage.split(":")[0]
+    cap = DROP_SAMPLE_CAP.get(group)
+    if cap is not None:
+        # Sample for variety, not volume: 60 rows all reading "Account Manager / no
+        # target-function keyword" tell you nothing, so only the first of each
+        # title+reason pair is stored.
+        fingerprint = (stage, (job.get("title") or "").lower(), reason)
+        if fingerprint in _DROP_SEEN:
+            return
+        if sum(1 for d in DROPS if d["stage"].split(":")[0] == group) >= cap:
+            return
+        _DROP_SEEN.add(fingerprint)
+    DROPS.append({
+        "id": str(job.get("id", "")), "title": job.get("title", ""),
+        "company": job.get("company", ""), "location": job.get("location", ""),
+        "source": job.get("source", ""), "stage": stage, "reason": reason,
+        "dropped_at": now_iso(),
+    })
+
+def bump_raw(source, n):
+    """Count rows a source returned before filtering, so a regex change that silently
+    zeroes a source looks different from a genuinely quiet week."""
+    RAW_COUNTS[source] = RAW_COUNTS.get(source, 0) + n
+
+def src_line(source, kept):
+    raw = RAW_COUNTS.get(source)
+    return f"ok (raw {raw} -> kept {kept})" if raw is not None else f"ok ({kept})"
+
+# Token usage across the run, surfaced in the status footer. cache_read staying at 0 across
+# a multi-job run means something volatile is leaking into the cached system prefix.
+USAGE = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
+
+def note_usage(u):
+    USAGE["in"] += u.get("input_tokens", 0) or 0
+    USAGE["out"] += u.get("output_tokens", 0) or 0
+    USAGE["cache_read"] += u.get("cache_read_input_tokens", 0) or 0
+    USAGE["cache_write"] += u.get("cache_creation_input_tokens", 0) or 0
 
 def notify_strong_matches(jobs):
     """Push a notification via ntfy.sh (free, no signup) for anything scoring high
@@ -220,37 +485,111 @@ def get(url, **kw):
 def strip_html(t):
     return re.sub(r"<[^>]+>", " ", t or "").replace("&amp;", "&").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">")
 
-def location_ok(country, location):
-    """Country-aware location gate. country is 'nl'/'gb'/'ie' when known, else ''."""
+def clean_text(t):
+    """Decode HTML entities and collapse whitespace in a short scraped field. Titles come
+    off HTML pages still carrying entities -- one stored title reads "Revenue Operations
+    &amp; Systems" -- which then reach the model and the dashboard verbatim."""
+    return re.sub(r"\s+", " ", html.unescape(str(t or ""))).strip()
+
+# Sources disagree on how they name a country: Adzuna sends ISO codes, revopsroles sends
+# display names. Normalise to the ISO code the rest of the pipeline expects.
+COUNTRY_CODES = {
+    "nl": "nl", "netherlands": "nl", "the netherlands": "nl", "holland": "nl",
+    "be": "be", "belgium": "be", "belgie": "be", "belgique": "be",
+    "gb": "gb", "uk": "gb", "united kingdom": "gb", "great britain": "gb", "england": "gb",
+    "ie": "ie", "ireland": "ie",
+}
+
+def country_code(v):
+    return COUNTRY_CODES.get((v or "").strip().lower(), "")
+
+# ---------------------------------------------------------------- cross-source dedupe key
+COMPANY_SUFFIX = re.compile(r"\b(inc|ltd|llc|bv|gmbh|corp|co|plc|nv)\b\.?", re.I)
+# One bucket per city. These used to share a single bucket per regex alternation group,
+# because the code took a slice of the *pattern* string rather than the matched text -- so
+# "amster" stood in for every Dutch city and the same role in Amsterdam and in Rotterdam
+# collapsed into one dashboard entry.
+DEDUPE_CITY = re.compile(r"amsterdam|rotterdam|utrecht|eindhoven|den haag|the hague|hague"
+                         r"|dublin|london|brussels|antwerp|ghent", re.I)
+CITY_ALIAS = {"the hague": "denhaag", "den haag": "denhaag", "hague": "denhaag"}
+
+def norm_company(s):
+    return re.sub(r"\s+", "", COMPANY_SUFFIX.sub("", re.sub(r"[^a-z0-9 ]", "", (s or "").lower())))
+
+def dkey(j):
+    """(company, title, city) identity for collapsing the same role found twice. All three
+    parts must be non-empty before it's used to dedupe, so a row with no company never
+    swallows unrelated rows."""
+    m = DEDUPE_CITY.search(j.get("location") or "")
+    city = CITY_ALIAS.get(m.group(0).lower(), m.group(0).lower()) if m else ""
+    return (norm_company(j.get("company")),
+            re.sub(r"[^a-z0-9]", "", (j.get("title") or "").lower())[:40], city)
+
+def market_of(country, location):
+    """Which target market a row belongs to ('NL' / 'BE' / 'UK-London' / 'IE-Dublin'),
+    or None if it's outside all of them. This is the single source of truth for location:
+    location_ok() and the deep score's location cap both read it, so the code and the
+    rubric can no longer disagree (a Staines role used to pass the gate here and then get
+    capped at 2 by the model for being 'outside the London commuter belt')."""
     loc = location or ""
     cc = (country or "").lower()
-    if cc == "nl" or NL_LOC.search(loc):
-        return True
-    if cc == "be" or BE_LOC.search(loc):
-        return True
-    if cc == "ie" or IE_LOC.search(loc):
-        # a non-Dublin Irish city (Cork/Galway/...) is out even if "Ireland" also appears
-        if IE_OTHER_CITY.search(loc) and not re.search(r"dublin", loc, re.I):
-            return False
-        return True
-    if cc == "gb" or UK_LONDON.search(loc) or UK_OTHER_CITY.search(loc):
-        if UK_OTHER_CITY.search(loc) and not UK_LONDON.search(loc):
-            return False        # a UK city that isn't London
-        return bool(UK_LONDON.search(loc)) or (cc == "gb" and not loc)
-    # ATS/community rows with no country: accept only if a target location shows,
-    # and reject pure-remote / EMEA-wide with no target city.
-    if NL_LOC.search(loc) or IE_LOC.search(loc) or UK_LONDON.search(loc):
-        return not (IE_OTHER_CITY.search(loc) or UK_OTHER_CITY.search(loc))
+
+    # An explicitly named city we don't want, with no target city alongside it, is out --
+    # checked first so "Cork, Ireland" and "Cambridge, UK" can't slip through on the
+    # strength of the country half of the string.
+    if IE_OTHER_CITY.search(loc) and not IE_CITY.search(loc):
+        return None
+    if UK_OTHER_CITY.search(loc) and not UK_LONDON.search(loc):
+        return None
+
+    # A named city or region anchors the posting, remote wording notwithstanding.
+    if NL_CITY.search(loc):
+        return "NL"
+    if BE_CITY.search(loc):
+        return "BE"
+    if IE_CITY.search(loc):
+        return "IE-Dublin"
+    if UK_LONDON.search(loc):
+        return "UK-London"
+
+    # No city named. A remote-anywhere/EMEA-wide posting isn't anchored to a target market,
+    # so it's out. This check used to sit on the country-less path only, which meant an
+    # Adzuna 'nl'/'gb' row or any 'be' row skipped it entirely.
     if REMOTE_ONLY.search(loc):
-        return False
-    return False
+        return None
+
+    # Country named but no city: acceptable, since plenty of Dublin/Amsterdam postings list
+    # only the country.
+    if NL_COUNTRY.search(loc):
+        return "NL"
+    if BE_COUNTRY.search(loc):
+        return "BE"
+    if IE_COUNTRY.search(loc):
+        return "IE-Dublin"
+
+    # Fall back to the source's own country field. The NL/BE/IE feeds are country-scoped so
+    # the code alone is enough. A GB feed spans the whole UK, so an unrecognised UK location
+    # is not assumed to be London -- only a bare/empty one is.
+    if cc in ("nl", "be", "ie"):
+        return {"nl": "NL", "be": "BE", "ie": "IE-Dublin"}[cc]
+    if cc == "gb" and not loc:
+        return "UK-London"
+    return None
+
+def location_ok(country, location):
+    return market_of(country, location) is not None
 
 def prefilter(title, location, country=""):
-    if not INCLUDE_TITLE.search(title or ""):
-        return False
-    if EXCLUDE_TITLE.search(title or ""):
-        return False
-    return location_ok(country, location)
+    """None if the row passes the free filters; otherwise a short reason for the drop log."""
+    t = title or ""
+    if not INCLUDE_TITLE.search(t):
+        return "title: no target-function keyword"
+    m = EXCLUDE_TITLE.search(t)
+    if m:
+        return f"title: excluded term '{m.group(0).strip()}'"
+    if market_of(country, location) is None:
+        return f"location: outside target markets ({location or 'unspecified'})"
+    return None
 
 def parse_date_loose(v):
     """Best-effort parse of a source's posted-date value. Returns an aware datetime or None."""
@@ -288,50 +627,58 @@ def recent_enough(posted_raw, max_days=MAX_POST_AGE_DAYS):
 def fetch_adzuna(app_id, app_key, diag):
     out, ids = [], set()
     for cc, label in ADZUNA_COUNTRIES.items():
-        raw = title_ok = kept = 0
+        raw = kept = 0
         err = None
         for phrase in ADZUNA_PHRASES:
-            try:
-                r = get(f"https://api.adzuna.com/v1/api/jobs/{cc}/search/1", params={
-                    "app_id": app_id, "app_key": app_key,
-                    "what": phrase, "results_per_page": ADZUNA_PER_PAGE,
-                    "max_days_old": ADZUNA_MAX_DAYS, "sort_by": "date",
-                })
-                if r.status_code != 200:
-                    err = f"HTTP {r.status_code}: {r.text[:100]}"
-                    break
-                results = r.json().get("results", [])
-                raw += len(results)
-                for j in results:
-                    jid = f"az-{cc}-{j.get('id')}"
-                    if jid in ids:
-                        continue
-                    title = j.get("title", "")
-                    loc = (j.get("location") or {}).get("display_name", "")
-                    if not (INCLUDE_TITLE.search(title or "") and not EXCLUDE_TITLE.search(title or "")):
-                        continue
-                    title_ok += 1
-                    if not location_ok(cc, loc):
-                        continue
-                    ids.add(jid)
-                    sal = ""
-                    if j.get("salary_min"):
-                        sal = f"{int(j['salary_min'])}-{int(j.get('salary_max') or j['salary_min'])} {label} local"
-                    out.append({
-                        "id": jid,
-                        "company": (j.get("company") or {}).get("display_name", ""),
-                        "title": title, "location": loc, "country": cc,
-                        "url": j.get("redirect_url", ""), "source": "adzuna",
-                        "description": strip_html(j.get("description", "")),
-                        "salary": sal, "posted_at": j.get("created", ""),
+            for page in range(1, ADZUNA_PAGES + 1):
+                try:
+                    r = get(f"https://api.adzuna.com/v1/api/jobs/{cc}/search/{page}", params={
+                        "app_id": app_id, "app_key": app_key,
+                        "what": phrase, "results_per_page": ADZUNA_PER_PAGE,
+                        "max_days_old": ADZUNA_MAX_DAYS, "sort_by": "date",
                     })
-                    kept += 1
-                time.sleep(0.25)
-            except Exception as e:
-                err = f"error: {e}"
+                    if r.status_code != 200:
+                        err = f"HTTP {r.status_code}: {r.text[:100]}"
+                        break
+                    results = r.json().get("results", [])
+                    raw += len(results)
+                    for j in results:
+                        jid = f"az-{cc}-{j.get('id')}"
+                        if jid in ids:
+                            continue
+                        title = j.get("title", "")
+                        loc = (j.get("location") or {}).get("display_name", "")
+                        stub = {"id": jid, "title": title, "location": loc,
+                                "company": (j.get("company") or {}).get("display_name", ""),
+                                "source": "adzuna"}
+                        reason = prefilter(title, loc, cc)
+                        if reason:
+                            record_drop(stub, "prefilter", reason)
+                            continue
+                        ids.add(jid)
+                        sal = ""
+                        if j.get("salary_min"):
+                            sal = f"{int(j['salary_min'])}-{int(j.get('salary_max') or j['salary_min'])} {label} local"
+                        out.append({
+                            "id": jid,
+                            "company": (j.get("company") or {}).get("display_name", ""),
+                            "title": title, "location": loc, "country": cc,
+                            "market": market_of(cc, loc),
+                            "url": j.get("redirect_url", ""), "source": "adzuna",
+                            "description": strip_html(j.get("description", "")),
+                            "salary": sal, "posted_at": j.get("created", ""),
+                        })
+                        kept += 1
+                    time.sleep(0.25)
+                    if len(results) < ADZUNA_PER_PAGE:
+                        break            # last page for this phrase
+                except Exception as e:
+                    err = f"error: {e}"
+                    break
+            if err:
                 break
-        # diagnostic: raw results across phrases -> passed title filter -> kept after location
-        diag[f"adzuna:{cc}"] = err or f"raw {raw}, title-ok {title_ok}, kept {kept}"
+        bump_raw("adzuna", raw)
+        diag[f"adzuna:{cc}"] = err or f"raw {raw}, kept {kept}"
     return out
 
 # ---------------------------------------------------------------- Reed (UK)
@@ -344,10 +691,16 @@ def fetch_reed(api_key):
                      auth=(api_key, ""), timeout=30,
                      headers={"User-Agent": "Mozilla/5.0 (job-radar; personal use)"})
     r.raise_for_status()
-    for j in r.json().get("results", []):
+    results = r.json().get("results", [])
+    bump_raw("reed", len(results))
+    for j in results:
         title = j.get("jobTitle", "")
         loc = j.get("locationName", "")
-        if not prefilter(title, loc, "gb"):
+        reason = prefilter(title, loc, "gb")
+        if reason:
+            record_drop({"id": f"reed-{j.get('jobId')}", "title": title, "location": loc,
+                         "company": j.get("employerName", ""), "source": "reed"},
+                        "prefilter", reason)
             continue
         sal = ""
         if j.get("minimumSalary"):
@@ -355,6 +708,7 @@ def fetch_reed(api_key):
         out.append({
             "id": f"reed-{j.get('jobId')}", "company": j.get("employerName", ""),
             "title": title, "location": loc or "London", "country": "gb",
+            "market": market_of("gb", loc),
             "url": j.get("jobUrl", ""), "source": "reed",
             "description": strip_html(j.get("jobDescription", "")), "salary": sal,
             "posted_at": j.get("date", ""),
@@ -376,12 +730,17 @@ def fetch_jobspy_ireland():
             continue
         if df is None or len(df) == 0:
             continue
+        bump_raw("indeed", len(df))
         for _, row in df.iterrows():
             title = str(row.get("title") or "")
             loc = str(row.get("location") or "Dublin")
-            if not prefilter(title, loc, "ie"):
-                continue
             jid = "js-" + re.sub(r"\W+", "-", str(row.get("job_url") or title))[-70:]
+            reason = prefilter(title, loc, "ie")
+            if reason:
+                record_drop({"id": jid, "title": title, "location": loc,
+                             "company": str(row.get("company") or ""), "source": "indeed"},
+                            "prefilter", reason)
+                continue
             if jid in seen:
                 continue
             seen.add(jid)
@@ -391,6 +750,7 @@ def fetch_jobspy_ireland():
             out.append({
                 "id": jid, "company": str(row.get("company") or ""),
                 "title": title, "location": loc, "country": "ie",
+                "market": market_of("ie", loc),
                 "url": str(row.get("job_url") or ""), "source": "indeed",
                 "description": strip_html(str(row.get("description") or "")), "salary": sal,
                 "posted_at": str(row.get("date_posted") or ""),
@@ -402,11 +762,19 @@ def fetch_jobspy_ireland():
 def fetch_greenhouse(name, slug):
     r = get(f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"); r.raise_for_status()
     out = []
-    for j in r.json().get("jobs", []):
+    jobs = r.json().get("jobs", [])
+    bump_raw("ats", len(jobs))
+    for j in jobs:
         loc = (j.get("location") or {}).get("name", "")
-        if not prefilter(j.get("title", ""), loc): continue
+        reason = prefilter(j.get("title", ""), loc)
+        if reason:
+            record_drop({"id": f"gh-{slug}-{j['id']}", "title": j.get("title", ""),
+                         "location": loc, "company": name, "source": "greenhouse"},
+                        "prefilter", reason)
+            continue
         out.append({"id": f"gh-{slug}-{j['id']}", "company": name, "title": j["title"],
-                    "location": loc, "country": "", "url": j.get("absolute_url", ""),
+                    "location": loc, "country": "", "market": market_of("", loc),
+                    "url": j.get("absolute_url", ""),
                     "source": "greenhouse", "posted_at": j.get("updated_at", ""),
                     "_detail": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{j['id']}"})
     return out
@@ -420,11 +788,19 @@ def greenhouse_desc(url):
 def fetch_lever(name, slug):
     r = get(f"https://api.lever.co/v0/postings/{slug}?mode=json"); r.raise_for_status()
     out = []
-    for j in r.json():
+    jobs = r.json()
+    bump_raw("ats", len(jobs))
+    for j in jobs:
         loc = (j.get("categories") or {}).get("location", "") or ""
-        if not prefilter(j.get("text", ""), loc): continue
+        reason = prefilter(j.get("text", ""), loc)
+        if reason:
+            record_drop({"id": f"lv-{slug}-{j['id']}", "title": j.get("text", ""),
+                         "location": loc, "company": name, "source": "lever"},
+                        "prefilter", reason)
+            continue
         out.append({"id": f"lv-{slug}-{j['id']}", "company": name, "title": j["text"],
-                    "location": loc, "country": "", "url": j.get("hostedUrl", ""),
+                    "location": loc, "country": "", "market": market_of("", loc),
+                    "url": j.get("hostedUrl", ""),
                     "source": "lever", "posted_at": j.get("createdAt", ""),
                     "description": strip_html(j.get("descriptionPlain") or j.get("description", ""))})
     return out
@@ -432,11 +808,19 @@ def fetch_lever(name, slug):
 def fetch_ashby(name, slug):
     r = get(f"https://api.ashbyhq.com/posting-api/job-board/{slug}"); r.raise_for_status()
     out = []
-    for j in r.json().get("jobs", []):
+    jobs = r.json().get("jobs", [])
+    bump_raw("ats", len(jobs))
+    for j in jobs:
         loc = j.get("location", "") or ""
-        if not prefilter(j.get("title", ""), loc): continue
+        reason = prefilter(j.get("title", ""), loc)
+        if reason:
+            record_drop({"id": f"as-{slug}-{j.get('id')}", "title": j.get("title", ""),
+                         "location": loc, "company": name, "source": "ashby"},
+                        "prefilter", reason)
+            continue
         out.append({"id": f"as-{slug}-{j.get('id')}", "company": name, "title": j["title"],
-                    "location": loc, "country": "", "url": j.get("jobUrl") or j.get("applyUrl", ""),
+                    "location": loc, "country": "", "market": market_of("", loc),
+                    "url": j.get("jobUrl") or j.get("applyUrl", ""),
                     "source": "ashby", "posted_at": j.get("publishedAt", ""),
                     "description": strip_html(j.get("descriptionPlain") or "")})
     return out
@@ -479,16 +863,22 @@ def fetch_linkedin():
                 if jid in seen_ids:
                     continue
                 seen_ids.add(jid); new_ids_this_page += 1
+                bump_raw("linkedin", 1)
                 m_company = re.search(r'<h4 class="base-search-card__subtitle">.*?>\s*([^<]+?)\s*</a>', c, re.S)
                 m_loc = re.search(r'<span class="job-search-card__location">\s*([^<]+?)\s*</span>', c)
                 m_date = re.search(r'<time class="job-search-card__listdate[^"]*"\s+datetime="([^"]+)"', c)
                 title, loc = m_title.group(1), (m_loc.group(1) if m_loc else "")
-                if not prefilter(title, loc):
+                company = m_company.group(1) if m_company else ""
+                reason = prefilter(title, loc)
+                if reason:
+                    record_drop({"id": f"li-{jid}", "title": title, "location": loc,
+                                 "company": company, "source": "linkedin"}, "prefilter", reason)
                     continue
                 detail_url = f"https://www.linkedin.com/jobs/view/{jid}"
                 out.append({
-                    "id": f"li-{jid}", "company": (m_company.group(1) if m_company else ""),
-                    "title": title, "location": loc, "country": "", "url": detail_url,
+                    "id": f"li-{jid}", "company": company,
+                    "title": title, "location": loc, "country": "",
+                    "market": market_of("", loc), "url": detail_url,
                     "source": "linkedin", "posted_at": (m_date.group(1) if m_date else ""),
                     "_detail": detail_url,
                 })
@@ -556,8 +946,14 @@ def fetch_revopsroles():
             if not jid or jid in seen_ids:
                 continue
             seen_ids.add(jid)
+            bump_raw("revopsroles", 1)
             title, loc = field("title"), field("location_raw")
-            if not prefilter(title, loc):
+            cc = country_code(field("location_country"))
+            reason = prefilter(title, loc, cc)
+            if reason:
+                record_drop({"id": f"rr-{jid}", "title": title, "location": loc,
+                             "company": field("company_name"), "source": "revopsroles"},
+                            "prefilter", reason)
                 continue
             sal = ""
             if field("salary_min"):
@@ -570,7 +966,8 @@ def fetch_revopsroles():
             src_url = field("source_url") or f"https://revopsroles.com/jobs/{jid}"
             out.append({
                 "id": f"rr-{jid}", "company": field("company_name"),
-                "title": title, "location": loc, "country": field("location_country").lower(),
+                "title": title, "location": loc, "country": cc,
+                "market": market_of(cc, loc),
                 "url": src_url, "source": "revopsroles", "salary": sal,
                 "posted_at": float(posted) if posted else "",
                 "_detail": src_url, "_fallback_desc": summary,
@@ -605,17 +1002,25 @@ def fetch_apify_hiringcafe(token):
               "enrichDescription": True},
         timeout=280)
     r.raise_for_status()
-    for j in r.json():
+    items = r.json()
+    bump_raw("hiring.cafe", len(items))
+    for j in items:
         info = j.get("job_information", {}) or {}; proc = j.get("v5_processed_job_data", {}) or {}
         title = info.get("title") or proc.get("core_job_title", "")
         loc = proc.get("formatted_workplace_location", "")
-        if not prefilter(title, loc): continue
+        reason = prefilter(title, loc)
+        if reason:
+            record_drop({"id": "hc-" + str(j.get("id", ""))[:60], "title": title,
+                         "location": loc, "company": proc.get("company_name", ""),
+                         "source": "hiring.cafe"}, "prefilter", reason)
+            continue
         sal = ""
         if proc.get("yearly_min_compensation"):
             cur = proc.get("listed_compensation_currency") or ""
             sal = f"{int(proc['yearly_min_compensation'])}-{int(proc.get('yearly_max_compensation') or proc['yearly_min_compensation'])} {cur}".strip()
         out.append({"id": "hc-" + str(j.get("id", ""))[:60], "company": proc.get("company_name", ""),
-                    "title": title, "location": loc, "country": "", "salary": sal,
+                    "title": title, "location": loc, "country": "",
+                    "market": market_of("", loc), "salary": sal,
                     "url": j.get("apply_url") or "", "source": "hiring.cafe",
                     "description": strip_html(info.get("description", "")),
                     "posted_at": proc.get("estimated_publish_date", "")})
@@ -628,21 +1033,54 @@ def _extract_json(text):
     m = re.search(r"\{.*\}", text, re.S)
     return json.loads(m.group(0) if m else text)
 
-def _claude_call(api_key, model, system, user, max_tokens, extra=None):
-    body = {"model": model, "max_tokens": max_tokens, "system": system,
-            "messages": [{"role": "user", "content": user}]}
+def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_system=False):
+    """One Messages API call, with bounded retry on the transient failures. cache_system
+    puts a cache breakpoint on the system prompt: the deep-score prefix (rubric + the whole
+    of profile.md) is identical for every job in a run, so without this it gets re-billed
+    on all 30 calls."""
+    body = {
+        "model": model, "max_tokens": max_tokens,
+        "system": ([{"type": "text", "text": system,
+                     "cache_control": {"type": "ephemeral"}}] if cache_system else system),
+        "messages": [{"role": "user", "content": user}],
+    }
     if extra:
         body.update(extra)
-    r = requests.post(API_URL, timeout=90, headers={
-        "x-api-key": api_key, "anthropic-version": API_HEADERS_VERSION,
-        "content-type": "application/json"}, json=body)
-    r.raise_for_status()
-    return "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
+    last = None
+    for attempt in range(CLAUDE_ATTEMPTS):
+        if attempt:
+            time.sleep(2 ** attempt)      # 2s, 4s
+        try:
+            r = requests.post(API_URL, timeout=180, headers={
+                "x-api-key": api_key, "anthropic-version": API_HEADERS_VERSION,
+                "content-type": "application/json"}, json=body)
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last = e
+            continue
+        if r.status_code in (408, 409, 429) or r.status_code >= 500:
+            last = RuntimeError(f"HTTP {r.status_code}: {r.text[:140]}")
+            continue
+        r.raise_for_status()             # 4xx other than the above is a real bug, not a blip
+        payload = r.json()
+        note_usage(payload.get("usage") or {})
+        stop = payload.get("stop_reason")
+        # Opus 5 can decline a request outright (HTTP 200, empty content) and can run out of
+        # room mid-answer. Both used to surface as an empty string and a bogus score of 0.
+        if stop == "refusal":
+            raise RuntimeError("model declined to score this posting (stop_reason=refusal)")
+        if stop == "max_tokens":
+            raise RuntimeError(f"hit max_tokens ({max_tokens}) before finishing")
+        return "".join(b.get("text", "") for b in payload.get("content", [])
+                       if b.get("type") == "text")
+    raise last or RuntimeError("claude call failed")
 
 def job_message(job):
     desc = (job.get("description") or "")[:DESC_CHAR_CAP]
     return (f"Title: {job['title']}\nCompany: {job.get('company','?')}\n"
             f"Location: {job.get('location','?')}\n"
+            # Facts resolved in code, given so the model doesn't re-derive (and mis-derive) them.
+            + (f"Market (resolved in code, trust this): {job['market']}\n" if job.get("market") else "")
+            + (f"Title band (resolved in code): {title_band(job.get('title'))}\n")
             + (f"Salary: {job['salary']}\n" if job.get("salary") else "")
             + (f"Sponsor: {job['sponsor']}\n" if job.get("sponsor") else "")
             + (f"Description: {desc}" if desc else "No description; judge on title/location/sponsor only."))
@@ -653,26 +1091,100 @@ def screen_job(api_key, job):
     return bool(data.get("keep", True)), str(data.get("reason", ""))[:80]
 
 def score_job(api_key, system, job):
-    # Sonnet 5: thinking disabled keeps it a fast, deterministic structured scorer.
-    text = _claude_call(api_key, CLAUDE_SCORE_MODEL, system, job_message(job), 900,
-                        extra={"thinking": {"type": "disabled"}})
+    """The model scores the six dimensions and reports what it read off the posting; the
+    total and the caps are computed here. Opus 5 thinks by default -- do not disable it,
+    which on this model can leak reasoning into the visible answer."""
+    text = _claude_call(
+        api_key, CLAUDE_SCORE_MODEL, system, job_message(job), SCORE_MAX_TOKENS,
+        cache_system=True,
+        extra={"output_config": {"effort": SCORE_EFFORT,
+                                 "format": {"type": "json_schema", "schema": SCORE_SCHEMA}}})
     data = _extract_json(text)
-    dims = data.get("dimensions", {}) or {}
+    dims = {k: max(0.0, min(10.0, float((data.get("dimensions") or {}).get(k, 0) or 0)))
+            for k in RUBRIC_KEYS}
+    raw = weighted_total(dims)
+    score, caps = apply_caps(raw, job, data)
+    flags = [str(f)[:70] for f in (data.get("flags") or [])][:6]
+    if not data.get("salary_stated"):
+        flags.append("comp not listed, verify vs floor")
     return {
-        "score": round(float(data.get("score", 0)), 1),
-        "dimensions": {k: float(dims.get(k, 0)) for k, _, _ in RUBRIC},
-        "tier": str(data.get("tier", ""))[:40],
-        "flags": [str(f)[:70] for f in data.get("flags", [])][:6],
-        "verdict": str(data.get("verdict", ""))[:180],
+        "score": score, "score_raw": round(raw, 1), "caps_applied": caps,
+        "dimensions": dims,
+        "tier": job.get("market") or "outside target markets",
+        "flags": flags[:8], "verdict": str(data.get("verdict", ""))[:180],
     }
 
 # ---------------------------------------------------------------- main
+
+def load_json(path, default):
+    try:
+        return json.load(open(path)) if os.path.exists(path) else default
+    except Exception:
+        return default
+
+def cmd_selftest():
+    """Replay the stored dimension scores through the new engine and report every row whose
+    score moves. No network, no API key. The drifts here are exactly the rows where the old
+    model-reported total disagreed with the weighted sum of its own dimensions."""
+    jobs = load_json("docs/jobs.json", [])
+    moved = 0
+    print(f"Replaying {len(jobs)} stored rows through weighted_total + apply_caps\n")
+    for j in jobs:
+        dims = j.get("dimensions") or {}
+        if not dims:
+            continue
+        raw = weighted_total(dims)
+        # Reconstruct the observations the old rows never stored, from what they did store.
+        obs = {"function_match": "core", "company_standout": True,
+               "language_hard_requirement": any("language" in f.lower() or "fluency" in f.lower()
+                                                for f in (j.get("flags") or [])),
+               "salary_stated": False, "salary_min_base": 0, "salary_currency": ""}
+        job = {"title": j.get("title"), "market": market_of(j.get("country"), j.get("location"))}
+        new, caps = apply_caps(raw, job, obs)
+        old = j.get("score", 0)
+        if abs(new - old) > 0.05:
+            moved += 1
+            print(f"  {old:>4} -> {new:<4} weighted {raw:.1f}  {str(j.get('title'))[:44]:<46}"
+                  f" {'; '.join(caps) or 'no caps'}")
+    print(f"\n{moved} of {len(jobs)} rows move. Inspect any row whose movement you can't "
+          f"explain from its caps.\n"
+          "Caveat: the stored rows predate the observation fields, so the salary-floor and "
+          "off-target-function\ncaps cannot be replayed and some rows will land lower than "
+          "this once actually rescored.")
+
+def cmd_unkill():
+    """Clear stage-1 Haiku kills out of seen.json so they get re-evaluated next run.
+    Replaces hand-editing the JSON when the cheap screen throws away something good."""
+    dropped = load_json("docs/excluded.json", {}).get("rows", [])
+    killed = {d["id"] for d in dropped if d.get("stage") == "stage1-kill" and d.get("id")}
+    seen = set(load_json("seen.json", []))
+    freed = killed & seen
+    json.dump(sorted(seen - freed), open("seen.json", "w"))
+    print(f"Freed {len(freed)} stage-1 kills for re-evaluation "
+          f"({len(killed)} recorded, {len(killed) - len(freed)} already absent from seen.json).")
+
+def cmd_rescore():
+    """Drop every scored row so the whole corpus re-runs under the current engine."""
+    jobs = load_json("docs/jobs.json", [])
+    ids = {str(j.get("id")) for j in jobs}
+    seen = set(load_json("seen.json", []))
+    json.dump(sorted(seen - ids), open("seen.json", "w"))
+    json.dump([], open("docs/jobs.json", "w"))
+    print(f"Cleared {len(jobs)} scored rows; {len(ids & seen)} ids freed from seen.json. "
+          f"Run scan.py to rescore.")
 
 def main():
     verify, dry = "--verify" in sys.argv, "--dry" in sys.argv
     here = os.path.dirname(os.path.abspath(__file__))
     os.chdir(here)
     companies = json.load(open("companies.json")).get("companies", []) if os.path.exists("companies.json") else []
+
+    if "--selftest" in sys.argv:
+        return cmd_selftest()
+    if "--unkill" in sys.argv:
+        return cmd_unkill()
+    if "--rescore" in sys.argv:
+        return cmd_rescore()
 
     if verify:
         print("Verifying optional ATS slugs...")
@@ -695,7 +1207,7 @@ def main():
     if aid and akey:
         try:
             jobs = fetch_adzuna(aid, akey, diag); found += jobs
-            src_status["Adzuna (NL+UK)"] = f"ok ({len(jobs)}) | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("adzuna:"))
+            src_status["Adzuna (NL+UK)"] = f"{src_line('adzuna', len(jobs))} | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("adzuna:"))
         except Exception as e:
             src_status["Adzuna (NL+UK)"] = f"FAIL: {e}"
     else:
@@ -706,7 +1218,7 @@ def main():
     if reed_key:
         try:
             jobs = fetch_reed(reed_key); found += jobs
-            src_status["Reed (UK)"] = f"ok ({len(jobs)})"
+            src_status["Reed (UK)"] = src_line("reed", len(jobs))
         except Exception as e:
             src_status["Reed (UK)"] = f"FAIL: {e}"
     else:
@@ -715,7 +1227,7 @@ def main():
     # 3. JobSpy / Indeed (Ireland)
     try:
         jobs = fetch_jobspy_ireland(); found += jobs
-        src_status["Indeed/JobSpy (Dublin)"] = f"ok ({len(jobs)})"
+        src_status["Indeed/JobSpy (Dublin)"] = src_line("indeed", len(jobs))
     except Exception as e:
         src_status["Indeed/JobSpy (Dublin)"] = f"skipped: {e}"
 
@@ -726,7 +1238,7 @@ def main():
             jobs = ATS[c["ats"]](c["name"], c["slug"]); found += jobs; ats_n += len(jobs)
         except Exception:
             pass
-    src_status[f"Company ATS ({len(companies)} watched)"] = f"ok ({ats_n})"
+    src_status[f"Company ATS ({len(companies)} watched)"] = src_line("ats", ats_n)
 
     # 5. hiring.cafe via Apify (direct API blocks datacenter IPs, so this runs
     # Tom's saved searches through the Apify actor instead)
@@ -734,7 +1246,7 @@ def main():
     if apify_token:
         try:
             jobs = fetch_apify_hiringcafe(apify_token); found += jobs
-            src_status["hiring.cafe (Apify)"] = f"ok ({len(jobs)})"
+            src_status["hiring.cafe (Apify)"] = src_line("hiring.cafe", len(jobs))
         except Exception as e:
             src_status["hiring.cafe (Apify)"] = f"FAIL: {e}"
     else:
@@ -743,39 +1255,46 @@ def main():
     # 6. LinkedIn (public guest search, mirrors Tom's own "based on your preferences" page)
     try:
         jobs = fetch_linkedin(); found += jobs
-        src_status["LinkedIn"] = f"ok ({len(jobs)})"
+        src_status["LinkedIn"] = src_line("linkedin", len(jobs))
     except Exception as e:
         src_status["LinkedIn"] = f"skipped: {e}"
 
     # 7. revopsroles.com (per-country location pages, robots.txt-compliant)
     try:
         jobs = fetch_revopsroles(); found += jobs
-        src_status["revopsroles.com"] = f"ok ({len(jobs)})"
+        src_status["revopsroles.com"] = src_line("revopsroles", len(jobs))
     except Exception as e:
         src_status["revopsroles.com"] = f"skipped: {e}"
 
+    # Normalise the short scraped fields once, here, rather than in seven fetchers.
+    for j in found:
+        for k in ("title", "company", "location"):
+            if j.get(k):
+                j[k] = clean_text(j[k])
+
     # age filter: drop anything older than a week when the source told us its post date
-    before_age = len(found)
-    found = [j for j in found if recent_enough(j.get("posted_at"))]
-    src_status["age filter"] = f"dropped {before_age - len(found)} older than {MAX_POST_AGE_DAYS}d"
+    kept_age, no_date = [], 0
+    for j in found:
+        if parse_date_loose(j.get("posted_at")) is None:
+            no_date += 1        # recent_enough fails open here by design; count it so a
+                                # source that silently loses its date field is visible
+        if recent_enough(j.get("posted_at")):
+            kept_age.append(j)
+        else:
+            record_drop(j, "age", f"posted more than {MAX_POST_AGE_DAYS}d ago ({j.get('posted_at')})")
+    src_status["age filter"] = (f"dropped {len(found) - len(kept_age)} older than "
+                               f"{MAX_POST_AGE_DAYS}d; {no_date} had no usable date (kept)")
+    found = kept_age
 
     # cross-source dedupe: the same role can arrive from Indeed + Greenhouse etc, and
     # can also resurface via a different source in a later run than the one that first
     # found it -- so seed dseen with everything already on the dashboard, not just this run.
-    COMPANY_SUFFIX = re.compile(r"\b(inc|ltd|llc|bv|gmbh|corp|co|plc|nv)\b\.?", re.I)
-    def dkey(j):
-        norm = lambda s: re.sub(r"\s+", "", COMPANY_SUFFIX.sub("", re.sub(r"[^a-z0-9 ]", "", (s or "").lower())))
-        city = ""
-        for pat in (r"amsterdam|rotterdam|utrecht|eindhoven|hague|den haag",
-                    r"dublin", r"london"):
-            if re.search(pat, (j.get("location") or ""), re.I):
-                city = pat[:6]; break
-        return (norm(j.get("company")), re.sub(r"[^a-z0-9]", "", (j.get("title") or "").lower())[:40], city)
     dseen = {dkey(j) for j in existing if all(dkey(j))}
     deduped = []
     for j in found:
         k = dkey(j)
         if k in dseen and all(k):   # only dedupe when company+title+city all present
+            record_drop(j, "dedupe", f"same company+title+city already on the dashboard ({k[2]})")
             continue
         dseen.add(k); deduped.append(j)
     found = deduped
@@ -783,11 +1302,15 @@ def main():
     new_jobs = [j for j in found if j["id"] not in seen]
     print(f"Fetched {len(found)} relevant, {len(new_jobs)} new.")
 
-    # 6. sponsor registers (load once)
+    # 8. sponsor registers (load once)
     print("Loading sponsor registers...")
     uk_reg, nl_reg = spon.load_uk(), spon.load_nl()
-    src_status["UK sponsor register"] = ("ok - " + uk_reg.note) if uk_reg.ok else ("FAIL - " + uk_reg.note)
-    src_status["NL sponsor register"] = ("ok - " + nl_reg.note) if nl_reg.ok else ("degraded - " + nl_reg.note)
+    def reg_status(reg, fail_word):
+        if not reg.ok:
+            return f"{fail_word} - {reg.note}"
+        return ("ok - " if reg.trust_negatives else "degraded - ") + reg.note
+    src_status["UK sponsor register"] = reg_status(uk_reg, "FAIL")
+    src_status["NL sponsor register"] = reg_status(nl_reg, "degraded")
 
     def sponsor_for(job):
         which = spon.which_register(job.get("location", ""), job.get("country", ""))
@@ -821,10 +1344,12 @@ def main():
         which, raw, label = sponsor_for(j)
         j["sponsor_region"], j["sponsor_raw"], j["sponsor"] = which or "", raw, label
         if SPONSOR_REQUIRED and raw == "not_found":
+            record_drop(j, "sponsor-required", f"company not on the {which} sponsor register")
             seen.add(j["id"]); continue
 
         if dry or not api_key:
-            j.update({"score": 0, "dimensions": {}, "tier": "", "flags": [], "verdict": "(not scored)"})
+            j.update({"score": 0, "score_raw": 0, "caps_applied": [], "dimensions": {},
+                      "tier": j.get("market") or "", "flags": [], "verdict": "(not scored)"})
             j["found_at"] = now_iso(); j["description"] = (j.get("description") or "")[:400]
             scored.append(j); seen.add(j["id"]); continue
 
@@ -835,6 +1360,9 @@ def main():
             keep, reason = True, "screen error, passed through"
         if not keep:
             killed += 1; seen.add(j["id"])
+            # Recorded, so the kill is reviewable on the dashboard and reversible with
+            # `scan.py --unkill` -- it used to leave nothing behind but this print.
+            record_drop(j, "stage1-kill", reason or "screened out")
             print(f"  kill  {j['title']} @ {j.get('company') or j['source']} ({reason})")
             continue
         kept += 1
@@ -845,25 +1373,55 @@ def main():
         try:
             j.update(score_job(api_key, system_score, j))
         except Exception as e:
-            j.update({"score": 0, "dimensions": {}, "tier": "", "flags": [], "verdict": f"scoring failed: {e}"})
+            # Deliberately NOT added to seen: a transient failure used to write score 0 and
+            # mark the job seen forever, which needed a manual commit to undo. Now it just
+            # retries on the next run.
+            record_drop(j, "score-error", str(e)[:160])
+            print(f"  ERR   {j['title']} @ {j.get('company') or j['source']} ({e})")
+            continue
         j["description"] = (j.get("description") or "")[:400]
         j["found_at"] = now_iso()
         scored.append(j); seen.add(j["id"])
-        print(f"  [{j.get('score','-')}] {j['title']} @ {j.get('company') or j['source']} | {j['sponsor'] or 'n/a'}")
+        caps = f" | capped: {'; '.join(j['caps_applied'])}" if j.get("caps_applied") else ""
+        print(f"  [{j.get('score','-')}] (raw {j.get('score_raw','-')}) {j['title']} "
+              f"@ {j.get('company') or j['source']} | {j['sponsor'] or 'n/a'}{caps}")
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)).isoformat()
     merged = scored + [j for j in existing if j.get("found_at", "") >= cutoff]
     merged.sort(key=lambda j: (j.get("score", 0), j.get("found_at", "")), reverse=True)
 
     src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
+    if USAGE["in"] or USAGE["cache_read"]:
+        src_status["tokens"] = (f"in {USAGE['in']}, out {USAGE['out']}, "
+                               f"cache read {USAGE['cache_read']}, written {USAGE['cache_write']}")
+    if DROP_COUNTS:
+        src_status["dropped"] = ", ".join(f"{k} {v}" for k, v in sorted(DROP_COUNTS.items()))
+
+    # Rolling audit trail of what was thrown away, newest first. Retained per stage rather
+    # than as one flat list, so thousands of routine title rejects can't push the handful of
+    # Haiku kills and scoring errors -- the rows actually worth reviewing -- out of the file.
+    prev = load_json("docs/excluded.json", {}).get("rows", [])
+    rows, per_group = [], {}
+    for d in DROPS + prev:
+        g = str(d.get("stage", "")).split(":")[0]
+        if per_group.get(g, 0) >= DROP_KEEP_PER_STAGE.get(g, DROP_KEEP_DEFAULT):
+            continue
+        per_group[g] = per_group.get(g, 0) + 1
+        rows.append(d)
+    rows = rows[:DROP_MAX_ROWS]
 
     json.dump(sorted(seen), open("seen.json", "w"))
     json.dump(merged, open("docs/jobs.json", "w"), indent=1)
-    json.dump({"last_run": now_iso(), "new_this_run": len(scored), "sources": src_status},
+    json.dump({"last_run": now_iso(), "counts": DROP_COUNTS, "rows": rows},
+              open("docs/excluded.json", "w"), indent=1)
+    json.dump({"last_run": now_iso(), "new_this_run": len(scored), "sources": src_status,
+               "gate": GATE, "floor": FLOOR, "score_model": CLAUDE_SCORE_MODEL,
+               "screen_model": CLAUDE_SCREEN_MODEL},
               open("docs/status.json", "w"), indent=1)
     if not dry:
         notify_strong_matches(scored)
-    print(f"Done. {len(scored)} new on dashboard, {len(merged)} total.")
+    print(f"Done. {len(scored)} new on dashboard, {len(merged)} total, "
+          f"{sum(DROP_COUNTS.values())} dropped this run.")
 
 if __name__ == "__main__":
     main()

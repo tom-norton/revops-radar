@@ -56,12 +56,23 @@
   .actions button[data-act="applied"]:hover{border-color:var(--good); color:var(--good)}
   .actions .status{font-size:11px; padding:3px 8px; border-radius:20px; color:var(--sub)}
   .job.reviewed{opacity:.6}
-  details.borderline>summary,details.reviewed>summary{cursor:pointer; color:var(--sub);
-        font-size:13px; list-style:none; user-select:none}
+  details.borderline>summary,details.reviewed>summary,details.excluded>summary{
+        cursor:pointer; color:var(--sub); font-size:13px; list-style:none; user-select:none}
   details.borderline>summary::-webkit-details-marker,
-  details.reviewed>summary::-webkit-details-marker{display:none}
-  details.borderline>summary::before,details.reviewed>summary::before{content:"\25B8 "; color:var(--mut)}
-  details.borderline[open]>summary::before,details.reviewed[open]>summary::before{content:"\25BE "}
+  details.reviewed>summary::-webkit-details-marker,
+  details.excluded>summary::-webkit-details-marker{display:none}
+  details.borderline>summary::before,details.reviewed>summary::before,
+  details.excluded>summary::before{content:"\25B8 "; color:var(--mut)}
+  details.borderline[open]>summary::before,details.reviewed[open]>summary::before,
+  details.excluded[open]>summary::before{content:"\25BE "}
+  details.excluded{margin-top:10px}
+  .tag.cap{border-color:var(--mut); color:var(--mut)}
+  .subhead{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em;
+        color:var(--mut); margin:16px 0 8px; font-weight:700}
+  .drop{border-bottom:1px solid var(--line); padding:8px 0; font-size:12.5px}
+  .drop:last-child{border-bottom:none}
+  .drop .dt{color:var(--ink)}
+  .drop .dr{color:var(--sub); font-size:11.5px; margin-top:2px}
   .empty{color:var(--sub); font-size:14px; padding:14px 0}
   .note{color:var(--mut); font-size:11.5px; margin:-14px 0 20px}
   .sources{margin-top:34px; border-top:1px solid var(--line); padding-top:14px;
@@ -81,12 +92,15 @@
   </div>
 
   <div id="border-wrap"></div>
+  <div id="excluded-wrap"></div>
   <div id="reviewed-wrap"></div>
 
   <div class="sources" id="sources"></div>
 
 <script>
-const GATE = 6.0, FLOOR = 5.0;
+// Defaults only. scan.py writes the real values into status.json so the bands live in one
+// place; if status.json is older than this page these are what you get.
+let GATE = 6.0, FLOOR = 5.0;
 const DIMS = [["experience","Exp"],["skills","Skills"],["seniority","Sen"],
               ["domain","Domain"],["location_visa","Loc/Visa"],["trajectory","Traj"]];
 
@@ -127,6 +141,11 @@ function pushState(){
     body: JSON.stringify({hidden:[...hiddenIds], applied:[...appliedIds]})}).catch(()=>{});
 }
 
+// Titles, companies and verdicts come from scraped HTML and go into innerHTML, so they get
+// escaped here. scan.py already decodes entities on the way in, so this doesn't double up.
+const ESCAPES = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
+function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c=>ESCAPES[c]); }
+
 function fresh(iso){
   if(!iso) return "";
   const d = (Date.now() - new Date(iso)) / 86400000;
@@ -146,7 +165,12 @@ function card(j, reviewed){
     const good = /sponsor/i.test(j.sponsor) && !/not on/i.test(j.sponsor);
     spon = `<span class="tag ${good?'spon':'nospon'}">${j.sponsor}</span>`;
   }
-  const flags = (j.flags||[]).map(f=>`<span class="tag flag">${f}</span>`).join("");
+  const flags = (j.flags||[]).map(f=>`<span class="tag flag">${esc(f)}</span>`).join("");
+  // Why the score landed where it did: the weighted total before caps, then each cap that
+  // fired. Without this a 3.0 looks arbitrary.
+  const caps = (j.caps_applied||[]).map(c=>`<span class="tag cap">capped: ${esc(c)}</span>`).join("");
+  const rawNote = (j.caps_applied||[]).length && j.score_raw != null
+    ? `<span class="tag cap">raw ${Number(j.score_raw).toFixed(1)} before caps</span>` : "";
   const actions = reviewed
     ? `<div class="actions"><span class="status">${appliedIds.has(id) ? "Applied" : "Hidden"}</span>
         <button data-act="restore" data-id="${id}">Restore</button></div>`
@@ -158,12 +182,12 @@ function card(j, reviewed){
     <div class="row1">
       <div class="score ${scoreClass(j.score)}">${s}</div>
       <div class="hd">
-        <div class="title">${j.title||""}</div>
-        <div class="company">${[j.company, j.location].filter(Boolean).join(" · ")}</div>
+        <div class="title">${esc(j.title||"")}</div>
+        <div class="company">${esc([j.company, j.location].filter(Boolean).join(" · "))}</div>
       </div>
     </div>
-    ${j.verdict?`<div class="verdict">${j.verdict}</div>`:""}
-    <div class="tags">${j.tier?`<span class="tag">${j.tier}</span>`:""}${spon}${flags}</div>
+    ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
+    <div class="tags">${j.tier?`<span class="tag">${esc(j.tier)}</span>`:""}${spon}${rawNote}${caps}${flags}</div>
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
@@ -173,7 +197,67 @@ function card(j, reviewed){
   return el;
 }
 
-let allJobs = [], allStatus = {};
+let allJobs = [], allStatus = {}, allExcluded = {};
+
+// Human labels for the pipeline stage a row was dropped at.
+const STAGE_LABELS = {
+  "prefilter": "Filtered on title or location (free, before any model call) — one example per distinct title",
+  "age": "Older than the age limit",
+  "dedupe": "Same role already on the dashboard",
+  "stage1-kill": "Killed by the cheap Haiku screen — run scan.py --unkill to reconsider these",
+  "sponsor-required": "Company not on a sponsor register",
+  "score-error": "Scoring failed — these retry automatically on the next run",
+};
+
+function dropRow(d){
+  const el = document.createElement("div"); el.className = "drop";
+  const who = [d.company, d.location].filter(Boolean).join(" · ");
+  el.innerHTML = `<div class="dt">${esc(d.title || "(untitled)")}</div>
+    <div class="dr">${esc(who)}${who ? " — " : ""}${esc(d.reason || "")}
+      <span style="color:var(--mut)">· ${esc(d.source || "")} · ${fresh(d.dropped_at)}</span></div>`;
+  return el;
+}
+
+function renderExcluded(lowScored){
+  const wrap = document.getElementById("excluded-wrap"); wrap.innerHTML = "";
+  const rows = allExcluded.rows || [];
+  const counts = allExcluded.counts || {};
+  const totalDropped = Object.values(counts).reduce((a,b)=>a+b, 0);
+  if(!lowScored.length && !rows.length) return;
+
+  const d = document.createElement("details"); d.className = "excluded";
+  const bits = [];
+  if(lowScored.length) bits.push(`${lowScored.length} scored under ${FLOOR.toFixed(1)}`);
+  if(totalDropped) bits.push(`${totalDropped} dropped in the latest run`);
+  d.innerHTML = `<summary>Excluded — ${bits.join(", ")} · check these if the good ones look thin</summary>`;
+  const box = document.createElement("div"); box.style.marginTop = "10px";
+
+  if(lowScored.length){
+    const h = document.createElement("div"); h.className = "subhead";
+    h.textContent = `Scored under ${FLOOR.toFixed(1)}`;
+    box.appendChild(h);
+    lowScored.forEach(j=>box.appendChild(card(j, false)));
+  }
+
+  // Grouped by stage, in pipeline order, so it reads as "where did things go".
+  const byStage = {};
+  rows.forEach(r=>{ const g = String(r.stage||"").split(":")[0];
+                    (byStage[g] = byStage[g] || []).push(r); });
+  // Rows are a rolling log across runs; counts are this run only. Label both rather than
+  // implying one is a subset of the other.
+  Object.keys(STAGE_LABELS).filter(g=>byStage[g]).forEach(g=>{
+    const shown = byStage[g];
+    const thisRun = Object.entries(counts)
+      .filter(([k])=>k.split(":")[0]===g).reduce((a,[,v])=>a+v, 0);
+    const h = document.createElement("div"); h.className = "subhead";
+    h.textContent = `${STAGE_LABELS[g]} — ${shown.length} logged`
+      + (thisRun ? ` · ${thisRun} in the latest run` : "");
+    box.appendChild(h);
+    shown.forEach(r=>box.appendChild(dropRow(r)));
+  });
+
+  d.appendChild(box); wrap.appendChild(d);
+}
 
 function renderAll(){
   const jobs = allJobs.filter(j=>!hiddenIds.has(String(j.id)) && !appliedIds.has(String(j.id)));
@@ -181,6 +265,7 @@ function renderAll(){
 
   const apply = jobs.filter(j=>(j.score??0) >= GATE);
   const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);
+  const lowScored = jobs.filter(j=>(j.score??0) < FLOOR);
 
   const lr = allStatus.last_run ? new Date(allStatus.last_run).toLocaleString("en-GB",
       {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
@@ -199,6 +284,8 @@ function renderAll(){
     border.forEach(j=>box.appendChild(card(j, false)));
     d.appendChild(box); borderWrap.appendChild(d);
   }
+
+  renderExcluded(lowScored);
 
   const revWrap = document.getElementById("reviewed-wrap"); revWrap.innerHTML = "";
   if(reviewed.length){
@@ -227,18 +314,28 @@ syncFromServer().then(renderAll);
 Promise.all([
   fetch("jobs.json").then(r=>r.json()).catch(()=>[]),
   fetch("status.json").then(r=>r.json()).catch(()=>({})),
-]).then(([jobs, status])=>{
+  // Strictly additive: an absent or malformed excluded.json just means no excluded section.
+  fetch("excluded.json").then(r=>r.json()).catch(()=>({})),
+]).then(([jobs, status, excluded])=>{
   jobs = (jobs||[]).filter(j=>!String(j.id||"").startsWith("demo-"));
   jobs.sort((a,b)=>(b.score??0)-(a.score??0) || String(b.found_at||"").localeCompare(String(a.found_at||"")));
-  allJobs = jobs; allStatus = status || {};
+  allJobs = jobs; allStatus = status || {}; allExcluded = excluded || {};
+  if(typeof allStatus.gate === "number") GATE = allStatus.gate;
+  if(typeof allStatus.floor === "number") FLOOR = allStatus.floor;
+  document.getElementById("apply-h").textContent = `Apply — ${GATE.toFixed(1)} and up`;
   renderAll();
 
   const s = allStatus.sources || {};
-  document.getElementById("sources").innerHTML = "<div style='margin-bottom:6px;font-weight:650'>Sources this run</div>" +
+  const models = [allStatus.screen_model && `screen ${allStatus.screen_model}`,
+                  allStatus.score_model && `score ${allStatus.score_model}`]
+                 .filter(Boolean).join(" · ");
+  document.getElementById("sources").innerHTML =
+    "<div style='margin-bottom:6px;font-weight:650'>Sources this run</div>" +
     Object.entries(s).map(([k,v])=>{
       const bad = /fail|skipped|degraded/i.test(v);
-      return `<div class="${bad?'bad':'ok'}">${k}: ${v}</div>`;
-    }).join("");
+      return `<div class="${bad?'bad':'ok'}">${esc(k)}: ${esc(v)}</div>`;
+    }).join("") +
+    (models ? `<div style="margin-top:8px">${esc(models)}</div>` : "");
 }).catch(e=>{ document.getElementById("meta").textContent = "Could not load data: "+e; });
 </script>
 </body>

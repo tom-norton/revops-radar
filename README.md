@@ -41,17 +41,58 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
 
 **Scoring (two stages, so the expensive model only sees real candidates):**
 12. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill).
-13. **Stage 2 — Claude Sonnet** deep-scores the keepers against your full weighted rubric in
+13. **Stage 2 — Claude Opus** scores the keepers on the weighted rubric from
     `profile.md` (Experience 25% / Skills 20% / Seniority 15% / Domain 15% / Location+Visa 15% /
-    Trajectory 10%), applies deterministic caps (including a cap for postings that hard-require
-    a non-English language), and returns per-dimension scores + a verdict.
-14. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
-    **5.0–5.9 into a collapsed "borderline"** section, and hides everything below 5.
+    Trajectory 10%) and reports the facts it can only get by reading the posting: stated
+    salary, whether another language is a hard requirement, whether the function is on
+    target, whether the employer is a standout.
+14. **The score itself is computed in Python**, not by the model — `weighted_total()` does
+    the arithmetic and `apply_caps()` applies the ceilings (location, title band, salary
+    floor, language, CSM track), lowest cap winning. Each job stores `score`, `score_raw`
+    (the total before caps) and `caps_applied`, so a low score always says why.
+15. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
+    **5.0–5.9 into a collapsed "borderline"** section, and puts everything below 5 plus
+    every row dropped earlier in the pipeline into a collapsed **"excluded"** section.
+
+## Reviewing what got thrown away
+
+Nothing disappears silently. Every rejected row is logged to `docs/excluded.json` with the
+stage and the reason, and shown in the dashboard's collapsed "excluded" section grouped by
+stage — title/location filter, age, dedupe, Haiku kill, scoring error. The status footer
+carries exact counts per stage plus `raw -> kept` per source, so an over-tight regex or a
+silently-broken source looks different from a quiet week.
+
+Two commands act on what you find there:
+
+```
+python scan.py --unkill    # free every stage-1 Haiku kill so the next run re-evaluates it
+python scan.py --rescore   # clear all scored rows and rescore the corpus from scratch
+```
 
 ## Your profile lives in `profile.md`
 
 The deep score reads `profile.md`. Edit that file whenever your background, targets, comp
-floors, or market list change — no code changes needed. Keep it factual.
+floors, or market list change. Keep it factual.
+
+Two things are **not** driven by `profile.md` alone, because code enforces them: the salary
+floors in `VISA_FLOORS` and the market list in `market_of()`. Change a comp floor or add a
+market and you need to update both, or the prose and the cap will disagree.
+
+`profile.md` also diverges from the `job-application-workflow` skill on purpose — it rejects
+Germany, Spain, and remote-EMEA outright (the skill still scores Berlin 4-6 and remote-Spain
+6-7), and it adds Belgium and the CSM-track weighting. `profile.md` is the current, narrower
+stance; don't "fix" it back toward the skill.
+
+## Tests
+
+```
+python tests/test_scoring.py    # pure functions: caps, weighted total, location, dedupe
+python scan.py --selftest       # replay stored scores through the cap engine, offline
+python scan.py --dry            # full pipeline, no Claude calls
+```
+
+The unit tests also run in CI before the scan, so a broken cap can't spend tokens producing
+wrong scores.
 
 ## Setup / secrets
 
@@ -78,10 +119,18 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
 
 ## Tuning
 
-- **Markets / keywords:** `ADZUNA_COUNTRIES`, `ADZUNA_WHAT_OR`, and the location regexes in `scan.py`.
+- **Markets / keywords:** `ADZUNA_COUNTRIES`, `ADZUNA_PHRASES`, `OR_KEYWORDS` (shared by Reed
+  and LinkedIn), `JOBSPY_TERMS`, and the location regexes in `scan.py`. Adding a market means
+  touching `market_of()`, `VISA_FLOORS`, and `MARKETS_SENTENCE` — they sit together.
 - **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
-- **Scoring:** everything the model sees is in `profile.md` and the rubric/caps in `scan.py`'s `score_system()`.
-- **Cost ceilings:** `MAX_SCREENED_PER_RUN` (Haiku) and `MAX_SCORED_PER_RUN` (Sonnet).
+- **Scoring:** what the model judges is in `profile.md` and `score_system()`; what the code
+  decides is `RUBRIC`, `TITLE_BANDS`, `CAPS`, `VISA_FLOORS`, and `apply_caps()`.
+- **Model + cost:** `CLAUDE_SCORE_MODEL`, `SCORE_EFFORT` (`low`–`max`; the main cost dial),
+  `MAX_SCREENED_PER_RUN` (Haiku) and `MAX_SCORED_PER_RUN` (Opus). The deep-score system
+  prompt is cached, so the per-run token cost is dominated by job descriptions, not the
+  profile — check the `tokens` line in the status footer.
+- **Dashboard bands:** `GATE` / `FLOOR` in `scan.py`. The page reads them from
+  `status.json` rather than keeping its own copy.
 - **Require sponsorship:** `SPONSOR_REQUIRED = True` drops UK/NL non-matches entirely (not recommended, given the matching caveat).
 
 ## Known limits
