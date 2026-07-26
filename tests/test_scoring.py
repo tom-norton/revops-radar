@@ -569,6 +569,190 @@ def test_sponsor_status_labels_cover_every_match_value():
         assert sponsors.status_label(raw, "NL"), raw
 
 
+# ------------------------------------------------------- hard disqualifiers
+# The two facts that ended an application before it started and that run 1 missed entirely,
+# because the scorer was handed a truncated or boilerplate copy of the ad. The first case in
+# each list is the verbatim sentence from the posting that got through.
+
+NO_SPONSOR_ADS = [
+    "We’re not able to offer visa sponsorship or help with relocation support for this role.",
+    "We do not sponsor work visas for this position.",
+    "Unfortunately we are unable to provide visa sponsorship at this time.",
+    "Please note: sponsorship is not available for this role.",
+    "This role is not eligible for visa sponsorship.",
+    "You must have the right to work in the UK without sponsorship.",
+    "No visa sponsorship will be provided.",
+    "We cannot offer sponsorship for this vacancy.",
+]
+
+SPONSOR_OK_ADS = [
+    "Visa sponsorship is available for exceptional candidates.",
+    "We are happy to sponsor visas and support relocation.",
+    "We offer visa sponsorship and a relocation package.",
+    "We have no restrictions on visa sponsorship for this role.",
+    # Right to work alone is written by employers who DO sponsor -- it is not enough.
+    "Applicants must have the right to work in the Netherlands.",
+    "The company sponsors industry conferences and community events.",
+    "This is a hybrid role. We sponsor Skilled Worker visas.",
+]
+
+LANG_REQUIRED_ADS = [
+    "You are fluent in French, Dutch and English.",
+    "Fluency in Dutch is required for this role.",
+    "Native German speaker required.",
+    "Business-level French is essential.",
+    "You must speak Dutch and English.",
+    "Dutch fluency is a must.",
+]
+
+LANG_OK_ADS = [
+    # English is never a disqualifier -- he is a native speaker.
+    "Fluency in English is required.",
+    "Excellent written and verbal communication skills in English are essential.",
+    "Dutch is a plus.",
+    "German language skills are nice to have.",
+    "French would be an advantage.",
+    "Ideally you also speak Dutch.",
+    "Experience selling into Spanish-speaking markets is preferred.",
+    # "Requirements" must not read as "required"
+    "Requirements: 5 years experience in the Dutch market.",
+    "You will report to the French leadership team, based in Paris.",
+]
+
+
+def test_no_sponsorship_detected():
+    for ad in NO_SPONSOR_ADS:
+        assert scan.says_no_sponsorship(ad), ad
+
+
+def test_no_sponsorship_not_triggered_by_an_employer_who_does_sponsor():
+    for ad in SPONSOR_OK_ADS:
+        assert not scan.says_no_sponsorship(ad), ad
+
+
+def test_language_requirement_detected():
+    for ad in LANG_REQUIRED_ADS:
+        assert scan.requires_other_language(ad), ad
+
+
+def test_language_requirement_not_triggered_by_a_preference():
+    for ad in LANG_OK_ADS:
+        assert not scan.requires_other_language(ad), ad
+
+
+def test_disqualifiers_are_scoped_to_one_sentence():
+    """A softener must only excuse its own sentence. Run 1's Edenred ad stated the hard
+    requirement several bullets away from unrelated 'nice to have' wording."""
+    ad = "German is a plus.\nYou are fluent in French, Dutch and English.\nStart date: January."
+    assert scan.requires_other_language(ad) == "You are fluent in French, Dutch and English"
+    # ...and a soft mention on its own still passes even next to other requirements.
+    assert not scan.requires_other_language("Dutch is a plus.\n5 years of SaaS required.")
+
+
+def test_language_under_a_preferred_heading_is_a_preference():
+    """The qualifier lives in the section heading, on a different line from the bullet it
+    qualifies. A real Stripe ad listing "Proficiency in Italian" under "Preferred
+    qualifications" -- while stating those are "a bonus, not a requirement" -- was dropped
+    as a hard Italian requirement until the section lookback existed."""
+    ad = ("Minimum requirements\nHigh professional fluency in English.\n"
+          "Preferred qualifications\nProficiency in Italian\n"
+          "Experience with financial systems\n")
+    assert not scan.requires_other_language(ad)
+    # The nearest heading wins: a hard section after a soft one still counts.
+    ad2 = ("Preferred qualifications\nExperience with Salesforce\n"
+           "Minimum requirements\nFluency in Dutch\n")
+    assert scan.requires_other_language(ad2) == "Fluency in Dutch"
+
+
+def test_disqualifier_returns_the_quotable_sentence():
+    """The drop log quotes the ad's own words, which is what makes a wrong drop reviewable."""
+    quote = scan.says_no_sponsorship("About us. " + NO_SPONSOR_ADS[1] + " Apply now.")
+    assert quote == "We do not sponsor work visas for this position"
+    assert len(quote) <= 160
+
+
+# ------------------------------------------------------- description capture
+
+def test_adzuna_predicted_salary_is_not_forwarded():
+    """salary_is_predicted=1 means Adzuna modelled the number; it is not in the ad. Two roles
+    were capped to 4.0 on run 1 by a figure the employer never published."""
+    assert scan.adzuna_salary({"salary_min": 44231, "salary_max": 44231,
+                               "salary_is_predicted": "1"}, "gb") == ""
+    assert scan.adzuna_salary({"salary_min": 44231, "salary_max": 52000,
+                               "salary_is_predicted": "0"}, "gb") == "44231-52000 GBP"
+    # A real ISO code, not "United Kingdom local" -- below_visa_floor() compares currencies.
+    assert scan.adzuna_salary({"salary_min": 60000, "salary_max": 70000}, "nl") == "60000-70000 EUR"
+    assert scan.adzuna_salary({}, "gb") == ""
+
+
+def test_workday_urls_rewrite_to_the_json_api():
+    """Workday renders in JavaScript, so a plain GET returns page furniture and no JSON-LD.
+    Both tenant shapes expose the real posting through the same public CxS endpoint."""
+    assert scan.workday_cxs_url(
+        "https://kantar.wd3.myworkdayjobs.com/kantar/job/London-South-Bank-Central/X_R101983-1"
+    ) == ("https://kantar.wd3.myworkdayjobs.com/wday/cxs/kantar/kantar/job/"
+          "London-South-Bank-Central/X_R101983-1")
+    assert scan.workday_cxs_url(
+        "https://wd3.myworkdaysite.com/recruiting/edenpeople/Edenred_Careers/job/Brussels/Y_JR1"
+    ) == ("https://wd3.myworkdaysite.com/wday/cxs/edenpeople/Edenred_Careers/job/Brussels/Y_JR1")
+    # optional locale segment, and a query string, are both dropped
+    assert scan.workday_cxs_url(
+        "https://acme.wd1.myworkdayjobs.com/careers/en-US/job/Amsterdam/Z_R1?source=li"
+    ) == "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/careers/job/Amsterdam/Z_R1"
+    for not_workday in ["https://boards.greenhouse.io/mongodb/jobs/7941923",
+                        "https://www.linkedin.com/jobs/view/123", "", "not a url"]:
+        assert scan.workday_cxs_url(not_workday) == "", not_workday
+
+
+def test_greenhouse_board_urls_rewrite_to_the_api():
+    """Greenhouse board pages render client-side and carry no JSON-LD, so a posting linked
+    by board URL rather than reached through the ATS feed came back empty."""
+    assert scan.GREENHOUSE_BOARD_URL.match(
+        "https://job-boards.greenhouse.io/purestorage/jobs/8075450").groups() \
+        == ("purestorage", "8075450")
+    assert scan.GREENHOUSE_BOARD_URL.match(
+        "https://boards.greenhouse.io/liberis/jobs/8083222?gh_src=x").groups() \
+        == ("liberis", "8083222")
+    assert scan.greenhouse_board_desc("https://apply.workable.com/j/6F65F44B65") == ""
+    assert scan.greenhouse_board_desc("") == ""
+
+
+def test_sample_desc_keeps_both_ends():
+    """A head-only slice threw away the closing block, which is where sponsorship terms,
+    language requirements and comp are stated."""
+    body = "START " + ("filler. " * 2000) + "END OF AD"
+    assert len(body) > scan.DESC_CHAR_CAP
+    out = scan.sample_desc(body)
+    assert len(out) <= scan.DESC_CHAR_CAP
+    assert out.startswith("START ")
+    assert out.endswith("END OF AD")
+    assert "[...]" in out
+    # under the cap it is returned untouched
+    assert scan.sample_desc("short ad") == "short ad"
+    assert scan.sample_desc(None) == ""
+
+
+def test_sample_desc_preserves_a_trailing_disqualifier():
+    ad = ("We are hiring. " * 800) + "We are unable to offer visa sponsorship for this role."
+    assert not scan.says_no_sponsorship(ad[:2200])          # the old head-only truncation
+    assert scan.says_no_sponsorship(scan.sample_desc(ad))   # survives head+tail sampling
+
+
+def test_strip_html_unescapes_before_stripping_tags():
+    """Greenhouse returns escaped markup, so stripping first left nothing to strip and the
+    unescape step then produced live <p> tags in the stored description."""
+    assert "<p>" not in scan.strip_html("&lt;p&gt;As a Customer Success Manager&lt;/p&gt;")
+    assert scan.strip_html("<p>Hello &amp; welcome</p>") == "Hello & welcome"
+
+
+def test_strip_html_turns_block_tags_into_line_breaks():
+    """Bullets carry no trailing punctuation, so without a break per item the list becomes
+    one run-on sentence and a softener in one bullet excuses a requirement in another."""
+    out = scan.strip_html("<ul><li>Dutch is a plus</li><li>You are fluent in French</li></ul>")
+    assert "\n" in out
+    assert scan.requires_other_language(out) == "You are fluent in French"
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

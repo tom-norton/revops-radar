@@ -54,7 +54,12 @@ import sponsors as spon
 # ---------------------------------------------------------------- config
 
 # Adzuna covers NL + UK only (its API has no Ireland). Ireland comes from JobSpy + ATS.
-ADZUNA_COUNTRIES = {"nl": "Netherlands", "gb": "United Kingdom"}
+# Mapped to the ISO currency of each country's salary figures: Adzuna reports pay with no
+# currency at all, so the code has to supply it. The old format put the country's display
+# name in the currency slot ("44231-44231 United Kingdom local"), leaving the scoring model
+# to infer "GBP" from the words -- and below_visa_floor() checks that inference against the
+# market's currency before firing a -4.0 cap.
+ADZUNA_COUNTRIES = {"nl": "EUR", "gb": "GBP"}
 # Targeted phrase queries. A broad word-OR query sorted by date just surfaces the
 # freshest generic "operations/customer/revenue" noise, none of which passes the title
 # filter (that was the original "Adzuna returned nothing" bug). Precise phrases return
@@ -176,7 +181,18 @@ NTFY_TOPIC = "tom-revops-radar-c16aabb2"   # push notifications for strong match
 NTFY_SCORE_THRESHOLD = 7.5
 KEEP_DAYS = 45
 MAX_POST_AGE_DAYS = 7    # drop postings older than this when the source gives us a date
-DESC_CHAR_CAP = 2200
+# How much of the posting the scoring model sees. The old 2200 cut a typical 5,000-char ad
+# roughly in half, and the half it threw away was the bottom -- which is exactly where the
+# disqualifiers live. An Edenred ad reading "You are fluent in French, Dutch and English" at
+# character 4,200 was scored 6.7 with language_hard_requirement: false. Over the cap the
+# description is sampled head + tail rather than truncated, so the closing requirements
+# block always arrives.
+DESC_CHAR_CAP = 6000
+DESC_HEAD_SHARE = 0.7         # of DESC_CHAR_CAP; the remainder is taken from the end
+# Below this, a description is treated as missing and the detail fetchers are tried. Job
+# boards routinely hand back a page's marketing furniture instead of the posting.
+MIN_DESC_CHARS = 900
+DESC_STORE_CAP = 1200         # how much is kept in docs/jobs.json, for auditing a score
 MAX_SCREENED_PER_RUN = 80     # cap stage-1 Haiku calls
 MAX_SCORED_PER_RUN = 30       # cap stage-2 Opus calls (survivors only)
 SPONSOR_REQUIRED = False      # if True, drop UK/NL jobs whose company isn't on a register
@@ -196,6 +212,118 @@ VISA_FLOORS = {
     "UK-London": (70000, "GBP"),   # Skilled Worker
     "IE-Dublin": (68911, "EUR"),   # Critical Skills / General permit
 }
+
+# ---------------------------------------------------------------- hard disqualifiers
+# Two facts that end an application before it starts, both stated in plain English in the
+# ad and neither previously looked for anywhere in the pipeline. They are read in code
+# rather than asked of the model because they are absolute: the model gets a truncated
+# copy of the posting and, on the first run, missed both. Kantar scored 7.3 with "We're
+# not able to offer visa sponsorship ... for this role" in its ad, and Edenred scored 6.7
+# with "You are fluent in French, Dutch and English" in its requirements.
+#
+# Both are matched a sentence at a time. A posting that says "German is a plus" in one
+# sentence and "fluent Dutch required" in another must still be caught, and a softener
+# must only excuse the sentence it appears in.
+_SENTENCE = re.compile(r"[^.;!?\n•|]+")
+# Some sources return the ad with its punctuation flattened, so a whole requirements list
+# arrives as one 900-character "sentence". Past this length the context is narrowed to a
+# window around the match instead, both for the quote and for the softener check.
+_CONTEXT_WINDOW = 110
+_MAX_SENTENCE = 240
+
+# Negation bound TIGHTLY to a sponsorship word: the two may only be separated by words from
+# this filler list, which is what makes a guard clause unnecessary. "We have no restrictions
+# on visa sponsorship" does not match ("restrictions" is not filler) and neither does "we
+# are happy to sponsor" (no negator), while "not able to offer visa sponsorship" does.
+_NEG = (r"(?:\bnot\b|\bno\b|\bunable\b|\bunwilling\b|\bcan ?not\b|\bcan't\b|\bwon't\b"
+        r"|\bnever\b|\bnor\b)")
+_FILLER = (r"(?:\s+(?:able|willing|eligible|prepared|position|currently|presently|at|this|"
+           r"present|time|to|be|being|can|will|do|does|offer|offers|offering|provide|"
+           r"provides|providing|support|supports|supporting|consider|considering|accept|"
+           r"accepting|seek|seeking|in|a|an|any|the|for|of|with|new|further|additional|"
+           r"applicants|candidates|require|requiring|visa|visas|work|employment|"
+           r"immigration|relocation|uk|us|eu)){0,8}")
+NO_SPONSOR_RX = re.compile(
+    _NEG + _FILLER + r"\s+sponsor(?:ship|ing|s|ed)?\b"
+    r"|\bsponsorship\b[^,]{0,25}\b(?:not available|unavailable|not offered|not provided"
+    r"|not possible|not an option|not on offer)\b"
+    r"|\bwithout\b[^,]{0,30}\bsponsor(?:ship)?\b", re.I)
+
+# English is deliberately absent -- Tom is a native speaker, so an English requirement is
+# never a disqualifier.
+_OTHER_LANGS = (r"dutch|nederlands|flemish|french|français|german|deutsch|spanish"
+                r"|italian|portuguese|polish|danish|swedish|norwegian|finnish|czech")
+# `\brequire[ds]?\b` and not `required?` on purpose: the latter also matches the word
+# "Requirements", so a "Requirements:" heading followed by any mention of the Dutch market
+# would read as a Dutch-language requirement.
+_REQUIRED = (r"\bfluent\b|\bfluency\b|\bnative\b|mother ?tongue|business[- ]level"
+             r"|professional (?:working )?proficiency|\bproficient\b|\bproficiency\b"
+             r"|must speak|\brequire[ds]?\b|\bmandatory\b|\bessential\b|\bmust have\b")
+LANG_HARD_RX = re.compile(
+    rf"(?:{_REQUIRED})[^,]{{0,80}}\b(?:{_OTHER_LANGS})\b"
+    rf"|\b(?:{_OTHER_LANGS})\b[^,]{{0,60}}"
+    rf"(?:\bfluen\w+|\bnative\b|\brequire[ds]?\b|is a must|\bmandatory\b|\bessential\b"
+    rf"|non-negotiable)", re.I)
+# A requirement worded as a preference is not a requirement.
+LANG_SOFT_RX = re.compile(
+    r"\ba plus\b|nice to have|advantage|preferr?ed|bonus|desirable|an asset|beneficial"
+    r"|would be (?:great|good|nice)|welcome|ideally|helpful|not required|optional", re.I)
+
+# Postings put optional skills under their own heading, so the qualifier sits on a
+# different line from the requirement it qualifies. A Stripe ad listing "Proficiency in
+# Italian" under "Preferred qualifications" -- and stating outright that "the preferred
+# qualifications are a bonus, not a requirement" -- read as a hard Italian requirement
+# until this existed. Whichever heading is nearest above the match decides.
+_SOFT_SECTION = re.compile(
+    r"\b(?:preferr?ed|nice[- ]to[- ]have|bonus|desirable|good to have|advantageous"
+    r"|optional|pluses|extra credit|even better)\b", re.I)
+_HARD_SECTION = re.compile(
+    r"\b(?:minimum|required|requirements|must[- ]have|essential|basic qualifications"
+    r"|what you(?:'ll| will)? need|who you are|about you)\b", re.I)
+_SECTION_LOOKBACK = 700
+
+def _in_soft_section(text, pos):
+    """True when the nearest preceding section heading marks optional criteria."""
+    before = text[max(0, pos - _SECTION_LOOKBACK):pos]
+    soft = max((m.start() for m in _SOFT_SECTION.finditer(before)), default=-1)
+    hard = max((m.start() for m in _HARD_SECTION.finditer(before)), default=-1)
+    return soft > hard
+
+def _first_matching_sentence(text, hard, soft=None, section_aware=False):
+    """The words that trip `hard` without a softener beside them, quoted for the drop log.
+    Returned rather than a bare True so every drop can be reviewed against the ad's own
+    wording on the dashboard -- a wrong drop has to be visible to be fixable."""
+    text = text or ""
+    for sent in _SENTENCE.finditer(text):
+        s = sent.group(0)
+        if len(s.strip()) < 12:
+            continue
+        m = hard.search(s)
+        if not m:
+            continue
+        if section_aware and _in_soft_section(text, sent.start() + m.start()):
+            continue
+        # Normally the sentence is the right unit of context. When punctuation has been
+        # flattened it is not, and quoting from its start would point at wording hundreds
+        # of characters from the phrase that actually matched.
+        if len(s) > _MAX_SENTENCE:
+            s = s[max(0, m.start() - _CONTEXT_WINDOW):m.end() + _CONTEXT_WINDOW]
+        if soft and soft.search(s):
+            continue
+        return re.sub(r"\s+", " ", s).strip()[:200]
+    return ""
+
+def says_no_sponsorship(desc):
+    # No softener list: NO_SPONSOR_RX only fires on a negator bound tightly to the
+    # sponsorship word, so a sentence advertising that the company DOES sponsor cannot
+    # reach it in the first place.
+    return _first_matching_sentence(desc, NO_SPONSOR_RX)
+
+def requires_other_language(desc):
+    # section_aware: a language listed under "Preferred qualifications" is a preference even
+    # though its own bullet reads like a requirement. Sponsorship terms never appear under
+    # such a heading, so says_no_sponsorship() deliberately does not use this.
+    return _first_matching_sentence(desc, LANG_HARD_RX, LANG_SOFT_RX, section_aware=True)
 
 # Title intelligence from the job-application-workflow skill, as code. First match wins,
 # so the most disqualifying bands are checked first.
@@ -384,6 +512,8 @@ Target markets ONLY: {MARKETS_SENTENCE}. Reject {REJECT_SENTENCE}.
 
 KEEP if the role plausibly fits function AND market. KILL obvious no-fits: wrong function (deal desk, quote-to-cash, billing, pure marketing-ops admin, engineering, finance, quota-carrying AE/SDR), wrong seniority (intern, VP+, C-level), or wrong location (outside the target markets above).
 
+IN SCOPE - never kill these on function. A title filter in code has already decided they are on target, and the deep scorer weights them properly: renewals and renewal management, sales enablement, revenue enablement, sales/incentive compensation, quota and territory design, revenue analytics, revenue/sales systems, business or commercial operations, CS operations, and Senior/Principal/Enterprise/Strategic Customer Success. Renewals is NOT quota-carrying sales for this purpose, and enablement is NOT marketing-ops admin. Kill one of these only when the location is wrong.
+
 Be lenient at this stage - when unsure, keep it. The next stage does the real scoring.
 
 Reply with ONLY this JSON: {{"keep": true or false, "reason": "<max 12 words>"}}"""
@@ -416,6 +546,8 @@ Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -
 
 Salary: if not stated, do NOT penalise on salary; judge comp risk from the seniority and the company.
 
+Working pattern: on-site or hybrid in the resolved market is normal and expected -- the candidate is relocating for the role and needs an employer with an office there. Do NOT treat an on-site or hybrid requirement, a named-office requirement, or the absence of remote flexibility as a risk, and do not raise a flag about it.
+
 flags: short risk notes, [] if none. Do not add a flag for missing comp or for a cap -- those are added in code.
 verdict: one blunt sentence, max 22 words."""
 
@@ -431,13 +563,18 @@ DROPS = []
 DROP_COUNTS = {}
 RAW_COUNTS = {}
 # Title rejects are the highest-volume, lowest-signal stage (hundreds per run), so only a
-# sample is stored. Counts stay exact for every stage regardless.
-DROP_SAMPLE_CAP = {"prefilter": 60}
+# sample is stored. Counts stay exact for every stage regardless. Keyed on the FULL stage
+# name: keyed on the "prefilter" group instead, the 60-row budget was spent entirely on
+# title rejects before the first location reject was reached, so run 1 counted 174 location
+# drops and retained none of them to look at.
+DROP_SAMPLE_CAP = {"prefilter:title": 60, "prefilter:location": 40}
 DROP_MAX_ROWS = 400
-# How many rows of each stage to keep in the committed file, newest first. Stage-1 kills and
-# scoring errors are the ones worth actually reading, so they get the most room.
+# How many rows of each stage to keep in the committed file, newest first. Stage-1 kills,
+# scoring errors and the hard disqualifiers are the ones worth actually reading, so they
+# get the most room.
 DROP_KEEP_PER_STAGE = {"prefilter": 80, "age": 40, "dedupe": 40,
-                       "stage1-kill": 120, "score-error": 40, "sponsor-required": 40}
+                       "stage1-kill": 120, "score-error": 40, "sponsor-required": 40,
+                       "no-sponsorship": 60, "language-required": 60}
 DROP_KEEP_DEFAULT = 40
 
 _DROP_SEEN = set()
@@ -448,8 +585,7 @@ def record_drop(job, stage, reason):
     if stage == "prefilter":
         stage = "prefilter:" + reason.split(":", 1)[0]
     DROP_COUNTS[stage] = DROP_COUNTS.get(stage, 0) + 1
-    group = stage.split(":")[0]
-    cap = DROP_SAMPLE_CAP.get(group)
+    cap = DROP_SAMPLE_CAP.get(stage)
     if cap is not None:
         # Sample for variety, not volume: 60 rows all reading "Account Manager / no
         # target-function keyword" tell you nothing, so only the first of each
@@ -457,7 +593,7 @@ def record_drop(job, stage, reason):
         fingerprint = (stage, (job.get("title") or "").lower(), reason)
         if fingerprint in _DROP_SEEN:
             return
-        if sum(1 for d in DROPS if d["stage"].split(":")[0] == group) >= cap:
+        if sum(1 for d in DROPS if d["stage"] == stage) >= cap:
             return
         _DROP_SEEN.add(fingerprint)
     DROPS.append({
@@ -507,8 +643,22 @@ def get(url, **kw):
     kw.setdefault("headers", {"User-Agent": "Mozilla/5.0 (job-radar; personal use)"})
     return requests.get(url, **kw)
 
+_BLOCK_TAG = re.compile(r"</?(?:p|br|div|li|ul|ol|tr|h[1-6]|section|table)\b[^>]*>", re.I)
+
 def strip_html(t):
-    return re.sub(r"<[^>]+>", " ", t or "").replace("&amp;", "&").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">")
+    """Unescape entities FIRST, then drop tags. The old order did it backwards, so a source
+    that returns escaped markup -- Greenhouse's `content` is "&lt;p&gt;As a Customer Success
+    Manager..." -- had nothing tag-shaped to strip, and the unescape step then turned the
+    entities into live <p> tags that went to the model and the dashboard as-is.
+
+    Block-level tags become newlines rather than spaces. Postings state their requirements
+    as bullets with no trailing punctuation, so without a line break per item the whole
+    list collapses into one run-on "sentence" and the disqualifier checks lose the ability
+    to tell "Dutch is a plus" from a genuine fluency requirement two bullets away."""
+    text = _BLOCK_TAG.sub("\n", html.unescape(t or ""))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[ \t\r\f\v ]+", " ", text)
+    return re.sub(r"\n\s*\n+", "\n", text).strip()
 
 def clean_text(t):
     """Decode HTML entities and collapse whitespace in a short scraped field. Titles come
@@ -654,9 +804,23 @@ def recent_enough(posted_raw, max_days=MAX_POST_AGE_DAYS):
 
 # ---------------------------------------------------------------- Adzuna (NL + UK)
 
+def adzuna_salary(j, cc):
+    """The pay to forward for one Adzuna result, or "" when there is none worth trusting.
+
+    salary_is_predicted="1" means Adzuna MODELLED the figure from the title and location --
+    it is not in the ad, and it comes back with salary_min == salary_max. Passing one on
+    made the scoring model report salary_stated: true and fired the -4.0 below-floor cap on
+    a number the employer never published: on run 1 that cost LogicMonitor 6.1 -> 4.0 and
+    Windward 5.8 -> 4.0. Only pay actually listed in the ad is forwarded."""
+    if not j.get("salary_min") or str(j.get("salary_is_predicted", "0")) == "1":
+        return ""
+    low = int(j["salary_min"])
+    high = int(j.get("salary_max") or j["salary_min"])
+    return f"{low}-{high} {ADZUNA_COUNTRIES.get(cc, '')}".strip()
+
 def fetch_adzuna(app_id, app_key, diag):
     out, ids = [], set()
-    for cc, label in ADZUNA_COUNTRIES.items():
+    for cc in ADZUNA_COUNTRIES:
         raw = kept = 0
         err = None
         for phrase in ADZUNA_PHRASES:
@@ -686,9 +850,6 @@ def fetch_adzuna(app_id, app_key, diag):
                             record_drop(stub, "prefilter", reason)
                             continue
                         ids.add(jid)
-                        sal = ""
-                        if j.get("salary_min"):
-                            sal = f"{int(j['salary_min'])}-{int(j.get('salary_max') or j['salary_min'])} {label} local"
                         out.append({
                             "id": jid,
                             "company": (j.get("company") or {}).get("display_name", ""),
@@ -696,7 +857,7 @@ def fetch_adzuna(app_id, app_key, diag):
                             "market": market_of(cc, loc),
                             "url": j.get("redirect_url", ""), "source": "adzuna",
                             "description": strip_html(j.get("description", "")),
-                            "salary": sal, "posted_at": j.get("created", ""),
+                            "salary": adzuna_salary(j, cc), "posted_at": j.get("created", ""),
                         })
                         kept += 1
                     time.sleep(0.25)
@@ -815,6 +976,20 @@ def greenhouse_desc(url):
     except Exception:
         return ""
 
+# Greenhouse's public board pages render client-side and carry no JobPosting JSON-LD, so a
+# posting reached by its board URL rather than through the ATS feed (revopsroles links out
+# this way) came back empty and fell through to a one-line synthesized summary. The board
+# URL maps straight onto the same API greenhouse_desc already reads.
+GREENHOUSE_BOARD_URL = re.compile(
+    r"^https://(?:job-)?boards\.greenhouse\.io/([\w-]+)/jobs/(\d+)")
+
+def greenhouse_board_desc(url):
+    m = GREENHOUSE_BOARD_URL.match((url or "").split("?")[0])
+    if not m:
+        return ""
+    return greenhouse_desc(f"https://boards-api.greenhouse.io/v1/boards/"
+                           f"{m.group(1)}/jobs/{m.group(2)}")
+
 def fetch_lever(name, slug):
     r = get(f"https://api.lever.co/v0/postings/{slug}?mode=json"); r.raise_for_status()
     out = []
@@ -924,6 +1099,44 @@ def linkedin_desc(url):
     except Exception:
         return ""
 
+# Workday job URLs come in two shapes, both of which render the posting in JavaScript --
+# so the HTML a plain GET returns holds only the page furniture ("We go beyond the
+# obvious...", "Job Details"), never the requirements, and there is no JobPosting JSON-LD
+# for jsonld_job_description() to find either. That is how a Kantar role whose ad ends
+# "We're not able to offer visa sponsorship" reached the scorer as 300 characters of
+# marketing copy. Both shapes expose the same posting through Workday's public CxS JSON
+# API, which needs no key.
+WORKDAY_URL = re.compile(
+    r"^(?P<base>https://(?:(?P<tenant>[\w-]+)\.)?(?:wd\d+\.myworkdayjobs|"
+    r"wd\d+\.myworkdaysite)\.com)/(?:recruiting/(?P<tenant2>[\w-]+)/)?(?P<site>[\w-]+)"
+    r"/(?:(?P<locale>[a-z]{2}-[A-Z]{2})/)?job/(?P<path>.+)$")
+
+def workday_cxs_url(url):
+    """Rewrite a Workday job URL to its CxS JSON endpoint, or return "" if it isn't one.
+
+    tenant.wdN.myworkdayjobs.com/site/job/PATH  -> .../wday/cxs/tenant/site/job/PATH
+    wdN.myworkdaysite.com/recruiting/tenant/site/job/PATH -> .../wday/cxs/tenant/site/job/PATH
+    An optional /xx-XX/ locale segment sits before /job/ and is dropped."""
+    m = WORKDAY_URL.match((url or "").split("?")[0].rstrip("/"))
+    if not m:
+        return ""
+    tenant = m.group("tenant2") or m.group("tenant")
+    if not tenant:
+        return ""
+    return f"{m.group('base')}/wday/cxs/{tenant}/{m.group('site')}/job/{m.group('path')}"
+
+def workday_desc(url):
+    api = workday_cxs_url(url)
+    if not api:
+        return ""
+    try:
+        r = get(api, headers={"User-Agent": "Mozilla/5.0 (job-radar; personal use)",
+                              "Accept": "application/json"})
+        r.raise_for_status()
+        return strip_html((r.json().get("jobPostingInfo") or {}).get("jobDescription", ""))
+    except Exception:
+        return ""
+
 def jsonld_job_description(url):
     """Generic schema.org JobPosting extractor. Widely used for SEO across ATS/career
     platforms (Workday, iCIMS, SmartRecruiters, custom sites) regardless of how the
@@ -942,6 +1155,58 @@ def jsonld_job_description(url):
     except Exception:
         pass
     return ""
+
+# Source-specific description fetchers, tried before the generic ones below.
+DETAIL_FETCHERS = {"greenhouse": greenhouse_desc, "linkedin": linkedin_desc,
+                   "revopsroles": jsonld_job_description}
+# Tried for any source once the specific one has been exhausted. The two URL-rewriting
+# fetchers cost nothing when the URL isn't theirs -- they return "" without a request.
+GENERIC_FETCHERS = (workday_desc, greenhouse_board_desc, jsonld_job_description)
+# Fetchers that make no request unless the URL matches their host, so trying them is free.
+_FREE_IF_NO_MATCH = {workday_desc: workday_cxs_url,
+                     greenhouse_board_desc: lambda u: GREENHOUSE_BOARD_URL.match(
+                         (u or "").split("?")[0])}
+MAX_DESC_FETCHES = 3     # network calls per job, so a board of thin ads can't stall a run
+
+def fill_description(job):
+    """Return the fullest description obtainable for one job, fetching if need be.
+
+    A stored description is only believed when it is long enough to be a real posting.
+    The old gate fetched only when the field was empty, so a board that returns a career
+    page's marketing copy instead of the ad silently won: Kantar was scored 7.3 off 300
+    characters of Workday page furniture while its actual 4,800-character ad ended
+    "We're not able to offer visa sponsorship ... for this role"."""
+    best = job.get("description") or ""
+    if len(best) >= MIN_DESC_CHARS:
+        return best
+    specific = DETAIL_FETCHERS.get(job.get("source"))
+    targets = []
+    for t in (job.get("_detail"), job.get("url")):
+        if t and t not in targets:
+            targets.append(t)
+
+    attempts = []
+    for i, target in enumerate(targets):
+        # An API that serves this exact URL goes first: it returns the canonical text and
+        # keeps the ad's punctuation, where scraping the same posting flattens the
+        # requirements list into one run-on line and costs the softener checks their
+        # sentence boundaries. The source's own fetcher only understands its own _detail
+        # URL, so it is tried against the first target only.
+        exact = tuple(f for f, matches in _FREE_IF_NO_MATCH.items() if matches(target))
+        for fetcher in exact + ((specific,) if specific and i == 0 else ()) + GENERIC_FETCHERS:
+            # Don't spend budget on a URL-rewriting fetcher that can't handle this host.
+            if fetcher in _FREE_IF_NO_MATCH and not _FREE_IF_NO_MATCH[fetcher](target):
+                continue
+            if (fetcher, target) not in attempts:
+                attempts.append((fetcher, target))
+
+    for fetcher, target in attempts[:MAX_DESC_FETCHES]:
+        text = fetcher(target) or ""          # each fetcher swallows its own errors
+        if len(text) > len(best):
+            best = text
+        if len(best) >= MIN_DESC_CHARS:
+            break
+    return best or job.get("_fallback_desc") or ""
 
 # ---------------------------------------------------------------- revopsroles.com
 
@@ -1104,8 +1369,22 @@ def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_sys
                        if b.get("type") == "text")
     raise last or RuntimeError("claude call failed")
 
+def sample_desc(desc, cap=None):
+    """Fit a description into `cap` characters keeping both ends. A plain head slice drops
+    the closing block, and that is where sponsorship terms, language requirements and comp
+    are stated -- the two rows this pipeline got wrong were both decided by a sentence in
+    the last fifth of the ad."""
+    cap = cap or DESC_CHAR_CAP
+    desc = desc or ""
+    if len(desc) <= cap:
+        return desc
+    marker = "\n[...]\n"
+    head = int((cap - len(marker)) * DESC_HEAD_SHARE)
+    tail = cap - len(marker) - head
+    return desc[:head] + marker + desc[-tail:]
+
 def job_message(job):
-    desc = (job.get("description") or "")[:DESC_CHAR_CAP]
+    desc = sample_desc(job.get("description"))
     return (f"Title: {job['title']}\nCompany: {job.get('company','?')}\n"
             f"Location: {job.get('location','?')}\n"
             # Facts resolved in code, given so the model doesn't re-derive (and mis-derive) them.
@@ -1356,20 +1635,25 @@ def main():
     system_score = score_system()
     scored, kept, killed = [], 0, 0
 
-    detail_fetchers = {"greenhouse": greenhouse_desc, "linkedin": linkedin_desc,
-                       "revopsroles": jsonld_job_description}
     for j in new_jobs[:MAX_SCREENED_PER_RUN]:
-        # fill lazily-fetched descriptions (Greenhouse, LinkedIn, revopsroles) before any
-        # scoring -- only for survivors of the title/location prefilter, same as every
-        # other source. revopsroles falls back to its synthesized summary if the source
-        # site has no JobPosting JSON-LD to pull a real description from.
-        if j.get("_detail") and not j.get("description"):
-            fetcher = detail_fetchers.get(j.get("source"))
-            if fetcher:
-                j["description"] = fetcher(j["_detail"])
-        if not j.get("description") and j.get("_fallback_desc"):
-            j["description"] = j["_fallback_desc"]
+        # Get the real posting text before anything reads it -- only for survivors of the
+        # title/location prefilter, so the fetches stay cheap. Every downstream decision
+        # (the two disqualifier checks below, both model calls) is only as good as this.
+        j["description"] = fill_description(j)
+        j["desc_chars"] = len(j["description"])   # kept so a score can be audited later
         j.pop("_detail", None); j.pop("_fallback_desc", None)
+
+        # Hard disqualifiers, read off the full description before either model sees it.
+        # These are absolute -- no score is worth computing for a role that has ruled Tom
+        # out -- so they drop the job and save the Haiku and Opus calls.
+        quote = says_no_sponsorship(j["description"])
+        if quote:
+            record_drop(j, "no-sponsorship", f'JD: "{quote}"')
+            seen.add(j["id"]); continue
+        quote = requires_other_language(j["description"])
+        if quote:
+            record_drop(j, "language-required", f'JD: "{quote}"')
+            seen.add(j["id"]); continue
 
         which, raw, label = sponsor_for(j)
         j["sponsor_region"], j["sponsor_raw"], j["sponsor"] = which or "", raw, label
@@ -1380,7 +1664,8 @@ def main():
         if dry or not api_key:
             j.update({"score": 0, "score_raw": 0, "caps_applied": [], "dimensions": {},
                       "tier": j.get("market") or "", "flags": [], "verdict": "(not scored)"})
-            j["found_at"] = now_iso(); j["description"] = (j.get("description") or "")[:400]
+            j["found_at"] = now_iso()
+            j["description"] = sample_desc(j.get("description"), DESC_STORE_CAP)
             scored.append(j); seen.add(j["id"]); continue
 
         # STAGE 1: cheap screen
@@ -1409,7 +1694,9 @@ def main():
             record_drop(j, "score-error", str(e)[:160])
             print(f"  ERR   {j['title']} @ {j.get('company') or j['source']} ({e})")
             continue
-        j["description"] = (j.get("description") or "")[:400]
+        # Stored head + tail, matching what the scorer read, so a surprising score can be
+        # checked against the part of the ad that decided it.
+        j["description"] = sample_desc(j.get("description"), DESC_STORE_CAP)
         j["found_at"] = now_iso()
         scored.append(j); seen.add(j["id"])
         caps = f" | capped: {'; '.join(j['caps_applied'])}" if j.get("caps_applied") else ""

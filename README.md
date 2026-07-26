@@ -39,18 +39,36 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
 11. Every UK/NL company is matched against the **official sponsor registers** (gov.uk daily
     CSV, IND monthly register) and badged: sponsor / sponsor (likely) / not on register / n/a.
 
+**Reading the actual ad (everything downstream is only as good as this):**
+12. Job boards routinely hand back a career page's marketing copy instead of the posting, so
+    any description shorter than `MIN_DESC_CHARS` is treated as missing and **re-fetched from
+    the source** — the company's own ATS API, Workday's public CxS JSON API (Workday renders
+    in JavaScript, so scraping the page returns furniture and no JSON-LD), or schema.org
+    `JobPosting` markup, whichever returns most. Adzuna's own 400-character summaries get
+    upgraded to the full ad this way too.
+13. Two **hard disqualifiers are then read off the full text in code, before either model
+    call**: an ad that rules out visa sponsorship, and an ad that requires fluency in a
+    language other than English. Both drop the job and log the ad's own sentence to
+    `docs/excluded.json`, so a wrong drop is visible rather than silent. They are matched in
+    code rather than asked of the model because they are absolute and because the model only
+    ever sees a sampled copy of the posting.
+
 **Scoring (two stages, so the expensive model only sees real candidates):**
-12. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill).
-13. **Stage 2 — Claude Opus** scores the keepers on the weighted rubric from
+14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill).
+15. **Stage 2 — Claude Opus** scores the keepers on the weighted rubric from
     `profile.md` (Experience 25% / Skills 20% / Seniority 15% / Domain 15% / Location+Visa 15% /
     Trajectory 10%) and reports the facts it can only get by reading the posting: stated
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout.
-14. **The score itself is computed in Python**, not by the model — `weighted_total()` does
+16. **The score itself is computed in Python**, not by the model — `weighted_total()` does
     the arithmetic and `apply_caps()` applies the ceilings (location, title band, salary
     floor, language, CSM track), lowest cap winning. Each job stores `score`, `score_raw`
     (the total before caps) and `caps_applied`, so a low score always says why.
-15. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
+    The salary-floor cap only ever fires on pay stated in the ad: **Adzuna's predicted
+    salaries are discarded** (`salary_is_predicted`), because they are modelled from the
+    title and location rather than published by the employer, and two roles were capped to
+    4.0 by a figure that was never in the posting.
+17. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
     **5.0–5.9 into a collapsed "borderline"** section, and puts everything below 5 plus
     every row dropped earlier in the pipeline into a collapsed **"excluded"** section.
 
@@ -58,7 +76,9 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
 
 Nothing disappears silently. Every rejected row is logged to `docs/excluded.json` with the
 stage and the reason, and shown in the dashboard's collapsed "excluded" section grouped by
-stage — title/location filter, age, dedupe, Haiku kill, scoring error. The status footer
+stage — title/location filter, age, dedupe, no-sponsorship, language-required, Haiku kill,
+scoring error. The two disqualifier stages quote the sentence from the ad that caused the
+drop, so you can tell a correct filter from an over-eager regex at a glance. The status footer
 carries exact counts per stage plus `raw -> kept` per source, so an over-tight regex or a
 silently-broken source looks different from a quiet week.
 
