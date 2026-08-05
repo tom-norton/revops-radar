@@ -18,8 +18,10 @@ Data layer (multi-source so no single source can break the run):
                        LinkedIn's public, unauthenticated guest job-search endpoint
                        (same keywords/geoId/24h filter that page itself uses) -
                        no login or session cookie involved
-  - revopsroles.com  : per-country location pages (robots.txt allows these plain
-                       paths but disallows the ?location_country= query form)
+  - revopsroles.com  : parsed from Tom's own daily digest email (direct scraping
+                       started hitting Vercel's bot-challenge on 2026-07-31, same
+                       failure mode as hiring.cafe's direct API above) - reads via
+                       Gmail IMAP, GMAIL_ADDRESS/GMAIL_APP_PASSWORD required
 
 Pipeline:
   fetch -> title/location prefilter (free) -> age filter -> dedupe
@@ -46,7 +48,7 @@ Usage:
   python scan.py --rescore   clear scored rows so the corpus re-runs under the current engine
 """
 
-import html, json, os, re, sys, time
+import email, html, imaplib, json, os, re, sys, time
 from datetime import datetime, timezone, timedelta
 import requests
 import sponsors as spon
@@ -1210,63 +1212,99 @@ def fill_description(job):
 
 # ---------------------------------------------------------------- revopsroles.com
 
-# robots.txt disallows the ?location_country= query-string filter (for every agent,
-# named or "*") but NOT these plain per-country paths -- use these, never the query form.
-REVOPSROLES_LOCATIONS = ["netherlands", "belgium", "united-kingdom", "ireland"]
+# Direct scraping (the old approach: regex-extracting the JSON blob embedded in
+# revopsroles.com/locations/{country} pages) started hitting Vercel's bot/attack-
+# challenge on 2026-07-31 -- every request, even with a real browser UA, comes back
+# as a "Vercel Security Checkpoint" interstitial (x-vercel-mitigated: challenge),
+# most likely keyed on datacenter/proxy IP reputation, which also describes GitHub
+# Actions runners. Same failure mode as hiring.cafe's direct API above, so this
+# takes the same fix: read the data through a channel the site isn't blocking --
+# here, Tom's own daily digest email, which he's subscribed his Gmail address to
+# specifically for this.
+GMAIL_IMAP_HOST = "imap.gmail.com"
+REVOPSROLES_SENDER = "hello@mail.revopsroles.com"
+REVOPSROLES_LOOKBACK_DAYS = 4   # covers a missed run (e.g. a quiet weekend) without
+                                 # re-scanning the whole mailbox; reprocessing an
+                                 # already-seen job is harmless, seen.json dedupes it
 
-def fetch_revopsroles():
-    """Job metadata is embedded as an escaped JSON blob in the page's Next.js RSC
-    payload rather than served through a documented API. No full description field is
-    present in this listing data, so the real JD is lazy-fetched from source_url (the
-    original posting) via jsonld_job_description() for survivors, same pattern as
-    Greenhouse/LinkedIn. A short synthesized summary (category/seniority/work mode) is
-    kept as a fallback only, for postings whose site doesn't expose JobPosting JSON-LD."""
+def fetch_revopsroles(gmail_address, gmail_app_password):
+    """Parses Tom's revopsroles.com daily digest email (read via Gmail IMAP) instead of
+    scraping the site directly. No full description field is present in the digest, so
+    the real JD is lazy-fetched from the job's revopsroles.com page via
+    jsonld_job_description() for survivors, same pattern as Greenhouse/LinkedIn --
+    though that fetch is itself likely to hit the same bot-challenge, so a short
+    synthesized summary (category/seniority/work mode) is kept as a fallback."""
     out, seen_ids = [], set()
-    for slug in REVOPSROLES_LOCATIONS:
-        try:
-            r = get(f"https://revopsroles.com/locations/{slug}")
-            r.raise_for_status()
-        except Exception:
-            continue
-        for c in re.split(r'\\"_formatted\\":\{', r.text)[1:]:
-            def field(key):
-                m = re.search(r'\\"' + key + r'\\":\\"(.*?)\\"', c)
+    imap = imaplib.IMAP4_SSL(GMAIL_IMAP_HOST)
+    try:
+        imap.login(gmail_address, gmail_app_password)
+        imap.select("INBOX", readonly=True)
+        since = (datetime.now(timezone.utc) - timedelta(days=REVOPSROLES_LOOKBACK_DAYS)).strftime("%d-%b-%Y")
+        typ, data = imap.search(None, f'(FROM "{REVOPSROLES_SENDER}" SINCE {since})')
+        if typ != "OK":
+            return out
+        for mid in data[0].split():
+            typ, msg_data = imap.fetch(mid, "(RFC822)")
+            if typ != "OK" or not msg_data or not msg_data[0]:
+                continue
+            msg = email.message_from_bytes(msg_data[0][1])
+            posted = ""
+            try:
+                posted = email.utils.parsedate_to_datetime(msg["Date"]).timestamp()
+            except Exception:
+                pass
+            body = ""
+            for part in (msg.walk() if msg.is_multipart() else [msg]):
+                if part.get_content_type() == "text/html":
+                    charset = part.get_content_charset() or "utf-8"
+                    body = (part.get_payload(decode=True) or b"").decode(charset, errors="replace")
+                    break
+            if not body:
+                continue
+            for chunk in body.split('<a href="https://revopsroles.com/jobs/')[1:]:
+                m = re.match(r'([0-9a-fA-F-]+)"[^>]*>(.*?)</a>(.*)', chunk, re.S)
                 if not m:
-                    return ""
-                try:
-                    return json.loads('"' + m.group(1) + '"')
-                except Exception:
-                    return m.group(1)
-            jid = field("id")
-            if not jid or jid in seen_ids:
-                continue
-            seen_ids.add(jid)
-            bump_raw("revopsroles", 1)
-            title, loc = field("title"), field("location_raw")
-            cc = country_code(field("location_country"))
-            reason = prefilter(title, loc, cc)
-            if reason:
-                record_drop({"id": f"rr-{jid}", "title": title, "location": loc,
-                             "company": field("company_name"), "source": "revopsroles"},
-                            "prefilter", reason)
-                continue
-            sal = ""
-            if field("salary_min"):
-                sal = f"{field('salary_min')}-{field('salary_max') or field('salary_min')} {field('salary_currency')}"
-            summary = "; ".join(f"{label}: {v}" for label, v in (
-                ("Category", field("category")), ("Seniority", field("seniority")),
-                ("Work mode", field("work_mode")), ("Visa sponsorship", field("visa_sponsorship")),
-            ) if v)
-            posted = field("posted_at")
-            src_url = field("source_url") or f"https://revopsroles.com/jobs/{jid}"
-            out.append({
-                "id": f"rr-{jid}", "company": field("company_name"),
-                "title": title, "location": loc, "country": cc,
-                "market": market_of(cc, loc),
-                "url": src_url, "source": "revopsroles", "salary": sal,
-                "posted_at": float(posted) if posted else "",
-                "_detail": src_url, "_fallback_desc": summary,
-            })
+                    continue
+                jid, title_raw, rest = m.groups()
+                if jid in seen_ids:
+                    continue
+                seen_ids.add(jid)
+                bump_raw("revopsroles", 1)
+                title = clean_text(title_raw)
+                region = rest[:1500]   # bounds the field search to this job's own block
+                cl = re.search(r'>([^<]+)<!--\s*-->\s*·\s*([^<]+)</span>', region)
+                company, loc = (clean_text(cl.group(1)), clean_text(cl.group(2))) if cl else ("", "")
+                sal_m = re.search(r'color:#16a34a[^"]*">([^<]+)</span>', region)
+                salary = clean_text(sal_m.group(1)) if sal_m else ""
+                tags_m = re.search(r'margin-top:8px">(.*?)</div>', region, re.S)
+                tags = re.findall(r'>([^<]+)</span>', tags_m.group(1)) if tags_m else []
+                category = tags[0] if len(tags) > 0 else ""
+                seniority = tags[1] if len(tags) > 1 else ""
+                work_mode = tags[2] if len(tags) > 2 else ""
+                cc = country_code(loc.rsplit(",", 1)[-1]) if "," in loc else ""
+                reason = prefilter(title, loc, cc)
+                if reason:
+                    record_drop({"id": f"rr-{jid}", "title": title, "location": loc,
+                                 "company": company, "source": "revopsroles"},
+                                "prefilter", reason)
+                    continue
+                summary = "; ".join(f"{label}: {v}" for label, v in (
+                    ("Category", category), ("Seniority", seniority), ("Work mode", work_mode),
+                ) if v)
+                src_url = f"https://revopsroles.com/jobs/{jid}"
+                out.append({
+                    "id": f"rr-{jid}", "company": company,
+                    "title": title, "location": loc, "country": cc,
+                    "market": market_of(cc, loc),
+                    "url": src_url, "source": "revopsroles", "salary": salary,
+                    "posted_at": posted,
+                    "_detail": src_url, "_fallback_desc": summary,
+                })
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
     return out
 
 APIFY_ACTOR = "memo23~apify-hiring-cafe-scraper"
@@ -1568,12 +1606,17 @@ def main():
     except Exception as e:
         src_status["LinkedIn"] = f"skipped: {e}"
 
-    # 7. revopsroles.com (per-country location pages, robots.txt-compliant)
-    try:
-        jobs = fetch_revopsroles(); found += jobs
-        src_status["revopsroles.com"] = src_line("revopsroles", len(jobs))
-    except Exception as e:
-        src_status["revopsroles.com"] = f"skipped: {e}"
+    # 7. revopsroles.com (parsed from Tom's daily digest email via Gmail IMAP; direct
+    # scraping is blocked by Vercel's bot-challenge since 2026-07-31)
+    gmail_addr, gmail_pw = os.environ.get("GMAIL_ADDRESS", ""), os.environ.get("GMAIL_APP_PASSWORD", "")
+    if gmail_addr and gmail_pw:
+        try:
+            jobs = fetch_revopsroles(gmail_addr, gmail_pw); found += jobs
+            src_status["revopsroles.com"] = src_line("revopsroles", len(jobs))
+        except Exception as e:
+            src_status["revopsroles.com"] = f"FAIL: {e}"
+    else:
+        src_status["revopsroles.com"] = "skipped: no GMAIL_ADDRESS/GMAIL_APP_PASSWORD set"
 
     # Normalise the short scraped fields once, here, rather than in seven fetchers.
     for j in found:

@@ -28,8 +28,11 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
    Tom's saved hiring.cafe searches (the direct API blocks datacenter IPs).
 6. **LinkedIn** — mirrors "Jobs based on your preferences" via LinkedIn's public,
    unauthenticated guest job-search endpoint. No login or session cookie.
-7. **revopsroles.com** — per-country location pages (robots.txt allows these plain
-   paths but disallows the `?location_country=` query-string filter form).
+7. **revopsroles.com** — parsed from Tom's own daily digest email via Gmail IMAP.
+   Direct scraping of the site's location pages broke on 2026-07-31 when the site put
+   Vercel's bot/attack-challenge in front of every request, including from GitHub
+   Actions' IPs — same failure mode as hiring.cafe's direct API above. Requires
+   `GMAIL_ADDRESS`/`GMAIL_APP_PASSWORD` (a Gmail app password); skipped if unset.
 
 **Filtering:**
 8. A free **title + location filter** drops anything off-function or off-market before a token is spent.
@@ -168,5 +171,9 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   notice; it's wrapped so a failure there never breaks the run, just shows "skipped" for that source.
 - **Belgium/Amsterdam location coverage** for hiring.cafe and LinkedIn depends on `location_ok()`'s
   regexes staying in sync with how those cities/regions actually appear in postings.
+- **revopsroles.com** depends on Tom's Gmail subscription to the site's daily digest staying
+  active and the email's HTML layout not changing; it parses that email rather than the site
+  itself (see above). If the digest stops arriving or its markup changes, this source goes
+  quiet the same way the others do — check the status footer.
 - The status footer at the bottom of the dashboard shows exactly what each source did each run —
   check it if results look thin.
