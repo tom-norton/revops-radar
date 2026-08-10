@@ -221,13 +221,15 @@ function dropRow(d){
 }
 
 function renderExcluded(lowScored){
-  const wrap = document.getElementById("excluded-wrap"); wrap.innerHTML = "";
+  const wrap = document.getElementById("excluded-wrap");
+  const wasOpen = wrap.querySelector("details")?.open ?? false;
+  wrap.innerHTML = "";
   const rows = allExcluded.rows || [];
   const counts = allExcluded.counts || {};
   const totalDropped = Object.values(counts).reduce((a,b)=>a+b, 0);
   if(!lowScored.length && !rows.length) return;
 
-  const d = document.createElement("details"); d.className = "excluded";
+  const d = document.createElement("details"); d.className = "excluded"; d.open = wasOpen;
   const bits = [];
   if(lowScored.length) bits.push(`${lowScored.length} scored under ${FLOOR.toFixed(1)}`);
   if(totalDropped) bits.push(`${totalDropped} dropped in the latest run`);
@@ -278,9 +280,11 @@ function renderAll(){
   if(apply.length) apply.forEach(j=>a.appendChild(card(j, false)));
   else a.innerHTML = `<div class="empty">No roles at ${GATE}+ yet. The next daily run may surface some.</div>`;
 
-  const borderWrap = document.getElementById("border-wrap"); borderWrap.innerHTML = "";
+  const borderWrap = document.getElementById("border-wrap");
+  const borderWasOpen = borderWrap.querySelector("details")?.open ?? false;
+  borderWrap.innerHTML = "";
   if(border.length){
-    const d = document.createElement("details"); d.className = "borderline";
+    const d = document.createElement("details"); d.className = "borderline"; d.open = borderWasOpen;
     d.innerHTML = `<summary>${border.length} borderline (${FLOOR.toFixed(1)}–${(GATE-0.1).toFixed(1)}) — volume plays, weaker fit</summary>`;
     const box = document.createElement("div"); box.style.marginTop = "10px";
     border.forEach(j=>box.appendChild(card(j, false)));
@@ -289,9 +293,11 @@ function renderAll(){
 
   renderExcluded(lowScored);
 
-  const revWrap = document.getElementById("reviewed-wrap"); revWrap.innerHTML = "";
+  const revWrap = document.getElementById("reviewed-wrap");
+  const revWasOpen = revWrap.querySelector("details")?.open ?? false;
+  revWrap.innerHTML = "";
   if(reviewed.length){
-    const d = document.createElement("details"); d.className = "reviewed";
+    const d = document.createElement("details"); d.className = "reviewed"; d.open = revWasOpen;
     d.innerHTML = `<summary>${reviewed.length} hidden / applied</summary>`;
     const box = document.createElement("div"); box.style.marginTop = "10px";
     reviewed.forEach(j=>box.appendChild(card(j, true)));
