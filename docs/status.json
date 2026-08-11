@@ -1,20 +1,20 @@
 {
- "last_run": "2026-08-11T14:26:19.164951+00:00",
+ "last_run": "2026-08-11T19:59:31.322388+00:00",
  "new_this_run": 7,
  "sources": {
-  "Adzuna (NL+UK)": "ok (raw 659 -> kept 32) | nl=raw 137, kept 5; gb=raw 522, kept 27",
+  "Adzuna (NL+UK)": "ok (raw 666 -> kept 30) | nl=raw 143, kept 7; gb=raw 523, kept 23",
   "Reed (UK)": "ok (raw 100 -> kept 5)",
-  "Indeed/JobSpy (Dublin)": "ok (raw 87 -> kept 3)",
-  "Company ATS (19 watched)": "ok (raw 4131 -> kept 16)",
+  "Indeed/JobSpy (Dublin)": "ok (raw 86 -> kept 3)",
+  "Company ATS (19 watched)": "ok (raw 4140 -> kept 17)",
   "hiring.cafe (Apify)": "ok (raw 30 -> kept 29)",
-  "LinkedIn": "ok (raw 60 -> kept 22)",
+  "LinkedIn": "ok (raw 107 -> kept 33)",
   "revopsroles.com": "ok (raw 13 -> kept 10)",
   "age filter": "dropped 9 older than 7d; 0 had no usable date (kept)",
   "UK sponsor register": "ok - 142692 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-08-11.csv",
   "NL sponsor register": "ok - 12692 names (IND + override)",
-  "screening": "stage1 kept 7, killed 15; stage2 scored 7",
-  "tokens": "in 41352, out 4648, cache read 27684, written 4614",
-  "dropped": "age 9, dedupe 26, language-required 1, no-sponsorship 1, prefilter:location 186, prefilter:title 4768, stage1-kill 15"
+  "screening": "stage1 kept 7, killed 11; stage2 scored 7",
+  "tokens": "in 34804, out 4335, cache read 27684, written 4614",
+  "dropped": "age 9, dedupe 35, prefilter:location 188, prefilter:title 4820, stage1-kill 11"
  },
  "gate": 6.0,
  "floor": 5.0,
