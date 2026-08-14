@@ -1,6 +1,6 @@
 # Scoring profile — Tom Norton
 
-This file is the candidate profile the deep-score stage (Claude Sonnet) reads. Edit it
+This file is the candidate profile the deep-score stage (Claude Opus) reads. Edit it
 whenever your background, targets, or constraints change; the pipeline picks up the new
 version on the next run. Keep it factual. Do not add skills or experience you don't have.
 
@@ -40,9 +40,20 @@ funnel modeling, CAC / NRR / retention analytics, QBR systems, CRM architecture,
 and routing, Power BI, SQL (basic), Excel, data analysis.
 
 ## Seniority fit (15%)
-Target band: Manager or senior IC (Senior/Lead/Principal). Analyst/Specialist titles are a
-comp risk against visa salary floors, cap around 5. Director+ is a stretch, cap around 6.
-Senior/Principal CSM at established companies scores as a primary target, not a fallback.
+Target band: Manager or senior IC (Senior/Lead/Principal). Senior/Principal CSM at
+established companies scores as a primary target, not a fallback.
+
+Judge the level from the posting, not from the title noun. Analyst, Specialist, Associate
+and Coordinator titles are a prompt to read the job description carefully, not an automatic
+penalty: at established employers these routinely carry manager-level scope and a salary
+band well clear of the visa floor, and plenty of companies title Manager-grade Strategy &
+Operations work as "Senior Analyst". Mark the seniority down only when the posting itself
+reads junior — 0-3 years of experience wanted, execution-only or admin duties, no ownership
+of a system or a process, reporting into a Manager, or a stated band below the market floor.
+
+Director+ / Head of is a stretch for a candidate without dedicated RevOps tenure and should
+score lower on this dimension, but it is not disqualifying — at a smaller company "Head of
+RevOps" is often a hands-on Manager role with a title attached.
 
 ## Domain / industry fit (15%)
 Strongest in B2B SaaS post-sale operations: retention levers, customer health, CS-to-sales
@@ -69,9 +80,13 @@ CAN sponsor but the specific role must still clear the salary/threshold rules. "
 register" is a caution (registers use legal names and miss trading names), not an auto-reject.
 
 ## Salary handling
-Most EU postings don't list salary. If salary is stated and below the market's floor, flag
-"below visa floor" and cap the score. If salary is NOT stated, do not reject; estimate comp
-risk from seniority and company and add a visible "comp not listed, verify vs floor" flag.
+Most EU postings don't list salary. If a posting states a salary and its base is genuinely
+below the market's visa floor, the role is dropped outright, not scored and not shown — a
+role Tom cannot legally take at that pay is not worth a fit score. Report the salary fields
+accurately regardless of how strong the rest of the posting looks; the drop happens in code
+from what you report, not from your own judgment call on whether it's close enough. If
+salary is NOT stated, do not reject; estimate comp risk from seniority and company and add
+a visible "comp not listed, verify vs floor" flag.
 
 ## Career trajectory (10%)
 Deliberate pivot from post-sale CS/AM into RevOps/GTM strategy, backed by the MBA and the GTM
@@ -84,5 +99,6 @@ CSM role in the Netherlands is a primary target and should not be penalized as "
   with RevOps roles.
 - UK (London), Ireland (Dublin), and Belgium: a CSM role only scores highly if the company
   is a genuine standout (tier-1 SaaS, strong brand, clear sponsor) or the fit is unusually
-  strong. Otherwise keep CSM in these markets modest (around 5-6), because the pivot and
-  relocation bar is higher there.
+  strong. Otherwise keep CSM in these markets modest, because the pivot and relocation bar
+  is higher there. Weight this inside the dimension scores; nothing downstream adjusts the
+  total afterwards.

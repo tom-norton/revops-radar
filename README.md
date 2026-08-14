@@ -63,15 +63,32 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
     Trajectory 10%) and reports the facts it can only get by reading the posting: stated
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout.
-16. **The score itself is computed in Python**, not by the model — `weighted_total()` does
-    the arithmetic and `apply_caps()` applies the ceilings (location, title band, salary
-    floor, language, CSM track), lowest cap winning. Each job stores `score`, `score_raw`
-    (the total before caps) and `caps_applied`, so a low score always says why.
-    The salary-floor cap only ever fires on pay stated in the ad: **Adzuna's predicted
-    salaries are discarded** (`salary_is_predicted`), because they are modelled from the
-    title and location rather than published by the employer, and two roles were capped to
-    4.0 by a figure that was never in the posting.
-17. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
+16. **Two more hard disqualifiers, this time from what Opus reports** rather than a text
+    match: a stated salary below the market's visa floor, and a posting that makes a
+    non-English language a hard requirement. These catch what the regex checks in step 13
+    miss — an oddly-worded requirement, a salary buried in prose — by actually reading the
+    posting instead of matching a sentence. `deep_score_disqualifier()` drops the role the
+    same way steps 12–13 do: not scored, not shown, logged to `docs/excluded.json` under
+    `language-required` or `below-visa-floor`. The below-floor check only ever fires on pay
+    actually stated in the ad, in the market's own currency — **Adzuna's predicted salaries
+    are discarded** (`salary_is_predicted`), because they are modelled from the title and
+    location rather than published by the employer, and a GBP figure is never compared
+    against a EUR floor.
+17. **The score itself is computed in Python**, not by the model, for every role that
+    survives to be scored — `weighted_total()` does the arithmetic, so the number is
+    reproducible from the six dimension scores instead of being whatever total the model
+    reported (on an early corpus, 21 of 51 model-reported totals were more than 0.6 off the
+    weighted sum of their own dimensions). **Nothing clamps that total.** There used to be
+    an `apply_caps()` with score ceilings for title band, salary floor, language,
+    off-target function and the CSM track; it is gone. It disagreed with the rubric it was
+    supposed to enforce — a RevOps Specialist role that scored 6.5 on the dimensions landed
+    at 4.0 because of one word in its title — and the `job-application-workflow` skill this
+    rubric comes from has no such mechanism. What's left of it travels as **flags**
+    (`score_flags()`): off-target function, junior/senior title band, CSM outside NL.
+    They're shown on the row so you can judge them; they don't move the number. Salary and
+    language don't appear here at all — a role either clears them and gets scored clean, or
+    it doesn't and step 16 drops it before this function ever runs.
+18. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
     **5.0–5.9 into a collapsed "borderline"** section, and puts everything below 5 plus
     every row dropped earlier in the pipeline into a collapsed **"excluded"** section.
 
@@ -79,43 +96,71 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
 
 Nothing disappears silently. Every rejected row is logged to `docs/excluded.json` with the
 stage and the reason, and shown in the dashboard's collapsed "excluded" section grouped by
-stage — title/location filter, age, dedupe, no-sponsorship, language-required, Haiku kill,
-scoring error. The two disqualifier stages quote the sentence from the ad that caused the
-drop, so you can tell a correct filter from an over-eager regex at a glance. The status footer
-carries exact counts per stage plus `raw -> kept` per source, so an over-tight regex or a
-silently-broken source looks different from a quiet week.
+stage — title/location filter, age, dedupe, no-sponsorship, language-required,
+below-visa-floor, Haiku kill, scoring error. The disqualifier stages quote the sentence or
+the figure that caused the drop, so you can tell a correct filter from an over-eager one at
+a glance. The status footer carries exact counts per stage plus `raw -> kept` per source, so
+an over-tight regex or a silently-broken source looks different from a quiet week.
 
 Two commands act on what you find there:
 
 ```
-python scan.py --unkill    # free every stage-1 Haiku kill so the next run re-evaluates it
-python scan.py --rescore   # clear all scored rows and rescore the corpus from scratch
+python scan.py --unkill                    # free every stage-1 Haiku kill still in the file
+python scan.py --unkill-history --days 14  # same, but walks git history for the ones the
+                                           # file's per-stage sample no longer holds
+python scan.py --ignore-age                # one run with the 7-day age filter relaxed
+python scan.py --rescore                   # clear all scored rows and rescore from scratch
 ```
+
+`docs/excluded.json` keeps only a bounded sample per stage, so a week of scans can produce
+twice as many stage-1 kills as the committed file holds. `--unkill-history` reads every
+commit of that file to recover the rest. Pair it with one `--ignore-age` run — anything it
+frees is older than the 7-day cutoff by definition, so the age filter would otherwise drop
+it again immediately. Neither command can resurrect a posting that has since come down:
+`excluded.json` stores no URL, so a job only returns if it's still live in a source feed.
+
+The easiest way to run a backfill is from GitHub, where the API key already is: **Actions →
+"Daily job scan" → Run workflow**, tick `backfill` and `ignore_age`. That does the history
+walk and the relaxed-age scan in one go. `MAX_SCORED_PER_RUN` still caps the run at 30 deep
+scores, so a large backfill takes a few runs to drain. Do this after any change that
+loosens the screen or the scoring rules — otherwise the change only ever applies to jobs
+posted from that day on.
 
 ## Your profile lives in `profile.md`
 
 The deep score reads `profile.md`. Edit that file whenever your background, targets, comp
 floors, or market list change. Keep it factual.
 
-Two things are **not** driven by `profile.md` alone, because code enforces them: the salary
-floors in `VISA_FLOORS` and the market list in `market_of()`. Change a comp floor or add a
-market and you need to update both, or the prose and the cap will disagree.
+Two things are **not** driven by `profile.md` alone, because code reads them directly: the
+salary floors in `VISA_FLOORS` (used by `deep_score_disqualifier()` to drop a stated salary
+below the floor) and the market list in `market_of()` (which gates the pipeline). Change a
+comp floor or add a market and you need to update both, or the prose and the code will
+disagree.
 
-`profile.md` also diverges from the `job-application-workflow` skill on purpose — it rejects
-Germany, Spain, and remote-EMEA outright (the skill still scores Berlin 4-6 and remote-Spain
-6-7), and it adds Belgium and the CSM-track weighting. `profile.md` is the current, narrower
-stance; don't "fix" it back toward the skill.
+`profile.md` diverges from the `job-application-workflow` skill in exactly two places, both
+deliberate: **markets** — it rejects Germany, Spain, and remote-EMEA outright (the skill
+still scores Berlin 4-6 and remote-Spain 6-7) and adds Belgium — and the **CSM-track
+weighting**, which the skill has no equivalent for. That narrower stance is current; don't
+"fix" it back toward the skill.
+
+Everything else is meant to match the skill's Step 1 rubric, and did not for a long time.
+The scoring model here is the skill's: six weighted dimensions, judged on the skill's own
+guidance, with no ceilings and no title-based exclusions. If you find the two disagreeing
+anywhere other than markets and the CSM track, the radar is the one that's wrong.
 
 ## Tests
 
 ```
-python tests/test_scoring.py    # pure functions: caps, weighted total, location, dedupe
-python scan.py --selftest       # replay stored scores through the cap engine, offline
+python tests/test_scoring.py    # pure functions: weighted total, flags, title gate, location, dedupe
+python scan.py --selftest       # replay stored dimension scores through the engine, offline
 python scan.py --dry            # full pipeline, no Claude calls
 ```
 
-The unit tests also run in CI before the scan, so a broken cap can't spend tokens producing
-wrong scores.
+The unit tests also run in CI before the scan, so a broken filter or a mis-weighted rubric
+can't spend tokens producing wrong scores. Two of them exist specifically to stop old
+mistakes coming back: one asserts that no title band changes a score (the cap engine stays
+dead) and one asserts the title gate still admits the Strategy & Operations wordings the
+market actually uses.
 
 ## Setup / secrets
 
@@ -154,7 +199,23 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   one, which is what `test_widening_did_not_lose_anything_previously_kept` guards.
 - **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
 - **Scoring:** what the model judges is in `profile.md` and `score_system()`; what the code
-  decides is `RUBRIC`, `TITLE_BANDS`, `CAPS`, `VISA_FLOORS`, and `apply_caps()`.
+  decides is `RUBRIC` (the weights) and `weighted_total()`. `TITLE_BANDS` feeds
+  `score_flags()`, which annotates a row without changing its score. `VISA_FLOORS` feeds
+  `deep_score_disqualifier()` instead, which drops the row outright rather than flagging it
+  — see the next bullet.
+- **What the deep scorer may drop outright, not just flag:** `deep_score_disqualifier()`.
+  Only two things: a stated salary below the market's visa floor, and a hard non-English
+  language requirement. Both are absolute — a role Tom can't legally take, or can't
+  actually do — so they're policy-identical to the pre-model `says_no_sponsorship()` /
+  `requires_other_language()` regex checks, just decided from the model's reading instead
+  of a text match. Everything else the model reports (off-target function, title band, CSM
+  outside NL) is a flag on a scored row, not a drop.
+- **What the cheap screen may throw away:** `SCREEN_SYSTEM`. It can kill on exactly two
+  grounds, location and unambiguously wrong function, and is explicitly forbidden from
+  killing on seniority. It used to do the latter, and quietly lost a week's worth of
+  Analyst-, Specialist-, Associate- and Director-titled RevOps roles plus most of the
+  Strategy & Operations market before anything read the description. Re-check that list of
+  in-scope functions before narrowing anything here.
 - **Model + cost:** `CLAUDE_SCORE_MODEL`, `SCORE_EFFORT` (`low`–`max`; the main cost dial),
   `MAX_SCREENED_PER_RUN` (Haiku) and `MAX_SCORED_PER_RUN` (Opus). The deep-score system
   prompt is cached, so the per-run token cost is dominated by job descriptions, not the
