@@ -1,12 +1,11 @@
 {
- "last_run": "2026-08-14T13:15:59.809656+00:00",
+ "last_run": "2026-08-14T14:19:18.436388+00:00",
  "counts": {
-  "prefilter:title": 4845,
-  "prefilter:location": 192,
-  "dedupe": 40,
-  "below-visa-floor": 3,
-  "stage1-kill": 36,
-  "language-required": 1
+  "prefilter:title": 4830,
+  "prefilter:location": 185,
+  "age": 15,
+  "dedupe": 41,
+  "stage1-kill": 2
  },
  "rows": [
   {
@@ -17,7 +16,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742123+00:00"
+   "dropped_at": "2026-08-14T14:17:44.071950+00:00"
   },
   {
    "id": "az-nl-5838811585",
@@ -27,7 +26,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742476+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072351+00:00"
   },
   {
    "id": "az-nl-5838485759",
@@ -37,7 +36,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: excluded term 'VP'",
-   "dropped_at": "2026-08-14T13:09:57.742573+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072483+00:00"
   },
   {
    "id": "az-nl-5836859134",
@@ -47,7 +46,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742682+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072602+00:00"
   },
   {
    "id": "az-nl-5835750931",
@@ -57,7 +56,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742725+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072647+00:00"
   },
   {
    "id": "az-nl-5834763602",
@@ -67,7 +66,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742764+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072689+00:00"
   },
   {
    "id": "az-nl-5834763198",
@@ -77,7 +76,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742788+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072715+00:00"
   },
   {
    "id": "az-nl-5834762444",
@@ -87,7 +86,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742873+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072786+00:00"
   },
   {
    "id": "az-nl-5833601977",
@@ -97,7 +96,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742894+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072807+00:00"
   },
   {
    "id": "az-nl-5832611363",
@@ -107,7 +106,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742918+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072833+00:00"
   },
   {
    "id": "az-nl-5832094496",
@@ -117,7 +116,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:57.742942+00:00"
+   "dropped_at": "2026-08-14T14:17:44.072862+00:00"
   },
   {
    "id": "az-nl-5841783267",
@@ -127,7 +126,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795049+00:00"
+   "dropped_at": "2026-08-14T14:17:44.839904+00:00"
   },
   {
    "id": "az-nl-5841730928",
@@ -137,7 +136,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795079+00:00"
+   "dropped_at": "2026-08-14T14:17:44.839930+00:00"
   },
   {
    "id": "az-nl-5841468749",
@@ -147,7 +146,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795112+00:00"
+   "dropped_at": "2026-08-14T14:17:44.839958+00:00"
   },
   {
    "id": "az-nl-5841468722",
@@ -157,7 +156,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795162+00:00"
+   "dropped_at": "2026-08-14T14:17:44.839999+00:00"
   },
   {
    "id": "az-nl-5841468579",
@@ -167,7 +166,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795221+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840049+00:00"
   },
   {
    "id": "az-nl-5841416022",
@@ -177,7 +176,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795264+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840086+00:00"
   },
   {
    "id": "az-nl-5841415668",
@@ -187,7 +186,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795308+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840126+00:00"
   },
   {
    "id": "az-nl-5841216152",
@@ -197,7 +196,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795336+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840153+00:00"
   },
   {
    "id": "az-nl-5841147979",
@@ -207,7 +206,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795373+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840188+00:00"
   },
   {
    "id": "az-nl-5840991423",
@@ -217,7 +216,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795410+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840222+00:00"
   },
   {
    "id": "az-nl-5840957693",
@@ -227,7 +226,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795435+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840244+00:00"
   },
   {
    "id": "az-nl-5840955279",
@@ -237,7 +236,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795461+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840270+00:00"
   },
   {
    "id": "az-nl-5840955033",
@@ -247,7 +246,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795495+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840302+00:00"
   },
   {
    "id": "az-nl-5840406621",
@@ -257,7 +256,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795554+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840354+00:00"
   },
   {
    "id": "az-nl-5840400901",
@@ -267,7 +266,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795644+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840463+00:00"
   },
   {
    "id": "az-nl-5840400912",
@@ -277,7 +276,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795678+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840495+00:00"
   },
   {
    "id": "az-nl-5840400674",
@@ -287,7 +286,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795706+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840519+00:00"
   },
   {
    "id": "az-nl-5840400269",
@@ -297,7 +296,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795756+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840565+00:00"
   },
   {
    "id": "az-nl-5840238723",
@@ -307,17 +306,17 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795842+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840599+00:00"
   },
   {
-   "id": "az-nl-5840001626",
+   "id": "az-nl-5840001625",
    "title": "General Management Traineeship (Milieu)",
    "company": "Eurofins Netherlands Environment Testing",
-   "location": "Amsterdam, Noord-Holland",
+   "location": "Amersfoort, Provincie Utrecht",
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795892+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840631+00:00"
   },
   {
    "id": "az-nl-5840001615",
@@ -327,7 +326,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795946+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840648+00:00"
   },
   {
    "id": "az-nl-5838722018",
@@ -337,17 +336,17 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.795988+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840701+00:00"
   },
   {
    "id": "az-nl-5838614772",
    "title": "Head of Sales (MT-Lid)",
    "company": "Oneeightyone",
-   "location": "Amsterdam, Noord-Holland",
+   "location": "Nieuw West, Amsterdam",
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.796014+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840727+00:00"
   },
   {
    "id": "az-nl-5838486571",
@@ -357,7 +356,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:58.796037+00:00"
+   "dropped_at": "2026-08-14T14:17:44.840750+00:00"
   },
   {
    "id": "az-nl-5838485721",
@@ -367,7 +366,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.776998+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662030+00:00"
   },
   {
    "id": "az-nl-5838485053",
@@ -377,7 +376,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777050+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662081+00:00"
   },
   {
    "id": "az-nl-5838484643",
@@ -387,7 +386,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777080+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662113+00:00"
   },
   {
    "id": "az-nl-5838484428",
@@ -397,7 +396,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777112+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662146+00:00"
   },
   {
    "id": "az-nl-5838483591",
@@ -407,7 +406,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777141+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662177+00:00"
   },
   {
    "id": "az-nl-5838482611",
@@ -417,7 +416,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777169+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662206+00:00"
   },
   {
    "id": "az-nl-5838335189",
@@ -427,7 +426,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777197+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662232+00:00"
   },
   {
    "id": "az-nl-5837920141",
@@ -437,7 +436,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777241+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662272+00:00"
   },
   {
    "id": "az-nl-5837605277",
@@ -447,7 +446,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777271+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662299+00:00"
   },
   {
    "id": "az-nl-5837239903",
@@ -457,7 +456,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777405+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662449+00:00"
   },
   {
    "id": "az-nl-5837128412",
@@ -467,7 +466,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777566+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662608+00:00"
   },
   {
    "id": "az-nl-5836852566",
@@ -477,7 +476,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777591+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662632+00:00"
   },
   {
    "id": "az-nl-5836670830",
@@ -487,7 +486,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777614+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662655+00:00"
   },
   {
    "id": "az-nl-5836670832",
@@ -497,7 +496,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777638+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662678+00:00"
   },
   {
    "id": "az-nl-5835759773",
@@ -507,7 +506,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777668+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662709+00:00"
   },
   {
    "id": "az-nl-5835757447",
@@ -517,7 +516,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777694+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662736+00:00"
   },
   {
    "id": "az-nl-5835753233",
@@ -527,7 +526,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777725+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662769+00:00"
   },
   {
    "id": "az-nl-5834763601",
@@ -537,7 +536,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777744+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662787+00:00"
   },
   {
    "id": "az-nl-5834763408",
@@ -547,7 +546,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777787+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662831+00:00"
   },
   {
    "id": "az-nl-5834763335",
@@ -557,7 +556,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777842+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662868+00:00"
   },
   {
    "id": "az-nl-5834763249",
@@ -567,7 +566,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777861+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662886+00:00"
   },
   {
    "id": "az-nl-5834763024",
@@ -577,7 +576,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777895+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662919+00:00"
   },
   {
    "id": "az-nl-5834762545",
@@ -587,7 +586,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777928+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662952+00:00"
   },
   {
    "id": "az-nl-5834762435",
@@ -597,7 +596,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777954+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662977+00:00"
   },
   {
    "id": "az-nl-5834397620",
@@ -607,7 +606,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-08-14T13:09:59.777973+00:00"
+   "dropped_at": "2026-08-14T14:17:45.662997+00:00"
   },
   {
    "id": "az-gb-5840380807",
@@ -617,7 +616,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Bristol, South West England)",
-   "dropped_at": "2026-08-14T13:10:08.272121+00:00"
+   "dropped_at": "2026-08-14T14:17:51.794916+00:00"
   },
   {
    "id": "az-gb-5840201636",
@@ -627,17 +626,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Sowerby, Sowerby Bridge)",
-   "dropped_at": "2026-08-14T13:10:08.272598+00:00"
-  },
-  {
-   "id": "az-gb-5840201341",
-   "title": "Revenue Operations Systems Lead",
-   "company": "83zero Ltd",
-   "location": "Gerrards Cross, Buckinghamshire",
-   "source": "adzuna",
-   "stage": "prefilter:location",
-   "reason": "location: outside target markets (Gerrards Cross, Buckinghamshire)",
-   "dropped_at": "2026-08-14T13:10:08.272642+00:00"
+   "dropped_at": "2026-08-14T14:17:51.795379+00:00"
   },
   {
    "id": "az-gb-5839629604",
@@ -647,7 +636,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Shieldfield, Newcastle Upon Tyne)",
-   "dropped_at": "2026-08-14T13:10:12.665189+00:00"
+   "dropped_at": "2026-08-14T14:17:55.385888+00:00"
   },
   {
    "id": "az-gb-5841811051",
@@ -657,7 +646,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Winnersh, Wokingham)",
-   "dropped_at": "2026-08-14T13:10:17.774366+00:00"
+   "dropped_at": "2026-08-14T14:17:59.231946+00:00"
   },
   {
    "id": "az-gb-5841811055",
@@ -667,7 +656,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Newcastle Upon Tyne, Tyne & Wear)",
-   "dropped_at": "2026-08-14T13:10:17.774419+00:00"
+   "dropped_at": "2026-08-14T14:17:59.231992+00:00"
   },
   {
    "id": "az-gb-5836482041",
@@ -677,7 +666,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-08-14T13:10:17.775158+00:00"
+   "dropped_at": "2026-08-14T14:17:59.232757+00:00"
   },
   {
    "id": "az-gb-5833778742",
@@ -687,7 +676,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-08-14T13:10:18.798391+00:00"
+   "dropped_at": "2026-08-14T14:18:00.425620+00:00"
   },
   {
    "id": "az-gb-5838480575",
@@ -697,7 +686,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-08-14T13:10:20.897552+00:00"
+   "dropped_at": "2026-08-14T14:18:03.285892+00:00"
   },
   {
    "id": "az-gb-5838455749",
@@ -707,17 +696,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-08-14T13:10:20.897640+00:00"
-  },
-  {
-   "id": "az-gb-5835665662",
-   "title": "Commercial Operations Manager",
-   "company": "Dayshape",
-   "location": "UK",
-   "source": "adzuna",
-   "stage": "prefilter:location",
-   "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-08-14T13:10:20.898648+00:00"
+   "dropped_at": "2026-08-14T14:18:03.285990+00:00"
   },
   {
    "id": "az-gb-5841110706",
@@ -727,7 +706,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-08-14T13:10:22.002207+00:00"
+   "dropped_at": "2026-08-14T14:18:04.362982+00:00"
   },
   {
    "id": "reed-57218825",
@@ -737,7 +716,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Hayes)",
-   "dropped_at": "2026-08-14T13:10:26.374477+00:00"
+   "dropped_at": "2026-08-14T14:18:08.617629+00:00"
   },
   {
    "id": "reed-57204643",
@@ -747,7 +726,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (NW52AA)",
-   "dropped_at": "2026-08-14T13:10:26.375011+00:00"
+   "dropped_at": "2026-08-14T14:18:08.618228+00:00"
   },
   {
    "id": "reed-57223993",
@@ -757,7 +736,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Ongar)",
-   "dropped_at": "2026-08-14T13:10:26.375031+00:00"
+   "dropped_at": "2026-08-14T14:18:08.618273+00:00"
   },
   {
    "id": "reed-57043566",
@@ -767,7 +746,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (SE18SW)",
-   "dropped_at": "2026-08-14T13:10:26.375200+00:00"
+   "dropped_at": "2026-08-14T14:18:08.618399+00:00"
   },
   {
    "id": "reed-57043573",
@@ -777,7 +756,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (GU227AE)",
-   "dropped_at": "2026-08-14T13:10:26.375395+00:00"
+   "dropped_at": "2026-08-14T14:18:08.618644+00:00"
   },
   {
    "id": "gh-adyen-7413976",
@@ -787,7 +766,7 @@
    "source": "greenhouse",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (New York)",
-   "dropped_at": "2026-08-14T13:10:32.187703+00:00"
+   "dropped_at": "2026-08-14T14:18:13.694506+00:00"
   },
   {
    "id": "gh-mongodb-7943868",
@@ -797,7 +776,7 @@
    "source": "greenhouse",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Gurugram)",
-   "dropped_at": "2026-08-14T13:10:32.350166+00:00"
+   "dropped_at": "2026-08-14T14:18:13.790168+00:00"
   },
   {
    "id": "gh-mongodb-7375469",
@@ -807,7 +786,187 @@
    "source": "greenhouse",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Seoul)",
-   "dropped_at": "2026-08-14T13:10:32.352619+00:00"
+   "dropped_at": "2026-08-14T14:18:13.792583+00:00"
+  },
+  {
+   "id": "gh-mongodb-8074078",
+   "title": "Manager, Customer Success Management",
+   "company": "MongoDB",
+   "location": "Milan; Rome",
+   "source": "greenhouse",
+   "stage": "prefilter:location",
+   "reason": "location: outside target markets (Milan; Rome)",
+   "dropped_at": "2026-08-14T14:18:13.792630+00:00"
+  },
+  {
+   "id": "gh-mongodb-8049846",
+   "title": "Manager, Sales Strategy & Planning",
+   "company": "MongoDB",
+   "location": "San Francisco",
+   "source": "greenhouse",
+   "stage": "prefilter:location",
+   "reason": "location: outside target markets (San Francisco)",
+   "dropped_at": "2026-08-14T14:18:13.792844+00:00"
+  },
+  {
+   "id": "reed-57196831",
+   "title": "Customer Success Operations Administrator",
+   "company": "Chambers and Partners",
+   "location": "London",
+   "source": "reed",
+   "stage": "age",
+   "reason": "posted more than 7d ago (04/08/2026)",
+   "dropped_at": "2026-08-14T14:18:45.560286+00:00"
+  },
+  {
+   "id": "reed-57167438",
+   "title": "Sales Operations Associate",
+   "company": "Morgan Spencer",
+   "location": "London",
+   "source": "reed",
+   "stage": "age",
+   "reason": "posted more than 7d ago (28/07/2026)",
+   "dropped_at": "2026-08-14T14:18:45.560309+00:00"
+  },
+  {
+   "id": "reed-57200887",
+   "title": "Sales Operations Assistant",
+   "company": "Morgan Spencer",
+   "location": "City of London",
+   "source": "reed",
+   "stage": "age",
+   "reason": "posted more than 7d ago (05/08/2026)",
+   "dropped_at": "2026-08-14T14:18:45.560327+00:00"
+  },
+  {
+   "id": "reed-57196624",
+   "title": "Marketing Operations Manager - Ai & Automation",
+   "company": "The Portfolio Group",
+   "location": "London",
+   "source": "reed",
+   "stage": "age",
+   "reason": "posted more than 7d ago (04/08/2026)",
+   "dropped_at": "2026-08-14T14:18:45.560337+00:00"
+  },
+  {
+   "id": "js-https-ie-indeed-com-viewjob-jk-a570a7f4bb423daa",
+   "title": "Strategic Customer Success Manager",
+   "company": "Supermetrics",
+   "location": "Dublin, D, IE",
+   "source": "indeed",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-08-07)",
+   "dropped_at": "2026-08-14T14:18:45.560355+00:00"
+  },
+  {
+   "id": "gh-stripe-7862938",
+   "title": "Sales Compensation Design Lead",
+   "company": "Stripe",
+   "location": "Dublin",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-08-06T12:10:03-04:00)",
+   "dropped_at": "2026-08-14T14:18:45.560384+00:00"
+  },
+  {
+   "id": "gh-intercom-7681157",
+   "title": "AI Products - Sales Strategy & Operations, Senior Manager",
+   "company": "Intercom",
+   "location": "Dublin, Ireland",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-08-05T11:49:51-04:00)",
+   "dropped_at": "2026-08-14T14:18:45.560392+00:00"
+  },
+  {
+   "id": "gh-intercom-7994422",
+   "title": "Principal Customer Success Manager, Enterprise",
+   "company": "Intercom",
+   "location": "London, England",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-07-20T13:52:46-04:00)",
+   "dropped_at": "2026-08-14T14:18:45.560400+00:00"
+  },
+  {
+   "id": "gh-intercom-7980800",
+   "title": "Principal Customer Success Manager, Enterprise",
+   "company": "Intercom",
+   "location": "Dublin, Ireland",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-07-20T13:52:46-04:00)",
+   "dropped_at": "2026-08-14T14:18:45.560408+00:00"
+  },
+  {
+   "id": "gh-intercom-7600712",
+   "title": "Senior Customer Success Manager",
+   "company": "Intercom",
+   "location": "London, England",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-07-20T13:52:46-04:00)",
+   "dropped_at": "2026-08-14T14:18:45.560438+00:00"
+  },
+  {
+   "id": "gh-intercom-7600671",
+   "title": "Senior Customer Success Manager",
+   "company": "Intercom",
+   "location": "Dublin, Ireland",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-07-20T13:52:46-04:00)",
+   "dropped_at": "2026-08-14T14:18:45.560448+00:00"
+  },
+  {
+   "id": "gh-lucidsoftware-6026386004",
+   "title": "Sales Enablement Manager, EMEA",
+   "company": "Lucid Software",
+   "location": "Amsterdam, NL",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-06-26T14:07:47-04:00)",
+   "dropped_at": "2026-08-14T14:18:45.560465+00:00"
+  },
+  {
+   "id": "as-notion-bb0c4e16-ac1b-478c-aa92-ef3c542a9dcd",
+   "title": "GTM Recruiter, EMEA",
+   "company": "Notion",
+   "location": "London, United Kingdom",
+   "source": "ashby",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-07-29T09:58:12.639+00:00)",
+   "dropped_at": "2026-08-14T14:18:45.560477+00:00"
+  },
+  {
+   "id": "hc-recruitee__chaos__2701890",
+   "title": "Sales Enablement Manager (m/f/d)",
+   "company": "Chaos",
+   "location": "Karlsruhe or London or Europe or Europe",
+   "source": "hiring.cafe",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-08-07T11:02:54.000Z)",
+   "dropped_at": "2026-08-14T14:18:45.560577+00:00"
+  },
+  {
+   "id": "hc-grnhse___aiven36___4938453101",
+   "title": "Manager, Sales Operations",
+   "company": "Aiven",
+   "location": "Ireland",
+   "source": "hiring.cafe",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-08-07T09:30:29.000Z)",
+   "dropped_at": "2026-08-14T14:18:45.560584+00:00"
+  },
+  {
+   "id": "az-gb-5841743165",
+   "title": "Senior Revenue Operations Analyst",
+   "company": "GlobalData PLC",
+   "location": "Blackfriars, Central London",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563218+00:00"
   },
   {
    "id": "az-gb-5840668463",
@@ -817,7 +976,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778678+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563238+00:00"
   },
   {
    "id": "az-gb-5840633164",
@@ -827,7 +986,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778699+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563249+00:00"
   },
   {
    "id": "az-gb-5840392952",
@@ -837,7 +996,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778718+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563267+00:00"
   },
   {
    "id": "az-gb-5840355552",
@@ -847,7 +1006,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778728+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563277+00:00"
   },
   {
    "id": "az-gb-5840384560",
@@ -857,7 +1016,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778742+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563294+00:00"
   },
   {
    "id": "az-gb-5841108014",
@@ -867,7 +1026,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778758+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563313+00:00"
   },
   {
    "id": "az-gb-5840373769",
@@ -877,7 +1036,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778768+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563322+00:00"
   },
   {
    "id": "az-gb-5838729929",
@@ -887,7 +1046,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778777+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563332+00:00"
   },
   {
    "id": "az-gb-5833785756",
@@ -897,7 +1056,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778805+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563347+00:00"
   },
   {
    "id": "az-gb-5833784381",
@@ -907,7 +1066,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778818+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563358+00:00"
   },
   {
    "id": "az-gb-5833782901",
@@ -917,7 +1076,27 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778828+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563368+00:00"
+  },
+  {
+   "id": "az-gb-5841519445",
+   "title": "Global Head of Business Operations - Wise Platform",
+   "company": "Wise",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563377+00:00"
+  },
+  {
+   "id": "az-gb-5838382597",
+   "title": "Global Head of Business Operations",
+   "company": "Wise",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563392+00:00"
   },
   {
    "id": "az-gb-5836699781",
@@ -927,7 +1106,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778854+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563403+00:00"
   },
   {
    "id": "az-gb-5835849127",
@@ -937,17 +1116,7 @@
    "source": "adzuna",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778864+00:00"
-  },
-  {
-   "id": "reed-57196831",
-   "title": "Customer Success Operations Administrator",
-   "company": "Chambers and Partners",
-   "location": "London",
-   "source": "reed",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778885+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563436+00:00"
   },
   {
    "id": "reed-57233965",
@@ -957,17 +1126,7 @@
    "source": "reed",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778899+00:00"
-  },
-  {
-   "id": "js-https-ie-indeed-com-viewjob-jk-a570a7f4bb423daa",
-   "title": "Strategic Customer Success Manager",
-   "company": "Supermetrics",
-   "location": "Dublin, D, IE",
-   "source": "indeed",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (dublin)",
-   "dropped_at": "2026-08-14T13:11:15.778926+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563461+00:00"
   },
   {
    "id": "gh-mongodb-8122025",
@@ -977,7 +1136,7 @@
    "source": "greenhouse",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (dublin)",
-   "dropped_at": "2026-08-14T13:11:15.778935+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563476+00:00"
   },
   {
    "id": "gh-mongodb-8056742",
@@ -987,57 +1146,17 @@
    "source": "greenhouse",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (dublin)",
-   "dropped_at": "2026-08-14T13:11:15.778943+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563485+00:00"
   },
   {
-   "id": "gh-stripe-7862938",
-   "title": "Sales Compensation Design Lead",
-   "company": "Stripe",
-   "location": "Dublin",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (dublin)",
-   "dropped_at": "2026-08-14T13:11:15.778961+00:00"
-  },
-  {
-   "id": "gh-intercom-7980800",
-   "title": "Principal Customer Success Manager, Enterprise",
-   "company": "Intercom",
+   "id": "gh-udemy-6107984004",
+   "title": "Senior Renewals Manager, EMEA Enterprise",
+   "company": "Udemy",
    "location": "Dublin, Ireland",
    "source": "greenhouse",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (dublin)",
-   "dropped_at": "2026-08-14T13:11:15.778976+00:00"
-  },
-  {
-   "id": "gh-intercom-7994422",
-   "title": "Principal Customer Success Manager, Enterprise",
-   "company": "Intercom",
-   "location": "London, England",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778985+00:00"
-  },
-  {
-   "id": "gh-intercom-7600712",
-   "title": "Senior Customer Success Manager",
-   "company": "Intercom",
-   "location": "London, England",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.778993+00:00"
-  },
-  {
-   "id": "gh-intercom-7600671",
-   "title": "Senior Customer Success Manager",
-   "company": "Intercom",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (dublin)",
-   "dropped_at": "2026-08-14T13:11:15.779000+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563519+00:00"
   },
   {
    "id": "hc-adhoc___globaldata___931342",
@@ -1047,7 +1166,7 @@
    "source": "hiring.cafe",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779036+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563529+00:00"
   },
   {
    "id": "hc-ashby___edited___09777976-3d25-4bcb-9d16-7f079e9b7a69",
@@ -1057,7 +1176,7 @@
    "source": "hiring.cafe",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779044+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563538+00:00"
   },
   {
    "id": "hc-grnhse___fastly___8124359",
@@ -1067,7 +1186,7 @@
    "source": "hiring.cafe",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779051+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563546+00:00"
   },
   {
    "id": "hc-icims2___lw___8478",
@@ -1077,7 +1196,7 @@
    "source": "hiring.cafe",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779093+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563588+00:00"
   },
   {
    "id": "hc-grnhse___tipaltisolutions___6136694004",
@@ -1087,7 +1206,7 @@
    "source": "hiring.cafe",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779113+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563609+00:00"
   },
   {
    "id": "hc-grnhse___mixpanel___8121464",
@@ -1097,7 +1216,17 @@
    "source": "hiring.cafe",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779141+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563637+00:00"
+  },
+  {
+   "id": "hc-smartrecruiters___linkedin3___b7da424d-d10b-4b95-9221-21f109",
+   "title": "Sales Operations Associate",
+   "company": "LinkedIn",
+   "location": "Dublin, Leinster, Ireland",
+   "source": "hiring.cafe",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (dublin)",
+   "dropped_at": "2026-08-14T14:18:45.563654+00:00"
   },
   {
    "id": "hc-breezy___totara-learning-solutions___b73ae0c2db58",
@@ -1107,7 +1236,7 @@
    "source": "hiring.cafe",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779208+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563708+00:00"
   },
   {
    "id": "hc-workable___cledara___0c831c8c-7512-46cb-a207-a1d4390f4f72",
@@ -1117,27 +1246,57 @@
    "source": "hiring.cafe",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779223+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563723+00:00"
   },
   {
-   "id": "li-4453532540",
+   "id": "hc-workday___datasite-wd1-datasite___sales-operations-specialis",
+   "title": "Sales Operations Specialist",
+   "company": "Datasite",
+   "location": "London or Portugal",
+   "source": "hiring.cafe",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563747+00:00"
+  },
+  {
+   "id": "hc-salesforce___acora___VN1328",
+   "title": "Senior Sales Operations Coordinator",
+   "company": "Acora",
+   "location": "London or United States or South Africa or Sri Lanka or Malaysia or Macedonia",
+   "source": "hiring.cafe",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563755+00:00"
+  },
+  {
+   "id": "hc-join___stratos___16556900",
+   "title": "Commercial Operations Manager",
+   "company": "STRATOS Technologies Ltd.",
+   "location": "London, England, United Kingdom",
+   "source": "hiring.cafe",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563765+00:00"
+  },
+  {
+   "id": "hc-grnhse___dojo___4938322101",
+   "title": "Sales Enablement Partner, Content & Learning",
+   "company": "Dojo",
+   "location": "London, England, United Kingdom",
+   "source": "hiring.cafe",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563774+00:00"
+  },
+  {
+   "id": "li-4453580785",
    "title": "Revenue Operations Manager at Goodstack",
    "company": "Jack & Jill",
    "location": "London, England, United Kingdom",
    "source": "linkedin",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779282+00:00"
-  },
-  {
-   "id": "li-4454024798",
-   "title": "Senior GTM Operations Manager",
-   "company": "EDITED",
-   "location": "London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779290+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563784+00:00"
   },
   {
    "id": "li-4443028821",
@@ -1147,7 +1306,7 @@
    "source": "linkedin",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779303+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563797+00:00"
   },
   {
    "id": "li-4450834354",
@@ -1157,7 +1316,37 @@
    "source": "linkedin",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779321+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563828+00:00"
+  },
+  {
+   "id": "li-4453242940",
+   "title": "International Strategy and Operations Lead",
+   "company": "Faire",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563842+00:00"
+  },
+  {
+   "id": "li-4454508981",
+   "title": "Sales Strategy Manager",
+   "company": "Lockton",
+   "location": "London Area, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563850+00:00"
+  },
+  {
+   "id": "li-4451501752",
+   "title": "GTM Associate (London)",
+   "company": "Model ML",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same company+title+city already on the dashboard (london)",
+   "dropped_at": "2026-08-14T14:18:45.563871+00:00"
   },
   {
    "id": "li-4450818415",
@@ -1167,47 +1356,27 @@
    "source": "linkedin",
    "stage": "dedupe",
    "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779360+00:00"
+   "dropped_at": "2026-08-14T14:18:45.563880+00:00"
   },
   {
-   "id": "rr-aee4231f-b0e6-42b9-983e-353530149b09",
-   "title": "Revenue Operations Manager",
-   "company": "Cledara",
-   "location": "London, United Kingdom",
-   "source": "revopsroles",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779443+00:00"
+   "id": "li-4453559754",
+   "title": "Strategy and Operations Manager (\u00a380k + Equity) at VC-backed hospitality fintech",
+   "company": "Jack & Jill",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "stage1-kill",
+   "reason": "Function: hospitality fintech ops, not B2B SaaS commercial",
+   "dropped_at": "2026-08-14T14:19:06.096896+00:00"
   },
   {
-   "id": "rr-cfe0c0d4-eabf-40d1-8a42-5fdc9bf2f81b",
-   "title": "Senior Customer Success Manager",
-   "company": "Dyad Artificial Intelligence",
-   "location": "London, United Kingdom",
-   "source": "revopsroles",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779468+00:00"
-  },
-  {
-   "id": "rr-3cf3dcd0-e99a-4a40-babb-dbe60e406de6",
-   "title": "Sales Operations Associate - GTM Engineer",
-   "company": "LinkedIn",
-   "location": "Dublin, Ireland",
-   "source": "revopsroles",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (dublin)",
-   "dropped_at": "2026-08-14T13:11:15.779476+00:00"
-  },
-  {
-   "id": "rr-4425d612-3c4a-4d5e-9844-d5656393d4dc",
-   "title": "Sales Operations Manager",
-   "company": "Fastly",
-   "location": "London, United Kingdom",
-   "source": "revopsroles",
-   "stage": "dedupe",
-   "reason": "same company+title+city already on the dashboard (london)",
-   "dropped_at": "2026-08-14T13:11:15.779484+00:00"
+   "id": "li-4453252211",
+   "title": "Head of Marketing Operations",
+   "company": "GTE",
+   "location": "Nieuwegein, Utrecht, Netherlands",
+   "source": "linkedin",
+   "stage": "stage1-kill",
+   "reason": "Function: marketing operations management, not commercial operations/RevOps",
+   "dropped_at": "2026-08-14T14:19:18.426895+00:00"
   },
   {
    "id": "az-nl-5838780171",
@@ -1950,36 +2119,6 @@
    "dropped_at": "2026-08-13T19:52:47.006806+00:00"
   },
   {
-   "id": "gh-lucidsoftware-6026386004",
-   "title": "Sales Enablement Manager, EMEA",
-   "company": "Lucid Software",
-   "location": "Amsterdam, NL",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-06-26T14:07:47-04:00)",
-   "dropped_at": "2026-08-13T19:52:47.006818+00:00"
-  },
-  {
-   "id": "as-notion-bb0c4e16-ac1b-478c-aa92-ef3c542a9dcd",
-   "title": "GTM Recruiter, EMEA",
-   "company": "Notion",
-   "location": "London, United Kingdom",
-   "source": "ashby",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-07-29T09:58:12.639+00:00)",
-   "dropped_at": "2026-08-13T19:52:47.006829+00:00"
-  },
-  {
-   "id": "hc-smartrecruiters___stepstonegroup___69920da7-3ab2-43a6-a06f-b",
-   "title": "Sales Operations & Revenue Specialist",
-   "company": "StepStone Group",
-   "location": "London, England, United Kingdom",
-   "source": "hiring.cafe",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-08-06T07:11:42.666Z)",
-   "dropped_at": "2026-08-13T19:52:47.006844+00:00"
-  },
-  {
    "id": "az-gb-5840501355",
    "title": "Coordinator \u2013 Revenue Operations",
    "company": "Latham & Watkins LLP",
@@ -2078,126 +2217,6 @@
    "stage": "stage1-kill",
    "reason": "Consulting role, not revenue ops/GTM/CS ops function",
    "dropped_at": "2026-08-13T19:53:49.639103+00:00"
-  },
-  {
-   "id": "az-nl-5830113473",
-   "title": "Revenue Operations Manager",
-   "company": "12Build",
-   "location": "Notter, Wierden",
-   "source": "adzuna",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-08-06T07:35:45Z)",
-   "dropped_at": "2026-08-13T14:25:40.584761+00:00"
-  },
-  {
-   "id": "reed-57196831",
-   "title": "Customer Success Operations Administrator",
-   "company": "Chambers and Partners",
-   "location": "London",
-   "source": "reed",
-   "stage": "age",
-   "reason": "posted more than 7d ago (04/08/2026)",
-   "dropped_at": "2026-08-13T14:25:40.584854+00:00"
-  },
-  {
-   "id": "reed-57167438",
-   "title": "Sales Operations Associate",
-   "company": "Morgan Spencer",
-   "location": "London",
-   "source": "reed",
-   "stage": "age",
-   "reason": "posted more than 7d ago (28/07/2026)",
-   "dropped_at": "2026-08-13T14:25:40.584864+00:00"
-  },
-  {
-   "id": "reed-57200887",
-   "title": "Sales Operations Assistant",
-   "company": "Morgan Spencer",
-   "location": "City of London",
-   "source": "reed",
-   "stage": "age",
-   "reason": "posted more than 7d ago (05/08/2026)",
-   "dropped_at": "2026-08-13T14:25:40.584876+00:00"
-  },
-  {
-   "id": "reed-57196624",
-   "title": "Marketing Operations Manager - Ai & Automation",
-   "company": "The Portfolio Group",
-   "location": "London",
-   "source": "reed",
-   "stage": "age",
-   "reason": "posted more than 7d ago (04/08/2026)",
-   "dropped_at": "2026-08-13T14:25:40.584884+00:00"
-  },
-  {
-   "id": "gh-intercom-7681157",
-   "title": "AI Products - Sales Strategy & Operations, Senior Manager",
-   "company": "Intercom",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-08-05T11:49:51-04:00)",
-   "dropped_at": "2026-08-13T14:25:40.584923+00:00"
-  },
-  {
-   "id": "gh-intercom-7980800",
-   "title": "Principal Customer Success Manager, Enterprise",
-   "company": "Intercom",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-07-20T13:52:46-04:00)",
-   "dropped_at": "2026-08-13T14:25:40.584930+00:00"
-  },
-  {
-   "id": "gh-intercom-7994422",
-   "title": "Principal Customer Success Manager, Enterprise",
-   "company": "Intercom",
-   "location": "London, England",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-07-20T13:52:46-04:00)",
-   "dropped_at": "2026-08-13T14:25:40.584936+00:00"
-  },
-  {
-   "id": "gh-intercom-7600671",
-   "title": "Senior Customer Success Manager",
-   "company": "Intercom",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-07-20T13:52:46-04:00)",
-   "dropped_at": "2026-08-13T14:25:40.584942+00:00"
-  },
-  {
-   "id": "gh-intercom-7600712",
-   "title": "Senior Customer Success Manager",
-   "company": "Intercom",
-   "location": "London, England",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-07-20T13:52:46-04:00)",
-   "dropped_at": "2026-08-13T14:25:40.584950+00:00"
-  },
-  {
-   "id": "gh-lucidsoftware-6026386004",
-   "title": "Sales Enablement Manager, EMEA",
-   "company": "Lucid Software",
-   "location": "Amsterdam, NL",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-06-26T14:07:47-04:00)",
-   "dropped_at": "2026-08-13T14:25:40.584960+00:00"
-  },
-  {
-   "id": "as-notion-bb0c4e16-ac1b-478c-aa92-ef3c542a9dcd",
-   "title": "GTM Recruiter, EMEA",
-   "company": "Notion",
-   "location": "London, United Kingdom",
-   "source": "ashby",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-07-29T09:58:12.639+00:00)",
-   "dropped_at": "2026-08-13T14:25:40.584969+00:00"
   },
   {
    "id": "az-gb-5840042946",
@@ -2878,26 +2897,6 @@
    "stage": "stage1-kill",
    "reason": "Wrong function: sales strategy, not revenue ops/GTG/CS ops",
    "dropped_at": "2026-08-11T14:25:29.889917+00:00"
-  },
-  {
-   "id": "li-4444961557",
-   "title": "Business Operations Manager (CEO Office)",
-   "company": "A1",
-   "location": "London Area, United Kingdom",
-   "source": "linkedin",
-   "stage": "stage1-kill",
-   "reason": "CEO Office / general business ops, not revenue ops or CS ops",
-   "dropped_at": "2026-08-11T14:25:32.019720+00:00"
-  },
-  {
-   "id": "li-4452405366",
-   "title": "Senior Sales Operations Coordinator",
-   "company": "Acora - IT, Cyber & AI",
-   "location": "Greater London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "stage1-kill",
-   "reason": "Coordinator role, not Manager/Senior-IC level. Wrong seniority.",
-   "dropped_at": "2026-08-11T14:25:33.750099+00:00"
   },
   {
    "id": "li-4452429982",
