@@ -63,24 +63,32 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
     Trajectory 10%) and reports the facts it can only get by reading the posting: stated
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout.
-16. **The score itself is computed in Python**, not by the model — `weighted_total()` does
-    the arithmetic, so the number is reproducible from the six dimension scores instead of
-    being whatever total the model reported (on an early corpus, 21 of 51 model-reported
-    totals were more than 0.6 off the weighted sum of their own dimensions).
-    **Nothing clamps that total.** There used to be an `apply_caps()` with score ceilings
-    for title band, salary floor, language, off-target function and the CSM track; it is
-    gone. It disagreed with the rubric it was supposed to enforce — a RevOps Specialist role
-    that scored 6.5 on the dimensions landed at 4.0 because of one word in its title — and
-    the `job-application-workflow` skill this rubric comes from has no such mechanism.
-    Those facts now travel as **flags** (`score_flags()`): below-floor salary, non-English
-    fluency requirement, off-target function, junior/senior title band, CSM outside NL.
-    They're shown on the row so you can judge them; they don't move the number. Anything
-    that *should* move the number belongs in a dimension score, which is what the rubric
-    guidance tells the model.
-    The below-floor flag only ever fires on pay stated in the ad: **Adzuna's predicted
-    salaries are discarded** (`salary_is_predicted`), because they are modelled from the
-    title and location rather than published by the employer.
-17. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
+16. **Two more hard disqualifiers, this time from what Opus reports** rather than a text
+    match: a stated salary below the market's visa floor, and a posting that makes a
+    non-English language a hard requirement. These catch what the regex checks in step 13
+    miss — an oddly-worded requirement, a salary buried in prose — by actually reading the
+    posting instead of matching a sentence. `deep_score_disqualifier()` drops the role the
+    same way steps 12–13 do: not scored, not shown, logged to `docs/excluded.json` under
+    `language-required` or `below-visa-floor`. The below-floor check only ever fires on pay
+    actually stated in the ad, in the market's own currency — **Adzuna's predicted salaries
+    are discarded** (`salary_is_predicted`), because they are modelled from the title and
+    location rather than published by the employer, and a GBP figure is never compared
+    against a EUR floor.
+17. **The score itself is computed in Python**, not by the model, for every role that
+    survives to be scored — `weighted_total()` does the arithmetic, so the number is
+    reproducible from the six dimension scores instead of being whatever total the model
+    reported (on an early corpus, 21 of 51 model-reported totals were more than 0.6 off the
+    weighted sum of their own dimensions). **Nothing clamps that total.** There used to be
+    an `apply_caps()` with score ceilings for title band, salary floor, language,
+    off-target function and the CSM track; it is gone. It disagreed with the rubric it was
+    supposed to enforce — a RevOps Specialist role that scored 6.5 on the dimensions landed
+    at 4.0 because of one word in its title — and the `job-application-workflow` skill this
+    rubric comes from has no such mechanism. What's left of it travels as **flags**
+    (`score_flags()`): off-target function, junior/senior title band, CSM outside NL.
+    They're shown on the row so you can judge them; they don't move the number. Salary and
+    language don't appear here at all — a role either clears them and gets scored clean, or
+    it doesn't and step 16 drops it before this function ever runs.
+18. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
     **5.0–5.9 into a collapsed "borderline"** section, and puts everything below 5 plus
     every row dropped earlier in the pipeline into a collapsed **"excluded"** section.
 
@@ -88,11 +96,11 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
 
 Nothing disappears silently. Every rejected row is logged to `docs/excluded.json` with the
 stage and the reason, and shown in the dashboard's collapsed "excluded" section grouped by
-stage — title/location filter, age, dedupe, no-sponsorship, language-required, Haiku kill,
-scoring error. The two disqualifier stages quote the sentence from the ad that caused the
-drop, so you can tell a correct filter from an over-eager regex at a glance. The status footer
-carries exact counts per stage plus `raw -> kept` per source, so an over-tight regex or a
-silently-broken source looks different from a quiet week.
+stage — title/location filter, age, dedupe, no-sponsorship, language-required,
+below-visa-floor, Haiku kill, scoring error. The disqualifier stages quote the sentence or
+the figure that caused the drop, so you can tell a correct filter from an over-eager one at
+a glance. The status footer carries exact counts per stage plus `raw -> kept` per source, so
+an over-tight regex or a silently-broken source looks different from a quiet week.
 
 Two commands act on what you find there:
 
@@ -124,9 +132,10 @@ The deep score reads `profile.md`. Edit that file whenever your background, targ
 floors, or market list change. Keep it factual.
 
 Two things are **not** driven by `profile.md` alone, because code reads them directly: the
-salary floors in `VISA_FLOORS` (used for the below-floor flag) and the market list in
-`market_of()` (which gates the pipeline). Change a comp floor or add a market and you need
-to update both, or the prose and the code will disagree.
+salary floors in `VISA_FLOORS` (used by `deep_score_disqualifier()` to drop a stated salary
+below the floor) and the market list in `market_of()` (which gates the pipeline). Change a
+comp floor or add a market and you need to update both, or the prose and the code will
+disagree.
 
 `profile.md` diverges from the `job-application-workflow` skill in exactly two places, both
 deliberate: **markets** — it rejects Germany, Spain, and remote-EMEA outright (the skill
@@ -190,8 +199,17 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   one, which is what `test_widening_did_not_lose_anything_previously_kept` guards.
 - **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
 - **Scoring:** what the model judges is in `profile.md` and `score_system()`; what the code
-  decides is `RUBRIC` (the weights) and `weighted_total()`. `TITLE_BANDS` and `VISA_FLOORS`
-  now only feed `score_flags()`, which annotates a row without changing its score.
+  decides is `RUBRIC` (the weights) and `weighted_total()`. `TITLE_BANDS` feeds
+  `score_flags()`, which annotates a row without changing its score. `VISA_FLOORS` feeds
+  `deep_score_disqualifier()` instead, which drops the row outright rather than flagging it
+  — see the next bullet.
+- **What the deep scorer may drop outright, not just flag:** `deep_score_disqualifier()`.
+  Only two things: a stated salary below the market's visa floor, and a hard non-English
+  language requirement. Both are absolute — a role Tom can't legally take, or can't
+  actually do — so they're policy-identical to the pre-model `says_no_sponsorship()` /
+  `requires_other_language()` regex checks, just decided from the model's reading instead
+  of a text match. Everything else the model reports (off-target function, title band, CSM
+  outside NL) is a flag on a scored row, not a drop.
 - **What the cheap screen may throw away:** `SCREEN_SYSTEM`. It can kill on exactly two
   grounds, location and unambiguously wrong function, and is explicitly forbidden from
   killing on seniority. It used to do the latter, and quietly lost a week's worth of

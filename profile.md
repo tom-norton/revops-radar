@@ -80,12 +80,13 @@ CAN sponsor but the specific role must still clear the salary/threshold rules. "
 register" is a caution (registers use legal names and miss trading names), not an auto-reject.
 
 ## Salary handling
-Most EU postings don't list salary. If salary is stated and below the market's floor, flag
-"below visa floor" prominently and let it weigh on Location & Visa — it is a fact worth
-knowing before applying, not an automatic rejection, since a posted range's bottom is often
-a negotiating position rather than the offer. If salary is NOT stated, do not reject;
-estimate comp risk from seniority and company and add a visible "comp not listed, verify vs
-floor" flag.
+Most EU postings don't list salary. If a posting states a salary and its base is genuinely
+below the market's visa floor, the role is dropped outright, not scored and not shown — a
+role Tom cannot legally take at that pay is not worth a fit score. Report the salary fields
+accurately regardless of how strong the rest of the posting looks; the drop happens in code
+from what you report, not from your own judgment call on whether it's close enough. If
+salary is NOT stated, do not reject; estimate comp risk from seniority and company and add
+a visible "comp not listed, verify vs floor" flag.
 
 ## Career trajectory (10%)
 Deliberate pivot from post-sale CS/AM into RevOps/GTM strategy, backed by the MBA and the GTM

@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Tests for the pure, offline half of scan.py -- the scoring arithmetic, the risk flags,
-and the location and title classifiers. No network, no API key.
+"""Tests for the pure, offline half of scan.py -- the scoring arithmetic, the hard
+disqualifiers, the risk flags, and the location and title classifiers. No network, no API
+key.
 
     python tests/test_scoring.py        (or: python -m pytest tests/)
 
 These cover the logic that used to live in the prompt and drift silently: the weighted
-total, the facts that get flagged on a row, and the location gate that once accepted a
-Staines role and then let the model score it 2 for being outside the London commuter belt.
+total, which facts drop a role outright vs. which ones only get flagged on a scored row,
+and the location gate that once accepted a Staines role and then let the model score it 2
+for being outside the London commuter belt.
 
-Two of these tests exist to keep old mistakes buried rather than to describe new behaviour.
-`test_no_title_band_can_change_a_score` guards the removal of the cap engine, which used to
-clamp a 6.5 RevOps role to 4.0 over one word in its title.
+Three of these tests exist to keep old mistakes buried rather than to describe new
+behaviour. `test_no_title_band_can_change_a_score` guards the removal of the cap engine,
+which used to clamp a 6.5 RevOps role to 4.0 over one word in its title.
 `test_include_title_admits_strategy_and_operations_wordings` guards the title gate against
 re-narrowing, since Strategy & Operations is a core target and the market writes it a dozen
-different ways.
+different ways. `test_language_and_salary_floor_are_not_score_flags` guards against those
+two quietly turning back into flags on a scored row instead of the hard drop Tom asked for.
 """
 
 import os
@@ -72,32 +75,56 @@ def test_no_title_band_can_change_a_score():
         assert scan.weighted_total(dims(*([9] * 6))) == strong, title
 
 
-def test_flag_language_requirement():
+def test_language_and_salary_floor_are_not_score_flags():
+    """These two used to be flags on a scored row. Tom asked for them to work like
+    says_no_sponsorship() / requires_other_language() instead: drop the role outright,
+    don't score it, don't show it with a caveat attached. score_flags() must never mention
+    either one -- see deep_score_disqualifier() for where they actually live now."""
+    obs = dict(NO_OBS, language_hard_requirement=True, salary_stated=True,
+               salary_min_base=40000, salary_currency="EUR")
+    flags = scan.score_flags({"title": "Revenue Operations Manager", "market": "NL"}, obs)
+    assert not any("english" in f.lower() or "fluency" in f.lower() for f in flags)
+    assert not any("visa floor" in f for f in flags)
+
+
+def test_deep_score_disqualifier_on_language():
     job = {"title": "Senior Customer Success Manager", "market": "NL"}
-    flags = scan.score_flags(job, dict(NO_OBS, language_hard_requirement=True))
-    assert any("non-English fluency" in f for f in flags)
-    # merely-preferred is the model's call to report as False, and then raises nothing
-    assert scan.score_flags(job, NO_OBS) == []
+    stage, reason = scan.deep_score_disqualifier(job, dict(NO_OBS, language_hard_requirement=True))
+    assert stage == "language-required"
+    assert "non-English fluency" in reason
+    # merely-preferred is the model's call to report as False, and then nothing disqualifies
+    assert scan.deep_score_disqualifier(job, NO_OBS) == (None, None)
 
 
-def test_flag_below_visa_floor():
+def test_deep_score_disqualifier_on_below_visa_floor():
     job = {"title": "Revenue Operations Manager", "market": "NL"}
     obs = dict(NO_OBS, salary_stated=True, salary_min_base=55000, salary_currency="EUR")
-    flags = scan.score_flags(job, obs)
-    assert any("below the NL visa floor" in f for f in flags)
-    # at or above the floor, nothing to say
+    stage, reason = scan.deep_score_disqualifier(job, obs)
+    assert stage == "below-visa-floor"
+    assert "below the NL visa floor" in reason
+    # at or above the floor, nothing disqualifies
     obs = dict(NO_OBS, salary_stated=True, salary_min_base=85000, salary_currency="EUR")
-    assert scan.score_flags(job, obs) == []
+    assert scan.deep_score_disqualifier(job, obs) == (None, None)
+
+
+def test_deep_score_disqualifier_language_wins_when_both_fire():
+    """A role can only be dropped once. Language is checked first, so that's what gets
+    logged when a posting is both a below-floor salary and a hard language requirement."""
+    job = {"title": "Revenue Operations Manager", "market": "NL"}
+    obs = dict(NO_OBS, language_hard_requirement=True, salary_stated=True,
+               salary_min_base=40000, salary_currency="EUR")
+    stage, _ = scan.deep_score_disqualifier(job, obs)
+    assert stage == "language-required"
 
 
 def test_below_floor_never_compares_across_currencies():
     """55,000 GBP is below the 70,000 GBP UK floor but well above the 56,976 EUR Belgian
     one. Guessing an FX rate here would produce confident nonsense, so a mismatched
-    currency must not raise the flag at all."""
+    currency must not disqualify the role at all."""
     obs = dict(NO_OBS, salary_stated=True, salary_min_base=55000, salary_currency="GBP")
     assert scan.salary_floor_flag("BE", obs) == ""
     assert "GBP" in scan.salary_floor_flag("UK-London", obs)
-    # unparseable, absent or market-less salary never raises it either
+    # unparseable, absent or market-less salary never disqualifies either
     assert scan.salary_floor_flag("NL", dict(NO_OBS, salary_stated=True,
                                              salary_min_base="n/a")) == ""
     assert scan.salary_floor_flag("NL", NO_OBS) == ""
@@ -143,12 +170,13 @@ def test_flag_csm_track_by_market():
 
 def test_several_flags_are_all_reported():
     """The old engine kept the lowest cap and discarded the rest of the reasoning. Flags
-    accumulate instead, so nothing gets hidden behind whichever fact was worst."""
-    obs = dict(NO_OBS, language_hard_requirement=True, company_standout=False,
-               salary_stated=True, salary_min_base=40000, salary_currency="GBP")
+    accumulate instead, so nothing gets hidden behind whichever fact was worst. (Language and
+    below-floor salary are excluded from this scenario deliberately -- they disqualify the
+    role via deep_score_disqualifier() before score_flags() would ever run on it.)"""
+    obs = dict(NO_OBS, company_standout=False)
     flags = scan.score_flags({"title": "Senior Customer Success Analyst",
                               "market": "UK-London"}, obs)
-    assert len(flags) == 4      # language, below floor, title band, CSM outside NL
+    assert len(flags) == 2      # title band, CSM outside NL
 
 
 def test_market_of_uk_london_vs_rest_of_uk():
@@ -493,6 +521,42 @@ def test_score_request_body_is_well_formed():
     assert out["score"] == out["score_raw"]
     assert out["caps_applied"] == [] and out["tier"] == "NL"
     assert "comp not listed, verify vs floor" in out["flags"]
+
+
+def test_score_job_returns_disqualified_instead_of_a_score():
+    """score_job() must not silently produce a low score for a language-required or
+    below-floor role -- it has to hand back the drop so the caller can route it to
+    record_drop() instead of the dashboard."""
+    import json as _json
+
+    def fake_post(url, timeout=None, headers=None, json=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"stop_reason": "end_turn", "usage": {},
+                        "content": [{"type": "text", "text": _json.dumps({
+                            "dimensions": {k: 9 for k in scan.RUBRIC_KEYS},
+                            "function_match": "core", "company_standout": True,
+                            "language_hard_requirement": True, "salary_stated": False,
+                            "salary_min_base": 0, "salary_currency": "",
+                            "flags": [], "verdict": "great fit, wrong language"})}]}
+        return R()
+
+    real_post = scan.requests.post
+    scan.requests.post = fake_post
+    try:
+        out = scan.score_job("k", scan.score_system(), {
+            "title": "Senior Customer Success Manager", "company": "Wise",
+            "location": "London", "market": "UK-London", "description": "d"})
+    finally:
+        scan.requests.post = real_post
+
+    assert out == {"disqualified": True, "stage": "language-required",
+                   "reason": scan.deep_score_disqualifier(
+                       {"market": "UK-London"},
+                       {"language_hard_requirement": True})[1]}
+    assert "score" not in out
 
 
 def test_claude_call_retries_transient_failures_then_gives_up():

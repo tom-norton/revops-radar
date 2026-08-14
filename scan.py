@@ -26,17 +26,25 @@ Data layer (multi-source so no single source can break the run):
 Pipeline:
   fetch -> title/location prefilter (free) -> age filter -> dedupe
         -> UK/NL sponsor-register check
+        -> hard disqualifiers on the raw text (no sponsorship / non-English required)
         -> STAGE 1 cheap screen (Claude Haiku, kill/keep)
         -> STAGE 2 deep score (Claude Opus, dimension scores vs profile.md)
-        -> weighted total, computed here in Python
+        -> hard disqualifiers from what Opus read (below-floor salary / hard language)
+        -> weighted total, computed here in Python, for whatever survives
         -> write docs/jobs.json + docs/status.json + docs/excluded.json
 
 Scoring split: the model scores the six rubric dimensions and reports facts it can only get
 by reading the posting (stated salary, hard language requirement, function match, whether
-the employer is a standout). weighted_total() does the arithmetic, so the score is
-reproducible rather than whatever number the model felt like reporting. Nothing clamps that
-total afterwards -- the facts the model reports become flags via score_flags(), matching how
-the job-application-workflow skill works.
+the employer is a standout). Two of those facts -- a stated salary below the market's visa
+floor, and a hard non-English language requirement -- are absolute, so deep_score_
+disqualifier() drops the role before it is ever scored, the same policy as the pre-model
+says_no_sponsorship() / requires_other_language() checks, just decided from a real reading
+of the posting instead of a text match. Everything else lands in the six dimensions;
+weighted_total() does the arithmetic on those, so the score is reproducible rather than
+whatever number the model felt like reporting, and nothing clamps it afterwards. What
+remains of the old ceilings (off-target function, title band, CSM outside NL) travels as a
+flag via score_flags() instead -- shown, not scored -- matching how the
+job-application-workflow skill works.
 
 Every row the pipeline rejects is logged to docs/excluded.json with the stage and reason,
 and shown in a collapsed section on the dashboard.
@@ -67,7 +75,7 @@ import sponsors as spon
 # currency at all, so the code has to supply it. The old format put the country's display
 # name in the currency slot ("44231-44231 United Kingdom local"), leaving the scoring model
 # to infer "GBP" from the words -- and salary_floor_flag() checks that inference against the
-# market's currency before raising a below-floor flag.
+# market's currency before deep_score_disqualifier() drops the role on it.
 ADZUNA_COUNTRIES = {"nl": "EUR", "gb": "GBP"}
 # Targeted phrase queries. A broad word-OR query sorted by date just surfaces the
 # freshest generic "operations/customer/revenue" noise, none of which passes the title
@@ -421,10 +429,18 @@ RUBRIC_KEYS = [k for k, _, _, _ in RUBRIC]
 # at 4.0 purely because "Specialist" was in the title, and roles in Strategy & Operations
 # were being pushed under the dashboard gate before anyone read the JD.
 #
-# Every one of those considerations now travels as a FLAG (see score_flags below). The
-# facts still get reported and still show on the dashboard; they inform rather than
-# overwrite. Where a fact should genuinely move the number, it belongs inside a dimension
-# score -- that is what the rubric guidance tells the model to do.
+# Of those five considerations, three now travel as a FLAG (see score_flags below):
+# off-target function, title band, and CSM outside NL. They still get reported and still
+# show on the dashboard; they inform rather than overwrite. Where one of these should
+# genuinely move the number, it belongs inside a dimension score -- that is what the rubric
+# guidance tells the model to do.
+#
+# The other two -- a below-floor stated salary and a hard non-English language requirement
+# -- are not flags at all. Both are absolute the same way says_no_sponsorship() and
+# requires_other_language() already are: a role Tom cannot legally take, or cannot actually
+# do, is not worth a fit score. deep_score_disqualifier() drops these before scoring runs,
+# using the same facts the model reports (see SCORE_SCHEMA), rather than clamping a score
+# the role was never going to keep.
 
 def weighted_total(dims):
     """sum(dimension * weight) / 100, on a 0-10 scale."""
@@ -444,10 +460,14 @@ def salary_floor_flag(market, obs):
     """A note when a salary is actually stated, in the market's own currency, and below its
     visa floor; "" otherwise. No FX guessing: a GBP figure is never compared to a EUR floor.
 
-    This used to gate a 4.0 ceiling. It is now a flag only -- the skill treats comp the same
-    way, estimating it AFTER the fit score and telling Tom to decide rather than stopping
-    the workflow. Most EU postings state no salary at all, and the ones that do often state
-    a range whose bottom is a negotiating position rather than the offer."""
+    Despite the name this is no longer a dashboard flag -- deep_score_disqualifier() below
+    uses it to drop the job outright, the same way says_no_sponsorship() and
+    requires_other_language() drop on a regex match before the model ever runs. A role that
+    cannot clear the visa floor on its own stated salary is not one Tom can take, so there
+    is nothing to show a flag on; the name stays because the function itself -- find the
+    note, or don't -- hasn't changed. Most EU postings state no salary at all, and the ones
+    that do often state a range whose bottom is a negotiating position rather than the
+    offer, which is exactly why this only fires on a real, market-matched, stated figure."""
     if not market or not obs.get("salary_stated"):
         return ""
     try:
@@ -464,22 +484,34 @@ def salary_floor_flag(market, obs):
         return f"stated salary {int(low)} {cur} below the {market} visa floor ({floor} {cur})"
     return ""
 
-def score_flags(job, obs):
-    """The risk notes that used to be score ceilings. Order matters -- the ones that would
-    genuinely end an application come first, because the dashboard shows a limited number.
+def deep_score_disqualifier(job, obs):
+    """Hard disqualifiers that only the deep scorer can catch, because they need a real
+    reading of the full JD rather than a sentence-level regex match. Returns (stage, reason)
+    to pass straight to record_drop(), or (None, None) when the role is not disqualified.
 
-    None of these touch the score. They tell Tom what to check before he spends an evening
-    on an application, which is the job the caps were doing badly."""
+    This is policy-identical to says_no_sponsorship() / requires_other_language() -- an
+    absolute fact ends the application, so the job is dropped before it reaches the
+    dashboard rather than scored and flagged. Those two run on the raw text before either
+    model call; this runs on what the model actually understood after reading the posting,
+    catching the hard requirements the regex wording missed -- an oddly-phrased language
+    requirement, a salary band buried in prose -- not a second, softer judgement on the
+    same two facts. Language is checked first only because a role that fails both checks
+    can only be logged with one reason."""
+    if obs.get("language_hard_requirement"):
+        return "language-required", ("deep score: posting requires non-English fluency "
+                                      "(missed by the wording-based check)")
+    note = salary_floor_flag(job.get("market"), obs)
+    if note:
+        return "below-visa-floor", note
+    return None, None
+
+def score_flags(job, obs):
+    """Risk notes shown on a scored row. Language and below-floor salary are NOT here --
+    both are hard disqualifiers now (deep_score_disqualifier()) and a job carrying either
+    never reaches this function, because it never reaches the dashboard at all."""
     flags = []
     market = job.get("market")
     title = job.get("title")
-
-    if obs.get("language_hard_requirement"):
-        flags.append("posting requires non-English fluency")
-
-    note = salary_floor_flag(market, obs)
-    if note:
-        flags.append(note)
 
     if obs.get("function_match") == "off_target":
         flags.append("model read the function as off-target")
@@ -580,15 +612,17 @@ SCORING RUBRIC - score each dimension 0-10 against the guidance given:
 
 Calibration, so the dimension scores land on a consistent scale: 8-10 is a bullseye worth applying to immediately, 7 a strong fit with manageable gaps, 6 borderline and worth it only when the pipeline is thin, 5 barely at the bar, 4 and below not worth applying to. Do not inflate to be encouraging.
 
-Do NOT compute a total. The weighted total is computed in code from the six dimension scores you give, and NOTHING overrides it afterwards -- there are no caps, ceilings or post-hoc adjustments. That means your dimension scores are the whole answer. Every consideration that should move the score has to land inside a dimension: if a stated salary sits below the market's visa floor, that belongs in Location & Visa; if the posting reads junior, that belongs in Seniority Fit; if the function is off-target, that belongs in Domain and Career Trajectory. Do not hold a concern back on the assumption that something downstream will apply it.
+Do NOT compute a total. The weighted total is computed in code from the six dimension scores you give, and for every role that actually gets scored nothing overrides it afterwards -- there are no caps or ceilings. Every consideration that should move the score has to land inside a dimension: if the posting reads junior, that belongs in Seniority Fit; if the function is off-target, that belongs in Domain and Career Trajectory.
+
+Two facts are handled differently: a stated salary below the market's visa floor, and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
 
 A title band (analyst / specialist / director_plus / normal) is given to you in the job details. It is a signal to read the posting carefully, not a verdict. Do not mark a role down merely because its title contains "Analyst", "Specialist", "Associate" or "Coordinator" -- score what the posting actually describes.
 
 Alongside the dimensions, report these observations from the posting:
 - function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
-- company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands is capped.
-- language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have.
-- salary_stated / salary_min_base / salary_currency: the annual base-salary floor of any stated range, as a number, with its ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_currency "".
+- company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
+- language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
+- salary_stated / salary_min_base / salary_currency: the annual base-salary floor of any stated range, as a number, with its ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_currency "". A stated figure below the market's visa floor DROPS the role -- see above.
 
 The market (Netherlands / Belgium / UK-London / Ireland-Dublin) has already been resolved in code and is given to you in the job details. Trust it. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted.
 
@@ -598,7 +632,7 @@ Salary: if not stated, do NOT penalise on salary; judge comp risk from the senio
 
 Working pattern: on-site or hybrid in the resolved market is normal and expected -- the candidate is relocating for the role and needs an employer with an office there. Do NOT treat an on-site or hybrid requirement, a named-office requirement, or the absence of remote flexibility as a risk, and do not raise a flag about it.
 
-flags: short risk notes, [] if none. Do not add a flag for missing comp, a below-floor salary, a language requirement, a title band, or the CSM-outside-NL case -- those are all added in code from the observations above, and duplicating them crowds out anything genuinely new you noticed.
+flags: short risk notes, [] if none. Do not add a flag for missing comp, a title band, or the CSM-outside-NL case -- those are added in code from the observations above, and duplicating them crowds out anything genuinely new you noticed. Never add a flag for language or salary either way -- report them accurately in the fields above and say nothing more; code decides whether the role is dropped.
 verdict: one blunt sentence, max 22 words."""
 
 # ---------------------------------------------------------------- helpers
@@ -624,7 +658,8 @@ DROP_MAX_ROWS = 400
 # get the most room.
 DROP_KEEP_PER_STAGE = {"prefilter": 80, "age": 40, "dedupe": 40,
                        "stage1-kill": 120, "score-error": 40, "sponsor-required": 40,
-                       "no-sponsorship": 60, "language-required": 60}
+                       "no-sponsorship": 60, "language-required": 60,
+                       "below-visa-floor": 60}
 DROP_KEEP_DEFAULT = 40
 
 _DROP_SEEN = set()
@@ -1489,16 +1524,19 @@ def screen_job(api_key, job):
     data = _extract_json(text)
     return bool(data.get("keep", True)), str(data.get("reason", ""))[:80]
 
-def score_job(api_key, system, job):
-    """The model scores the six dimensions and reports what it read off the posting; the
-    total and the caps are computed here. Opus 5 thinks by default -- do not disable it,
-    which on this model can leak reasoning into the visible answer."""
-    text = _claude_call(
-        api_key, CLAUDE_SCORE_MODEL, system, job_message(job), SCORE_MAX_TOKENS,
-        cache_system=True,
-        extra={"output_config": {"effort": SCORE_EFFORT,
-                                 "format": {"type": "json_schema", "schema": SCORE_SCHEMA}}})
-    data = _extract_json(text)
+def parse_score_result(job, data):
+    """Turn the model's parsed JSON into either a disqualification or a scored result. Split
+    out from score_job() so the decision can be unit-tested against a synthetic `data` dict
+    with no API call.
+
+    A disqualified result is {"disqualified": True, "stage": ..., "reason": ...} -- ready to
+    hand straight to record_drop(), same shape the caller already uses for the pre-model
+    hard disqualifiers. A scored result has no "disqualified" key at all, so
+    `result.get("disqualified")` is the one check the caller needs."""
+    stage, reason = deep_score_disqualifier(job, data)
+    if stage:
+        return {"disqualified": True, "stage": stage, "reason": reason}
+
     dims = {k: max(0.0, min(10.0, float((data.get("dimensions") or {}).get(k, 0) or 0)))
             for k in RUBRIC_KEYS}
     raw = weighted_total(dims)
@@ -1519,6 +1557,19 @@ def score_job(api_key, system, job):
         "flags": flags[:10], "verdict": str(data.get("verdict", ""))[:180],
     }
 
+def score_job(api_key, system, job):
+    """The model scores the six dimensions and reports what it read off the posting; the
+    total is computed here, and so is the decision to drop the role outright rather than
+    score it (see deep_score_disqualifier()). Opus 5 thinks by default -- do not disable it,
+    which on this model can leak reasoning into the visible answer."""
+    text = _claude_call(
+        api_key, CLAUDE_SCORE_MODEL, system, job_message(job), SCORE_MAX_TOKENS,
+        cache_system=True,
+        extra={"output_config": {"effort": SCORE_EFFORT,
+                                 "format": {"type": "json_schema", "schema": SCORE_SCHEMA}}})
+    data = _extract_json(text)
+    return parse_score_result(job, data)
+
 # ---------------------------------------------------------------- main
 
 def load_json(path, default):
@@ -1533,9 +1584,15 @@ def cmd_selftest():
 
     The score is now just the weighted sum of the six dimensions, so anything that moves is
     a row the old cap engine had clamped. Each one should name the cap that did it, which
-    makes this the check that the caps are genuinely gone rather than merely unreferenced."""
+    makes this the check that the caps are genuinely gone rather than merely unreferenced.
+
+    A row capped for language or a below-visa-floor salary is a special case worth calling
+    out separately: those two are hard disqualifiers now (deep_score_disqualifier()), not
+    scored roles with a caveat. This replay can only show the score moving up, because it
+    has no way to re-run the disqualifier check on stored data -- on an actual rescan that
+    row disappears from the dashboard instead."""
     jobs = load_json("docs/jobs.json", [])
-    moved = up = 0
+    moved = up = would_now_drop = 0
     print(f"Replaying {len(jobs)} stored rows through weighted_total (no caps)\n")
     for j in jobs:
         dims = j.get("dimensions") or {}
@@ -1546,13 +1603,20 @@ def cmd_selftest():
         if abs(new - old) > 0.05:
             moved += 1
             up += new > old
-            was = "; ".join(j.get("caps_applied") or []) or "no cap recorded"
+            caps = j.get("caps_applied") or []
+            was = "; ".join(caps) or "no cap recorded"
+            hard_drop = any("visa floor" in c or "non-English fluency" in c for c in caps)
+            would_now_drop += hard_drop
+            marker = "  [now a hard drop, not a score]" if hard_drop else ""
             print(f"  {old:>4} -> {new:<4}  {str(j.get('title'))[:42]:<44}"
-                  f" {str(j.get('company',''))[:18]:<20} {was[:60]}")
+                  f" {str(j.get('company',''))[:18]:<20} {was[:60]}{marker}")
     print(f"\n{moved} of {len(jobs)} rows move, {up} of them upward.\n"
           "Every mover should name the cap that used to hold it down. A row that moves with "
           "'no cap recorded'\nmeans its stored total disagreed with its own dimensions -- "
           "worth inspecting.\n"
+          f"{would_now_drop} of the movers are marked [now a hard drop, not a score]: on an "
+          "actual rescan those\ndisappear from the dashboard entirely rather than landing at "
+          "the higher number shown here.\n"
           "These are replays, not rescores: the rows keep their old dimension scores, which "
           "were produced\nunder the previous rubric wording. Re-running the scan will move "
           "some of them again.")
@@ -1853,7 +1917,7 @@ def main():
         if len(scored) >= MAX_SCORED_PER_RUN:
             break
         try:
-            j.update(score_job(api_key, system_score, j))
+            result = score_job(api_key, system_score, j)
         except Exception as e:
             # Deliberately NOT added to seen: a transient failure used to write score 0 and
             # mark the job seen forever, which needed a manual commit to undo. Now it just
@@ -1861,6 +1925,17 @@ def main():
             record_drop(j, "score-error", str(e)[:160])
             print(f"  ERR   {j['title']} @ {j.get('company') or j['source']} ({e})")
             continue
+        if result.get("disqualified"):
+            # A hard disqualifier the deep scorer alone caught -- non-English fluency or a
+            # below-visa-floor stated salary, read from the full posting rather than matched
+            # by the pre-model regex. Same policy as says_no_sponsorship() /
+            # requires_other_language() above: dropped outright, not scored, not shown.
+            record_drop(j, result["stage"], result["reason"])
+            seen.add(j["id"])
+            print(f"  drop  {j['title']} @ {j.get('company') or j['source']} "
+                  f"({result['stage']}: {result['reason']})")
+            continue
+        j.update(result)
         # Stored head + tail, matching what the scorer read, so a surprising score can be
         # checked against the part of the ad that decided it.
         j["description"] = sample_desc(j.get("description"), DESC_STORE_CAP)
