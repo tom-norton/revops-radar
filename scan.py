@@ -28,13 +28,15 @@ Pipeline:
         -> UK/NL sponsor-register check
         -> STAGE 1 cheap screen (Claude Haiku, kill/keep)
         -> STAGE 2 deep score (Claude Opus, dimension scores vs profile.md)
-        -> weighted total + deterministic caps, computed here in Python
+        -> weighted total, computed here in Python
         -> write docs/jobs.json + docs/status.json + docs/excluded.json
 
 Scoring split: the model scores the six rubric dimensions and reports facts it can only get
 by reading the posting (stated salary, hard language requirement, function match, whether
-the employer is a standout). Every piece of arithmetic and every cap is computed in
-apply_caps() below, so the score is reproducible and the reason for it is recorded.
+the employer is a standout). weighted_total() does the arithmetic, so the score is
+reproducible rather than whatever number the model felt like reporting. Nothing clamps that
+total afterwards -- the facts the model reports become flags via score_flags(), matching how
+the job-application-workflow skill works.
 
 Every row the pipeline rejects is logged to docs/excluded.json with the stage and reason,
 and shown in a collapsed section on the dashboard.
@@ -43,12 +45,17 @@ Usage:
   python scan.py             normal run
   python scan.py --dry       everything except the Claude calls
   python scan.py --verify    test the optional ATS company slugs, no scoring
-  python scan.py --selftest  replay stored dimension scores through the cap engine, offline
+  python scan.py --selftest  replay stored dimension scores through the scoring engine, offline
   python scan.py --unkill    free stage-1 kills from seen.json so they get re-evaluated
+  python scan.py --unkill-history [--days N]
+                             same, but walks git history of docs/excluded.json (default 14
+                             days) to reach kills the committed sample no longer holds
+  python scan.py --ignore-age   one run with the 7-day age filter relaxed; pair it with
+                             --unkill-history, whose rows are older than the cutoff by now
   python scan.py --rescore   clear scored rows so the corpus re-runs under the current engine
 """
 
-import email, html, imaplib, json, os, re, sys, time
+import email, html, imaplib, json, os, re, subprocess, sys, time
 from datetime import datetime, timezone, timedelta
 import requests
 import sponsors as spon
@@ -59,8 +66,8 @@ import sponsors as spon
 # Mapped to the ISO currency of each country's salary figures: Adzuna reports pay with no
 # currency at all, so the code has to supply it. The old format put the country's display
 # name in the currency slot ("44231-44231 United Kingdom local"), leaving the scoring model
-# to infer "GBP" from the words -- and below_visa_floor() checks that inference against the
-# market's currency before firing a -4.0 cap.
+# to infer "GBP" from the words -- and salary_floor_flag() checks that inference against the
+# market's currency before raising a below-floor flag.
 ADZUNA_COUNTRIES = {"nl": "EUR", "gb": "GBP"}
 # Targeted phrase queries. A broad word-OR query sorted by date just surfaces the
 # freshest generic "operations/customer/revenue" noise, none of which passes the title
@@ -105,8 +112,15 @@ INCLUDE_TITLE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
     r"|gtm|go[- ]to[- ]market|growth operations|marketing operations"
     r"|cs operations|customer success operations"
-    # "op(eration)?s" so the abbreviated "Strategy & Ops" isn't missed.
-    r"|strategy (and|&) op(eration)?s\b|business operations|commercial operations|biz ?ops"
+    # Strategy & Operations, in every wording the market actually uses. "op(eration)?s" so
+    # the abbreviated "Strategy & Ops" isn't missed; the connector class covers "Strategy,
+    # Planning & Operations" and "Strategy and Business Operations", which the old
+    # "strategy (and|&) ops" could not match. Wolters Kluwer's "Business Strategy &
+    # Analytics Manager" was the one genuinely relevant role this gate lost in a week.
+    r"|strategy[ ,&]{1,3}(and[ ,&]{1,3})?(planning|business|revenue|sales|commercial)?[ ,&]{0,3}"
+    r"(op(eration)?s|planning|analytics)\b"
+    r"|strategic operations|\bs ?& ?o\b|business strategy"
+    r"|business operations|commercial operations|biz ?ops"
     r"|sales strategy|revenue strategy|revenue enablement|sales enablement"
     # Comp, quota and territory design are core RevOps work the filter had no words for --
     # 5 of 5 sales-compensation roles on the watched boards were being dropped. "territory"
@@ -130,8 +144,8 @@ INCLUDE_TITLE = re.compile(
 # A plain "Customer Success Manager" with no seniority wording is a target in the Netherlands
 # only -- profile.md's CSM track weighting makes NL Senior/Principal CSM a primary target and
 # keeps the same role modest elsewhere. Admitting it everywhere would put ~25 extra rows per
-# run on the dashboard; restricting it to NL admitted one. apply_caps() enforces the same
-# asymmetry later via the csm_secondary_market cap.
+# run on the dashboard; restricting it to NL admitted one. profile.md carries the same
+# asymmetry into the deep score, and score_flags() notes it on the row.
 CSM_ANY = re.compile(r"customer success", re.I)
 
 EXCLUDE_TITLE = re.compile(
@@ -329,6 +343,14 @@ def requires_other_language(desc):
 
 # Title intelligence from the job-application-workflow skill, as code. First match wins,
 # so the most disqualifying bands are checked first.
+#
+# A band is a SIGNAL, not a verdict. It used to drive a set of hard score ceilings; those
+# are gone (see the note above apply-time flags below). The band is now passed to the
+# scoring model as context and surfaced as a dashboard flag, so a title that reads junior
+# gets looked at rather than silently buried. An "Analyst" at a tier-1 employer routinely
+# carries manager-level scope and a band well clear of the visa floor, and the skill's own
+# title intelligence says exactly that about Senior Associate / Strategy & Ops Associate
+# roles at Stripe, Booking and Uber.
 TITLE_BANDS = [
     ("wrong_function", re.compile(r"deal desk|quote[- ]to[- ]cash|order management"
                                  r"|billing|accounts (payable|receivable)", re.I)),
@@ -337,18 +359,6 @@ TITLE_BANDS = [
     ("analyst", re.compile(r"\banalyst\b", re.I)),
     ("specialist", re.compile(r"\bspecialist\b|\bcoordinator\b", re.I)),
 ]
-
-# Deterministic score ceilings. Lowest applicable cap wins.
-CAPS = {
-    "location": 2.0,               # outside NL / BE / London / Dublin
-    "analyst": 5.0,                # comp risk vs visa salary floor
-    "specialist": 5.0,
-    "director_plus": 6.0,          # stretch for a Manager/senior-IC target
-    "below_floor": 4.0,            # stated salary under the market's visa floor
-    "wrong_function": 4.0,         # deal desk / billing / quota-carrying sales
-    "csm_secondary_market": 6.0,   # CSM outside NL at a non-standout company
-    "language": 3.0,               # hard non-English fluency requirement
-}
 
 # The full candidate profile (profile.md) drives the deep score. Loaded at runtime.
 def load_profile():
@@ -370,10 +380,16 @@ RUBRIC = [
      "planning, quota modelling, pipeline analysis) separately."),
     ("seniority", "Seniority Fit", 15,
      "Manager is the target zone for this pivot. Too senior (Director/Head of, or 10+ years "
-     "of dedicated RevOps required) penalises hard. Analyst/Specialist is a double penalty: "
-     "overqualification plus comp below the visa floor. Senior Manager fits only when the "
-     "posting explicitly welcomes adjacent backgrounds. Associate/IC framing at a tier-1 "
-     "employer is viable if comp clears the floor."),
+     "of dedicated RevOps required) penalises hard. Senior Manager fits when the posting "
+     "welcomes adjacent backgrounds. Judge the level from the POSTING, not the title noun: "
+     "read the scope, the reporting line, whether it owns a team or a system end to end, "
+     "the years-of-experience band, and any stated salary. An Analyst, Specialist, "
+     "Associate or Coordinator title is a prompt to check, not an automatic penalty -- at a "
+     "tier-1 employer these routinely carry manager-level scope and a band well clear of "
+     "the visa floor, and the market uses 'Senior Analyst, Sales Strategy & Operations' for "
+     "work that is Manager-grade elsewhere. Penalise the level only when the posting itself "
+     "reads junior: 0-3 years wanted, execution-only or admin duties, reporting into a "
+     "Manager with no ownership, or a stated band below the market's visa floor."),
     ("domain", "Domain / Industry Fit", 15,
      "B2B SaaS or tech is strong (8-10). GRC/compliance/legal/regulatory adds a familiarity "
      "bonus but is not required for a high score. Non-tech, non-SaaS (manufacturing, retail, "
@@ -391,11 +407,24 @@ RUBRIC = [
 RUBRIC_KEYS = [k for k, _, _, _ in RUBRIC]
 
 # ---------------------------------------------------------------- deterministic scoring
-# Everything below is computed in code. The model supplies the six dimension scores and a
-# handful of facts it can only get by reading the posting; the arithmetic and every cap
-# happen here. Previously score_job() just trusted whatever total the model reported, and
-# on the 51 stored rows 21 of those totals were more than 0.6 off the weighted sum of
-# their own dimensions -- the worst by 3.8.
+# The model supplies the six dimension scores and a handful of facts it can only get by
+# reading the posting; the arithmetic happens here. score_job() does not trust a total the
+# model reports -- on the 51 stored rows from before this existed, 21 of those totals were
+# more than 0.6 off the weighted sum of their own dimensions, the worst by 3.8.
+#
+# What is deliberately NOT here any more: score ceilings. There used to be a CAPS table and
+# an apply_caps() that clamped the weighted total for a title band, a below-floor salary, a
+# language requirement, an off-target function reading, or a CSM role outside NL. The
+# job-application-workflow skill has no such mechanism -- it weights six dimensions, gates
+# at 5, and says the raw fit score is never adjusted. The caps also produced results the
+# rubric disagreed with: a RevOps Specialist role that scored 6.5 on the dimensions landed
+# at 4.0 purely because "Specialist" was in the title, and roles in Strategy & Operations
+# were being pushed under the dashboard gate before anyone read the JD.
+#
+# Every one of those considerations now travels as a FLAG (see score_flags below). The
+# facts still get reported and still show on the dashboard; they inform rather than
+# overwrite. Where a fact should genuinely move the number, it belongs inside a dimension
+# score -- that is what the rubric guidance tells the model to do.
 
 def weighted_total(dims):
     """sum(dimension * weight) / 100, on a 0-10 scale."""
@@ -411,64 +440,67 @@ def title_band(title):
 def is_csm_title(title):
     return bool(re.search(r"customer success", title or "", re.I))
 
-def below_visa_floor(market, obs):
-    """(True, note) only when a salary is actually stated, in the market's own currency,
-    and below its floor. No FX guessing: a GBP figure is never compared to a EUR floor."""
+def salary_floor_flag(market, obs):
+    """A note when a salary is actually stated, in the market's own currency, and below its
+    visa floor; "" otherwise. No FX guessing: a GBP figure is never compared to a EUR floor.
+
+    This used to gate a 4.0 ceiling. It is now a flag only -- the skill treats comp the same
+    way, estimating it AFTER the fit score and telling Tom to decide rather than stopping
+    the workflow. Most EU postings state no salary at all, and the ones that do often state
+    a range whose bottom is a negotiating position rather than the offer."""
     if not market or not obs.get("salary_stated"):
-        return False, ""
+        return ""
     try:
         low = float(obs.get("salary_min_base") or 0)
     except (TypeError, ValueError):
-        return False, ""
+        return ""
     floor, cur = VISA_FLOORS.get(market, (0, ""))
     if low <= 0 or not floor:
-        return False, ""
+        return ""
     stated = (obs.get("salary_currency") or "").upper()
     if stated and stated != cur:
-        return False, ""
+        return ""
     if low < floor:
-        return True, f"stated salary {int(low)} {cur} below the {market} visa floor ({floor} {cur})"
-    return False, ""
+        return f"stated salary {int(low)} {cur} below the {market} visa floor ({floor} {cur})"
+    return ""
 
-def apply_caps(weighted, job, obs):
-    """Apply the rubric's deterministic ceilings; the lowest applicable cap wins.
-    Returns (score, caps_applied). Each cap is decided from a regex over the title, the
-    market the location gate already resolved, or one factual observation the model
-    reported -- never from the model's own arithmetic."""
-    caps = []
+def score_flags(job, obs):
+    """The risk notes that used to be score ceilings. Order matters -- the ones that would
+    genuinely end an application come first, because the dashboard shows a limited number.
+
+    None of these touch the score. They tell Tom what to check before he spends an evening
+    on an application, which is the job the caps were doing badly."""
+    flags = []
     market = job.get("market")
     title = job.get("title")
 
-    if market is None:
-        caps.append(("location outside target markets", CAPS["location"]))
+    if obs.get("language_hard_requirement"):
+        flags.append("posting requires non-English fluency")
 
-    band = title_band(title)
-    if band in ("analyst", "specialist"):
-        caps.append((f"{band} title (comp risk vs visa floor)", CAPS[band]))
-    elif band == "director_plus":
-        caps.append(("Director+/Head-of title (stretch vs Manager target)", CAPS["director_plus"]))
-    elif band == "wrong_function":
-        caps.append(("off-target function (title)", CAPS["wrong_function"]))
+    note = salary_floor_flag(market, obs)
+    if note:
+        flags.append(note)
 
     if obs.get("function_match") == "off_target":
-        caps.append(("off-target function (description)", CAPS["wrong_function"]))
+        flags.append("model read the function as off-target")
 
-    if obs.get("language_hard_requirement"):
-        caps.append(("requires non-English fluency", CAPS["language"]))
+    band = title_band(title)
+    if band == "wrong_function":
+        flags.append("title band: off-target function")
+    elif band in ("analyst", "specialist", "director_plus"):
+        # Deliberately worded as an instruction to look, not as a judgement. These are the
+        # bands that were being auto-buried; the whole point of the change is that the JD
+        # decides, not the noun in the title.
+        flags.append(f"title band: {band} -- check the JD for actual scope and comp")
 
-    low, note = below_visa_floor(market, obs)
-    if low:
-        caps.append((note, CAPS["below_floor"]))
-
-    # CSM track: a primary target in NL, a modest one elsewhere unless the company is a
-    # genuine standout (see the CSM track weighting section of profile.md).
+    # CSM track: a primary target in NL, a weaker one elsewhere unless the company is a
+    # genuine standout (see the CSM track weighting section of profile.md). The model is
+    # told this in the profile and reflects it in the dimensions; this is just the note.
     if market in ("UK-London", "IE-Dublin", "BE") and is_csm_title(title) \
             and not obs.get("company_standout"):
-        caps.append((f"CSM in {market} at a non-standout company", CAPS["csm_secondary_market"]))
+        flags.append(f"CSM in {market} at a non-standout company")
 
-    if not caps:
-        return round(weighted, 1), []
-    return round(min(weighted, min(c[1] for c in caps)), 1), [c[0] for c in caps]
+    return flags
 
 # JSON schema for the deep score. Replaces "reply with ONLY this JSON" plus a regex that
 # scraped {.*} out of the response -- one row in the corpus is permanently stuck at score 0
@@ -512,11 +544,25 @@ SCREEN_SYSTEM = f"""You are a fast pre-screen for a job-search pipeline. Decide 
 
 Target markets ONLY: {MARKETS_SENTENCE}. Reject {REJECT_SENTENCE}.
 
-KEEP if the role plausibly fits function AND market. KILL obvious no-fits: wrong function (deal desk, quote-to-cash, billing, pure marketing-ops admin, engineering, finance, quota-carrying AE/SDR), wrong seniority (intern, VP+, C-level), or wrong location (outside the target markets above).
+You may kill a role for exactly TWO reasons. Nothing else is grounds for a kill.
 
-IN SCOPE - never kill these on function. A title filter in code has already decided they are on target, and the deep scorer weights them properly: renewals and renewal management, sales enablement, revenue enablement, sales/incentive compensation, quota and territory design, revenue analytics, revenue/sales systems, business or commercial operations, CS operations, and Senior/Principal/Enterprise/Strategic Customer Success. Renewals is NOT quota-carrying sales for this purpose, and enablement is NOT marketing-ops admin. Kill one of these only when the location is wrong.
+1. LOCATION - the role is not in one of the target markets above.
+2. FUNCTION - the role is unambiguously outside the candidate's target functions. That means: engineering or data engineering, product management, finance or accounting, quota-carrying sales (AE, SDR, BDR, account executive, business development), deal desk / quote-to-cash / billing / order management, HR or People Ops, procurement, legal, and operations that are not commercial in nature (retail store ops, restaurant ops, manufacturing, supply chain, logistics, facilities, clinical, NGO programme delivery).
 
-Be lenient at this stage - when unsure, keep it. The next stage does the real scoring.
+NEVER KILL ON SENIORITY. This is the single most important rule here, and getting it wrong is expensive. Analyst, Senior Analyst, Specialist, Coordinator, Associate, Senior Associate, Business Partner, Lead, Manager, Senior Manager, Principal, Director and Head of are ALL keeps. Do not kill something for being "too junior", "entry level", "below Manager", "Director+ exceeds target", or any variant of that reasoning. A title is not a seniority: an "Analyst" or "Associate" at a strong employer routinely carries manager-level scope and pay well above a junior band, and a "Head of" at a 40-person startup is often a hands-on Manager role. The deep scorer reads the full posting - the scope, the reporting line, the years-of-experience band, the stated salary - and weighs seniority properly there. You cannot see enough to make that call. The ONLY seniority-shaped exception: genuine internships, working-student roles, apprenticeships and graduate schemes may be killed.
+
+IN SCOPE - never kill these on function. A title filter in code has already decided they are on target, and the deep scorer weights them properly:
+- Revenue operations, sales operations, CS operations, business operations, commercial operations
+- Sales strategy, revenue strategy, GTM strategy, business strategy, commercial strategy
+- ANY "Strategy & Operations" or "Strategy and Operations" or "Strategy, Planning & Operations" or "S&O" role, including partner-scoped, field-scoped, segment-scoped, regional and international variants. These are core target roles, not generalist strategy jobs. Do not kill one because it sits inside a partner, product, marketing or regional org - the deep scorer takes the domain into account.
+- GTM systems, RevOps systems, revenue systems, revenue technology, RevOps architecture, CRM and GTM tool-stack ownership. Systems ownership is a target track, not "tool administration".
+- Revenue analytics, sales/incentive compensation, quota and territory design
+- Renewals and renewal management, sales enablement, revenue enablement
+- Senior / Principal / Enterprise / Strategic Customer Success
+
+Renewals is NOT quota-carrying sales for this purpose. Enablement is NOT marketing-ops admin. Systems ownership is NOT engineering. Kill one of these only when the location is wrong or the employer is plainly outside B2B tech and the work is plainly not commercial (a supermarket's "Sales Operations Manager" running store rotas, for instance).
+
+Be lenient - when unsure, KEEP. A wrong keep costs one cheap scoring call. A wrong kill loses a job Tom would have applied to, and he never sees it.
 
 Reply with ONLY this JSON: {{"keep": true or false, "reason": "<max 12 words>"}}"""
 
@@ -534,7 +580,9 @@ SCORING RUBRIC - score each dimension 0-10 against the guidance given:
 
 Calibration, so the dimension scores land on a consistent scale: 8-10 is a bullseye worth applying to immediately, 7 a strong fit with manageable gaps, 6 borderline and worth it only when the pipeline is thin, 5 barely at the bar, 4 and below not worth applying to. Do not inflate to be encouraging.
 
-Do NOT compute a total, and do NOT apply any caps or ceilings. The weighted total and every deterministic cap (title band, location, salary floor, language requirement, CSM track) are computed in code from the facts you report below. Score each dimension on its own merits and report the facts accurately; adjusting a dimension downward to "pre-apply" a cap would double-count it.
+Do NOT compute a total. The weighted total is computed in code from the six dimension scores you give, and NOTHING overrides it afterwards -- there are no caps, ceilings or post-hoc adjustments. That means your dimension scores are the whole answer. Every consideration that should move the score has to land inside a dimension: if a stated salary sits below the market's visa floor, that belongs in Location & Visa; if the posting reads junior, that belongs in Seniority Fit; if the function is off-target, that belongs in Domain and Career Trajectory. Do not hold a concern back on the assumption that something downstream will apply it.
+
+A title band (analyst / specialist / director_plus / normal) is given to you in the job details. It is a signal to read the posting carefully, not a verdict. Do not mark a role down merely because its title contains "Analyst", "Specialist", "Associate" or "Coordinator" -- score what the posting actually describes.
 
 Alongside the dimensions, report these observations from the posting:
 - function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
@@ -550,7 +598,7 @@ Salary: if not stated, do NOT penalise on salary; judge comp risk from the senio
 
 Working pattern: on-site or hybrid in the resolved market is normal and expected -- the candidate is relocating for the role and needs an employer with an office there. Do NOT treat an on-site or hybrid requirement, a named-office requirement, or the absence of remote flexibility as a risk, and do not raise a flag about it.
 
-flags: short risk notes, [] if none. Do not add a flag for missing comp or for a cap -- those are added in code.
+flags: short risk notes, [] if none. Do not add a flag for missing comp, a below-floor salary, a language requirement, a title band, or the CSM-outside-NL case -- those are all added in code from the observations above, and duplicating them crowds out anything genuinely new you noticed.
 verdict: one blunt sentence, max 22 words."""
 
 # ---------------------------------------------------------------- helpers
@@ -796,13 +844,17 @@ def parse_date_loose(v):
     except Exception:
         return None
 
-def recent_enough(posted_raw, max_days=MAX_POST_AGE_DAYS):
+def recent_enough(posted_raw, max_days=None):
     """True if within max_days old. Fails open (keeps the job) when the source gives no
-    usable date at all, so a missing field never silently wipes out a whole source."""
+    usable date at all, so a missing field never silently wipes out a whole source.
+
+    max_days resolves at call time rather than in the signature, so --ignore-age can raise
+    MAX_POST_AGE_DAYS for one run and have it actually take effect here."""
     dt = parse_date_loose(posted_raw)
     if dt is None:
         return True
-    return (datetime.now(timezone.utc) - dt) <= timedelta(days=max_days)
+    return (datetime.now(timezone.utc) - dt) <= timedelta(
+        days=MAX_POST_AGE_DAYS if max_days is None else max_days)
 
 # ---------------------------------------------------------------- Adzuna (NL + UK)
 
@@ -1450,15 +1502,21 @@ def score_job(api_key, system, job):
     dims = {k: max(0.0, min(10.0, float((data.get("dimensions") or {}).get(k, 0) or 0)))
             for k in RUBRIC_KEYS}
     raw = weighted_total(dims)
-    score, caps = apply_caps(raw, job, data)
-    flags = [str(f)[:70] for f in (data.get("flags") or [])][:6]
+    # The weighted sum IS the score. Nothing clamps it.
+    score = round(raw, 1)
+    # Code-derived flags first: they are the ones that used to be caps, so they matter most
+    # and must not be pushed off the end of the list by the model's own commentary.
+    flags = score_flags(job, data)
     if not data.get("salary_stated"):
         flags.append("comp not listed, verify vs floor")
+    flags += [str(f)[:70] for f in (data.get("flags") or [])]
     return {
-        "score": score, "score_raw": round(raw, 1), "caps_applied": caps,
+        # score_raw and caps_applied are still written so rows scored under the old cap
+        # engine keep rendering alongside new ones. caps_applied is always empty now.
+        "score": score, "score_raw": score, "caps_applied": [],
         "dimensions": dims,
         "tier": job.get("market") or "outside target markets",
-        "flags": flags[:8], "verdict": str(data.get("verdict", ""))[:180],
+        "flags": flags[:10], "verdict": str(data.get("verdict", ""))[:180],
     }
 
 # ---------------------------------------------------------------- main
@@ -1470,34 +1528,34 @@ def load_json(path, default):
         return default
 
 def cmd_selftest():
-    """Replay the stored dimension scores through the new engine and report every row whose
-    score moves. No network, no API key. The drifts here are exactly the rows where the old
-    model-reported total disagreed with the weighted sum of its own dimensions."""
+    """Replay the stored dimension scores through the current engine and report every row
+    whose score moves. No network, no API key.
+
+    The score is now just the weighted sum of the six dimensions, so anything that moves is
+    a row the old cap engine had clamped. Each one should name the cap that did it, which
+    makes this the check that the caps are genuinely gone rather than merely unreferenced."""
     jobs = load_json("docs/jobs.json", [])
-    moved = 0
-    print(f"Replaying {len(jobs)} stored rows through weighted_total + apply_caps\n")
+    moved = up = 0
+    print(f"Replaying {len(jobs)} stored rows through weighted_total (no caps)\n")
     for j in jobs:
         dims = j.get("dimensions") or {}
         if not dims:
             continue
-        raw = weighted_total(dims)
-        # Reconstruct the observations the old rows never stored, from what they did store.
-        obs = {"function_match": "core", "company_standout": True,
-               "language_hard_requirement": any("language" in f.lower() or "fluency" in f.lower()
-                                                for f in (j.get("flags") or [])),
-               "salary_stated": False, "salary_min_base": 0, "salary_currency": ""}
-        job = {"title": j.get("title"), "market": market_of(j.get("country"), j.get("location"))}
-        new, caps = apply_caps(raw, job, obs)
+        new = round(weighted_total(dims), 1)
         old = j.get("score", 0)
         if abs(new - old) > 0.05:
             moved += 1
-            print(f"  {old:>4} -> {new:<4} weighted {raw:.1f}  {str(j.get('title'))[:44]:<46}"
-                  f" {'; '.join(caps) or 'no caps'}")
-    print(f"\n{moved} of {len(jobs)} rows move. Inspect any row whose movement you can't "
-          f"explain from its caps.\n"
-          "Caveat: the stored rows predate the observation fields, so the salary-floor and "
-          "off-target-function\ncaps cannot be replayed and some rows will land lower than "
-          "this once actually rescored.")
+            up += new > old
+            was = "; ".join(j.get("caps_applied") or []) or "no cap recorded"
+            print(f"  {old:>4} -> {new:<4}  {str(j.get('title'))[:42]:<44}"
+                  f" {str(j.get('company',''))[:18]:<20} {was[:60]}")
+    print(f"\n{moved} of {len(jobs)} rows move, {up} of them upward.\n"
+          "Every mover should name the cap that used to hold it down. A row that moves with "
+          "'no cap recorded'\nmeans its stored total disagreed with its own dimensions -- "
+          "worth inspecting.\n"
+          "These are replays, not rescores: the rows keep their old dimension scores, which "
+          "were produced\nunder the previous rubric wording. Re-running the scan will move "
+          "some of them again.")
 
 def cmd_unkill():
     """Clear stage-1 Haiku kills out of seen.json so they get re-evaluated next run.
@@ -1509,6 +1567,56 @@ def cmd_unkill():
     json.dump(sorted(seen - freed), open("seen.json", "w"))
     print(f"Freed {len(freed)} stage-1 kills for re-evaluation "
           f"({len(killed)} recorded, {len(killed) - len(freed)} already absent from seen.json).")
+
+def cmd_unkill_history(days=14):
+    """Like --unkill, but reaches back through git history instead of only the file on disk.
+
+    docs/excluded.json keeps a bounded sample per stage (DROP_KEEP_PER_STAGE), so the
+    committed copy holds ~120 stage-1 kills while a week of scans actually produced closer
+    to 240. Every one of them was committed at the time, so the history has them all. This
+    walks the commits, unions the kills, and frees their ids from seen.json.
+
+    Written for the switch away from the cap engine: the old stage-1 prompt killed
+    Analyst/Specialist/Associate/Director titles and Strategy & Operations roles outright,
+    and those need re-evaluating under the new rules rather than staying lost."""
+    try:
+        shas = subprocess.check_output(
+            ["git", "log", f"--since={days} days ago", "--format=%H", "--", "docs/excluded.json"],
+            text=True, stderr=subprocess.DEVNULL).split()
+    except Exception as e:
+        print(f"git log failed ({e}); falling back to the committed file only.")
+        shas = []
+
+    killed, titles = {}, {}
+    def absorb(rows):
+        for r in rows:
+            if r.get("stage") in ("stage1-kill", "score-error") and r.get("id"):
+                killed[str(r["id"])] = r.get("stage")
+                titles[str(r["id"])] = f"{r.get('title','?')} - {r.get('company','?')}"
+
+    absorb(load_json("docs/excluded.json", {}).get("rows", []))
+    for sha in shas:
+        try:
+            blob = subprocess.check_output(["git", "show", f"{sha}:docs/excluded.json"],
+                                           text=True, stderr=subprocess.DEVNULL)
+            absorb(json.loads(blob).get("rows", []))
+        except Exception:
+            continue   # a commit that predates the file, or a bad blob; skip it
+
+    seen = set(load_json("seen.json", []))
+    freed = set(killed) & seen
+    json.dump(sorted(seen - freed), open("seen.json", "w"))
+
+    print(f"Walked {len(shas)} commits of docs/excluded.json over the last {days} days.")
+    print(f"Found {len(killed)} distinct stage-1 kills / scoring errors; freed {len(freed)} "
+          f"from seen.json ({len(killed) - len(freed)} were already absent).\n")
+    for jid in sorted(freed, key=lambda i: titles.get(i, "")):
+        print(f"  {titles[jid]}")
+    print("\nThese only come back if they are STILL LIVE in a source feed -- excluded.json\n"
+          "stores no URL, so there is nothing to re-fetch a dead posting from. Most will\n"
+          "also be older than MAX_POST_AGE_DAYS by now, so run the next scan with\n"
+          "--ignore-age or the age filter will drop them again immediately:\n"
+          "    python scan.py --ignore-age")
 
 def cmd_rescore():
     """Drop every scored row so the whole corpus re-runs under the current engine."""
@@ -1528,10 +1636,26 @@ def main():
 
     if "--selftest" in sys.argv:
         return cmd_selftest()
+    if "--unkill-history" in sys.argv:
+        days = 14
+        if "--days" in sys.argv:
+            try:
+                days = int(sys.argv[sys.argv.index("--days") + 1])
+            except (IndexError, ValueError):
+                print("--days needs a number; using 14.")
+        return cmd_unkill_history(days)
     if "--unkill" in sys.argv:
         return cmd_unkill()
     if "--rescore" in sys.argv:
         return cmd_rescore()
+
+    if "--ignore-age" in sys.argv:
+        # One-run escape hatch for the backfill: rows freed by --unkill-history are older
+        # than the 7-day cutoff by definition, so without this the age filter drops every
+        # one of them again before they reach the scorer.
+        global MAX_POST_AGE_DAYS
+        MAX_POST_AGE_DAYS = 3650
+        print("--ignore-age: age filter relaxed for this run.")
 
     if verify:
         print("Verifying optional ATS slugs...")

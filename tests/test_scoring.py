@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""Tests for the pure, offline half of scan.py -- the scoring arithmetic, the caps, and the
-location and title classifiers. No network, no API key.
+"""Tests for the pure, offline half of scan.py -- the scoring arithmetic, the risk flags,
+and the location and title classifiers. No network, no API key.
 
     python tests/test_scoring.py        (or: python -m pytest tests/)
 
 These cover the logic that used to live in the prompt and drift silently: the weighted
-total, each deterministic cap, and the location gate that once accepted a Staines role and
-then let the model cap it to 2 for being outside the London commuter belt.
+total, the facts that get flagged on a row, and the location gate that once accepted a
+Staines role and then let the model score it 2 for being outside the London commuter belt.
+
+Two of these tests exist to keep old mistakes buried rather than to describe new behaviour.
+`test_no_title_band_can_change_a_score` guards the removal of the cap engine, which used to
+clamp a 6.5 RevOps role to 4.0 over one word in its title.
+`test_include_title_admits_strategy_and_operations_wordings` guards the title gate against
+re-narrowing, since Strategy & Operations is a core target and the market writes it a dozen
+different ways.
 """
 
 import os
@@ -41,119 +48,107 @@ def test_weighted_total():
     assert scan.weighted_total(dims(*([99] * 6))) == 10.0
 
 
-def test_no_caps_leaves_score_alone():
+def test_cap_engine_is_gone():
+    """The ceilings are not merely unused, they are absent. Left in place but unreferenced
+    they would be reintroduced by the first person who greps for them."""
+    for name in ["apply_caps", "below_visa_floor", "CAPS"]:
+        assert not hasattr(scan, name), f"{name} is back; the score is being clamped again"
+
+
+def test_no_title_band_can_change_a_score():
+    """The regression this whole change exists to prevent. Every one of these titles used to
+    be clamped -- analyst and specialist to 5.0, director+ to 6.0, deal desk to 4.0 -- which
+    buried real roles under the dashboard gate on the strength of one word. The band is
+    still computed, because it is worth flagging and worth telling the model about, but it
+    must not touch the number."""
+    strong = scan.weighted_total(dims(*([9] * 6)))
+    for title in ["Senior Revenue Operations Analyst", "CS Operations Specialist",
+                  "Sales Operations Coordinator", "Head of Revenue Operations",
+                  "Director, GTM Operations", "Sales Strategy Associate Director",
+                  "Deal Desk Manager", "Sales Strategy and Operations Associate, EMEA"]:
+        job = {"title": title, "market": "UK-London"}
+        out = scan.score_flags(job, NO_OBS)
+        assert isinstance(out, list)                       # flags, never a score
+        assert scan.weighted_total(dims(*([9] * 6))) == strong, title
+
+
+def test_flag_language_requirement():
+    job = {"title": "Senior Customer Success Manager", "market": "NL"}
+    flags = scan.score_flags(job, dict(NO_OBS, language_hard_requirement=True))
+    assert any("non-English fluency" in f for f in flags)
+    # merely-preferred is the model's call to report as False, and then raises nothing
+    assert scan.score_flags(job, NO_OBS) == []
+
+
+def test_flag_below_visa_floor():
     job = {"title": "Revenue Operations Manager", "market": "NL"}
-    score, caps = scan.apply_caps(7.6, job, NO_OBS)
-    assert (score, caps) == (7.6, [])
-
-
-def test_cap_location():
-    job = {"title": "Revenue Operations Manager", "market": None}
-    score, caps = scan.apply_caps(9.0, job, NO_OBS)
-    assert score == 2.0
-    assert caps == ["location outside target markets"]
-
-
-def test_cap_analyst_and_specialist():
-    for title, band in [("Senior Revenue Operations Analyst", "analyst"),
-                        ("CS Operations Specialist", "specialist"),
-                        ("Sales Operations Coordinator", "specialist")]:
-        assert scan.title_band(title) == band
-        score, caps = scan.apply_caps(8.4, {"title": title, "market": "NL"}, NO_OBS)
-        assert score == 5.0, title
-        assert band in caps[0]
-
-
-def test_cap_director_plus():
-    for title in ["Head of Revenue Operations", "Director, GTM Operations",
-                  "Sales Strategy Associate Director", "VP Revenue Operations"]:
-        assert scan.title_band(title) == "director_plus", title
-        score, _ = scan.apply_caps(8.8, {"title": title, "market": "UK-London"}, NO_OBS)
-        assert score == 6.0, title
-
-
-def test_cap_wrong_function_from_title_and_from_description():
-    score, _ = scan.apply_caps(8.0, {"title": "Deal Desk Manager", "market": "NL"}, NO_OBS)
-    assert score == 4.0
-    # the model can also report an off-target function the title doesn't reveal
-    obs = dict(NO_OBS, function_match="off_target")
-    score, caps = scan.apply_caps(8.0, {"title": "Business Operations Manager",
-                                        "market": "NL"}, obs)
-    assert score == 4.0
-    assert "off-target function (description)" in caps
-
-
-def test_cap_language():
-    obs = dict(NO_OBS, language_hard_requirement=True)
-    score, caps = scan.apply_caps(9.5, {"title": "Senior Customer Success Manager",
-                                        "market": "NL"}, obs)
-    assert score == 3.0
-    assert "requires non-English fluency" in caps
-    # merely-preferred is the model's call to report as False, and then must not cap
-    score, caps = scan.apply_caps(9.5, {"title": "Senior Customer Success Manager",
-                                        "market": "NL"}, NO_OBS)
-    assert (score, caps) == (9.5, [])
-
-
-def test_cap_below_visa_floor():
     obs = dict(NO_OBS, salary_stated=True, salary_min_base=55000, salary_currency="EUR")
-    score, caps = scan.apply_caps(8.0, {"title": "Revenue Operations Manager",
-                                        "market": "NL"}, obs)
-    assert score == 4.0
-    assert "below the NL visa floor" in caps[0]
-    # at or above the floor, no cap
+    flags = scan.score_flags(job, obs)
+    assert any("below the NL visa floor" in f for f in flags)
+    # at or above the floor, nothing to say
     obs = dict(NO_OBS, salary_stated=True, salary_min_base=85000, salary_currency="EUR")
-    score, caps = scan.apply_caps(8.0, {"title": "Revenue Operations Manager",
-                                        "market": "NL"}, obs)
-    assert (score, caps) == (8.0, [])
+    assert scan.score_flags(job, obs) == []
 
 
 def test_below_floor_never_compares_across_currencies():
     """55,000 GBP is below the 70,000 GBP UK floor but well above the 56,976 EUR Belgian
     one. Guessing an FX rate here would produce confident nonsense, so a mismatched
-    currency must not fire the cap at all."""
+    currency must not raise the flag at all."""
     obs = dict(NO_OBS, salary_stated=True, salary_min_base=55000, salary_currency="GBP")
-    low, _ = scan.below_visa_floor("BE", obs)
-    assert low is False
-    low, note = scan.below_visa_floor("UK-London", obs)
-    assert low is True and "GBP" in note
-    # unparseable or absent salary is never a cap
-    assert scan.below_visa_floor("NL", dict(NO_OBS, salary_stated=True,
-                                            salary_min_base="n/a"))[0] is False
-    assert scan.below_visa_floor("NL", NO_OBS)[0] is False
-    assert scan.below_visa_floor(None, obs)[0] is False
+    assert scan.salary_floor_flag("BE", obs) == ""
+    assert "GBP" in scan.salary_floor_flag("UK-London", obs)
+    # unparseable, absent or market-less salary never raises it either
+    assert scan.salary_floor_flag("NL", dict(NO_OBS, salary_stated=True,
+                                             salary_min_base="n/a")) == ""
+    assert scan.salary_floor_flag("NL", NO_OBS) == ""
+    assert scan.salary_floor_flag(None, obs) == ""
 
 
-def test_cap_csm_track_by_market():
-    """A Senior CSM role in NL is a primary target; the same role in London or Dublin is
-    capped unless the company is a standout (profile.md, CSM track weighting)."""
+def test_flag_off_target_function():
+    obs = dict(NO_OBS, function_match="off_target")
+    flags = scan.score_flags({"title": "Business Operations Manager", "market": "NL"}, obs)
+    assert any("off-target" in f for f in flags)
+
+
+def test_flag_title_band_reads_as_an_instruction_to_look():
+    """Wording matters here: these bands were the ones being auto-buried, so the flag has to
+    send Tom to the JD rather than deliver a verdict."""
+    for title in ["Senior Revenue Operations Analyst", "CS Operations Specialist",
+                  "Head of Revenue Operations"]:
+        flags = scan.score_flags({"title": title, "market": "NL"}, NO_OBS)
+        band = [f for f in flags if f.startswith("title band:")]
+        assert band, title
+        assert "check the JD" in band[0], title
+    # an unremarkable title says nothing
+    assert scan.score_flags({"title": "Revenue Operations Manager", "market": "NL"},
+                            NO_OBS) == []
+
+
+def test_flag_csm_track_by_market():
+    """A Senior CSM role in NL is a primary target; the same role in London or Dublin gets a
+    note unless the company is a standout (profile.md, CSM track weighting). It is a note
+    now, not a ceiling -- the model reflects the weighting in the dimension scores."""
     title = "Senior Customer Success Manager"
-    assert scan.apply_caps(8.6, {"title": title, "market": "NL"}, NO_OBS) == (8.6, [])
+    assert scan.score_flags({"title": title, "market": "NL"}, NO_OBS) == []
     plain = dict(NO_OBS, company_standout=False)
     for market in ["UK-London", "IE-Dublin", "BE"]:
-        score, caps = scan.apply_caps(8.6, {"title": title, "market": market}, plain)
-        assert score == 6.0, market
-        assert market in caps[0]
-        # a genuine standout is not capped
-        assert scan.apply_caps(8.6, {"title": title, "market": market}, NO_OBS) == (8.6, [])
-    # a RevOps title in those markets is unaffected by the CSM cap
-    assert scan.apply_caps(8.6, {"title": "Revenue Operations Manager",
-                                 "market": "UK-London"}, plain) == (8.6, [])
+        flags = scan.score_flags({"title": title, "market": market}, plain)
+        assert any(market in f and "non-standout" in f for f in flags), market
+        # a genuine standout gets no note
+        assert scan.score_flags({"title": title, "market": market}, NO_OBS) == []
+    # a RevOps title in those markets never picks up the CSM note
+    assert scan.score_flags({"title": "Revenue Operations Manager",
+                             "market": "UK-London"}, plain) == []
 
 
-def test_lowest_cap_wins_when_several_apply():
-    obs = dict(NO_OBS, language_hard_requirement=True)   # cap 3
-    job = {"title": "Head of Revenue Operations", "market": "NL"}   # cap 6
-    score, caps = scan.apply_caps(9.0, job, obs)
-    assert score == 3.0
-    assert len(caps) == 2      # both are reported, so the dashboard can show all of them
-
-
-def test_caps_never_raise_a_score():
-    """A cap is a ceiling, not a target: a genuinely weak role must not be lifted to it."""
-    job = {"title": "Head of Revenue Operations", "market": "NL"}
-    score, _ = scan.apply_caps(2.4, job, NO_OBS)
-    assert score == 2.4
+def test_several_flags_are_all_reported():
+    """The old engine kept the lowest cap and discarded the rest of the reasoning. Flags
+    accumulate instead, so nothing gets hidden behind whichever fact was worst."""
+    obs = dict(NO_OBS, language_hard_requirement=True, company_standout=False,
+               salary_stated=True, salary_min_base=40000, salary_currency="GBP")
+    flags = scan.score_flags({"title": "Senior Customer Success Analyst",
+                              "market": "UK-London"}, obs)
+    assert len(flags) == 4      # language, below floor, title band, CSM outside NL
 
 
 def test_market_of_uk_london_vs_rest_of_uk():
@@ -293,6 +288,40 @@ def test_widening_did_not_lose_anything_previously_kept():
         assert scan.INCLUDE_TITLE.search(t), f"regression: {t} no longer matches"
 
 
+def test_include_title_admits_strategy_and_operations_wordings():
+    """Strategy & Operations is a core target function, and the market writes it a dozen
+    ways. Every title here is a real posting the radar saw in one week and lost -- most died
+    at the cheap screen, but the gate has to be wide enough that they reach it at all.
+    Verkada's is the sharpest example: the skill names Verkada as a target employer and
+    lists 'Strategy & Ops Associate at tier-1 employers' as viable."""
+    for t in ["Sales Strategy and Operations Associate, EMEA",
+              "Senior Analyst, Sales Strategy and Operations - Public Sector",
+              "EMEA Partner Strategy and Operations Senior Manager",
+              "Strategy and Operations Manager, gTech Agency and Partners",
+              "International Strategy and Operations Lead",
+              "Product Strategy and Operations Manager, Scaled Growth, EMEA",
+              "Senior Strategy & Operations Manager, Prime Video Global Marketing",
+              "Associate Director, Sales Planning Strategy and Operations",
+              "Strategy, Planning & Operations Manager", "Strategic Operations Manager",
+              "Business Strategy & Analytics Manager", "S&O Manager, EMEA",
+              "EMEA Strategy Lead, AWS EMEA Sales Strategy",
+              "GTM Systems Manager, Revenue Operations"]:
+        assert scan.INCLUDE_TITLE.search(t), f"lost again: {t}"
+
+
+def test_strategy_widening_did_not_admit_off_function_strategy_roles():
+    """The other half of the same gate. These were all correctly dropped in the same week --
+    'strategy' on its own is a very common word in titles that have nothing to do with
+    revenue operations."""
+    for t in ["Procurement External Talent Strategy Lead - EMEA",
+              "Medical Strategy Lead, Oncology-Clinical Development",
+              "Global Business Banking - Strategy Consultant (Digital Sales)",
+              "Client Solution & Strategy Specialist (Institutional)",
+              "Lead, Strategy", "Strategic Account Manager", "Contract Specialist",
+              "Business Transformation Analyst", "Trade Analyst"]:
+        assert not scan.INCLUDE_TITLE.search(t), f"over-wide: {t}"
+
+
 def test_exclude_list_still_wins_over_the_widened_include():
     """Widening must not let an excluded seniority or an internship through."""
     for t in ["VP Revenue Operations", "Vice President, Sales Operations",
@@ -332,7 +361,7 @@ def test_recent_enough_fails_open_without_a_date():
     assert scan.recent_enough(scan.now_iso()) is True
 
 
-def test_title_band_normal_titles_are_not_capped():
+def test_title_band_normal_titles_are_unremarkable():
     for title in ["Revenue Operations Manager", "Sales Operations Manager",
                   "GTM Strategy & Operations Manager", "Senior Customer Success Manager",
                   "Customer Success Operations Manager"]:
@@ -459,6 +488,9 @@ def test_score_request_body_is_well_formed():
     assert oc["format"]["schema"] is scan.SCORE_SCHEMA
     # and the computed result carries the audit fields the dashboard renders
     assert out["score"] == 7.0 and out["score_raw"] == 7.0
+    # score and score_raw are now always equal: nothing clamps the weighted total, and
+    # score_raw survives only so rows written under the old cap engine still render.
+    assert out["score"] == out["score_raw"]
     assert out["caps_applied"] == [] and out["tier"] == "NL"
     assert "comp not listed, verify vs floor" in out["flags"]
 

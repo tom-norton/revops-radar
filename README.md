@@ -64,13 +64,22 @@ and ~8am Barcelona respectively) — see `.github/workflows/scan.yml`.
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout.
 16. **The score itself is computed in Python**, not by the model — `weighted_total()` does
-    the arithmetic and `apply_caps()` applies the ceilings (location, title band, salary
-    floor, language, CSM track), lowest cap winning. Each job stores `score`, `score_raw`
-    (the total before caps) and `caps_applied`, so a low score always says why.
-    The salary-floor cap only ever fires on pay stated in the ad: **Adzuna's predicted
+    the arithmetic, so the number is reproducible from the six dimension scores instead of
+    being whatever total the model reported (on an early corpus, 21 of 51 model-reported
+    totals were more than 0.6 off the weighted sum of their own dimensions).
+    **Nothing clamps that total.** There used to be an `apply_caps()` with score ceilings
+    for title band, salary floor, language, off-target function and the CSM track; it is
+    gone. It disagreed with the rubric it was supposed to enforce — a RevOps Specialist role
+    that scored 6.5 on the dimensions landed at 4.0 because of one word in its title — and
+    the `job-application-workflow` skill this rubric comes from has no such mechanism.
+    Those facts now travel as **flags** (`score_flags()`): below-floor salary, non-English
+    fluency requirement, off-target function, junior/senior title band, CSM outside NL.
+    They're shown on the row so you can judge them; they don't move the number. Anything
+    that *should* move the number belongs in a dimension score, which is what the rubric
+    guidance tells the model.
+    The below-floor flag only ever fires on pay stated in the ad: **Adzuna's predicted
     salaries are discarded** (`salary_is_predicted`), because they are modelled from the
-    title and location rather than published by the employer, and two roles were capped to
-    4.0 by a figure that was never in the posting.
+    title and location rather than published by the employer.
 17. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
     **5.0–5.9 into a collapsed "borderline"** section, and puts everything below 5 plus
     every row dropped earlier in the pipeline into a collapsed **"excluded"** section.
@@ -88,34 +97,61 @@ silently-broken source looks different from a quiet week.
 Two commands act on what you find there:
 
 ```
-python scan.py --unkill    # free every stage-1 Haiku kill so the next run re-evaluates it
-python scan.py --rescore   # clear all scored rows and rescore the corpus from scratch
+python scan.py --unkill                    # free every stage-1 Haiku kill still in the file
+python scan.py --unkill-history --days 14  # same, but walks git history for the ones the
+                                           # file's per-stage sample no longer holds
+python scan.py --ignore-age                # one run with the 7-day age filter relaxed
+python scan.py --rescore                   # clear all scored rows and rescore from scratch
 ```
+
+`docs/excluded.json` keeps only a bounded sample per stage, so a week of scans can produce
+twice as many stage-1 kills as the committed file holds. `--unkill-history` reads every
+commit of that file to recover the rest. Pair it with one `--ignore-age` run — anything it
+frees is older than the 7-day cutoff by definition, so the age filter would otherwise drop
+it again immediately. Neither command can resurrect a posting that has since come down:
+`excluded.json` stores no URL, so a job only returns if it's still live in a source feed.
+
+The easiest way to run a backfill is from GitHub, where the API key already is: **Actions →
+"Daily job scan" → Run workflow**, tick `backfill` and `ignore_age`. That does the history
+walk and the relaxed-age scan in one go. `MAX_SCORED_PER_RUN` still caps the run at 30 deep
+scores, so a large backfill takes a few runs to drain. Do this after any change that
+loosens the screen or the scoring rules — otherwise the change only ever applies to jobs
+posted from that day on.
 
 ## Your profile lives in `profile.md`
 
 The deep score reads `profile.md`. Edit that file whenever your background, targets, comp
 floors, or market list change. Keep it factual.
 
-Two things are **not** driven by `profile.md` alone, because code enforces them: the salary
-floors in `VISA_FLOORS` and the market list in `market_of()`. Change a comp floor or add a
-market and you need to update both, or the prose and the cap will disagree.
+Two things are **not** driven by `profile.md` alone, because code reads them directly: the
+salary floors in `VISA_FLOORS` (used for the below-floor flag) and the market list in
+`market_of()` (which gates the pipeline). Change a comp floor or add a market and you need
+to update both, or the prose and the code will disagree.
 
-`profile.md` also diverges from the `job-application-workflow` skill on purpose — it rejects
-Germany, Spain, and remote-EMEA outright (the skill still scores Berlin 4-6 and remote-Spain
-6-7), and it adds Belgium and the CSM-track weighting. `profile.md` is the current, narrower
-stance; don't "fix" it back toward the skill.
+`profile.md` diverges from the `job-application-workflow` skill in exactly two places, both
+deliberate: **markets** — it rejects Germany, Spain, and remote-EMEA outright (the skill
+still scores Berlin 4-6 and remote-Spain 6-7) and adds Belgium — and the **CSM-track
+weighting**, which the skill has no equivalent for. That narrower stance is current; don't
+"fix" it back toward the skill.
+
+Everything else is meant to match the skill's Step 1 rubric, and did not for a long time.
+The scoring model here is the skill's: six weighted dimensions, judged on the skill's own
+guidance, with no ceilings and no title-based exclusions. If you find the two disagreeing
+anywhere other than markets and the CSM track, the radar is the one that's wrong.
 
 ## Tests
 
 ```
-python tests/test_scoring.py    # pure functions: caps, weighted total, location, dedupe
-python scan.py --selftest       # replay stored scores through the cap engine, offline
+python tests/test_scoring.py    # pure functions: weighted total, flags, title gate, location, dedupe
+python scan.py --selftest       # replay stored dimension scores through the engine, offline
 python scan.py --dry            # full pipeline, no Claude calls
 ```
 
-The unit tests also run in CI before the scan, so a broken cap can't spend tokens producing
-wrong scores.
+The unit tests also run in CI before the scan, so a broken filter or a mis-weighted rubric
+can't spend tokens producing wrong scores. Two of them exist specifically to stop old
+mistakes coming back: one asserts that no title band changes a score (the cap engine stays
+dead) and one asserts the title gate still admits the Strategy & Operations wordings the
+market actually uses.
 
 ## Setup / secrets
 
@@ -154,7 +190,14 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   one, which is what `test_widening_did_not_lose_anything_previously_kept` guards.
 - **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
 - **Scoring:** what the model judges is in `profile.md` and `score_system()`; what the code
-  decides is `RUBRIC`, `TITLE_BANDS`, `CAPS`, `VISA_FLOORS`, and `apply_caps()`.
+  decides is `RUBRIC` (the weights) and `weighted_total()`. `TITLE_BANDS` and `VISA_FLOORS`
+  now only feed `score_flags()`, which annotates a row without changing its score.
+- **What the cheap screen may throw away:** `SCREEN_SYSTEM`. It can kill on exactly two
+  grounds, location and unambiguously wrong function, and is explicitly forbidden from
+  killing on seniority. It used to do the latter, and quietly lost a week's worth of
+  Analyst-, Specialist-, Associate- and Director-titled RevOps roles plus most of the
+  Strategy & Operations market before anything read the description. Re-check that list of
+  in-scope functions before narrowing anything here.
 - **Model + cost:** `CLAUDE_SCORE_MODEL`, `SCORE_EFFORT` (`low`–`max`; the main cost dial),
   `MAX_SCREENED_PER_RUN` (Haiku) and `MAX_SCORED_PER_RUN` (Opus). The deep-score system
   prompt is cached, so the per-run token cost is dominated by job descriptions, not the

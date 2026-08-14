@@ -5,7 +5,19 @@ on:
     - cron: "0 6 * * *"      # 06:00 UTC every day (~8am Barcelona)
     - cron: "0 13 * * 1-5"   # +13:00 UTC weekdays only (~3pm Barcelona)
     - cron: "0 19 * * 1-5"   # +19:00 UTC weekdays only (~9pm Barcelona)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Free past stage-1 kills from seen.json first (git history walk)"
+        type: boolean
+        default: false
+      backfill_days:
+        description: "How many days of docs/excluded.json history to walk"
+        default: "14"
+      ignore_age:
+        description: "Relax the 7-day age filter for this run (pair with backfill)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -15,14 +27,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # --unkill-history reads past commits of docs/excluded.json, so the default
+          # single-commit checkout would find nothing to walk.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install requests python-jobspy
       - name: Scoring unit tests
-        # Pure functions only -- no network, no API key. Catches a broken cap or location
-        # rule before it spends tokens producing wrong scores.
+        # Pure functions only -- no network, no API key. Catches a broken filter or a
+        # mis-weighted rubric before it spends tokens producing wrong scores.
         run: python tests/test_scoring.py
+      - name: Free past stage-1 kills
+        # Manual runs only. Use after loosening the screen or the scoring rules, to give
+        # everything the old rules threw away a second look.
+        if: inputs.backfill
+        run: python scan.py --unkill-history --days "${{ inputs.backfill_days }}"
       - name: Run scanner
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -32,7 +53,7 @@ jobs:
           APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: python scan.py
+        run: python scan.py ${{ inputs.ignore_age && '--ignore-age' || '' }}
       - name: Commit results
         run: |
           git config user.name "radar-bot"
