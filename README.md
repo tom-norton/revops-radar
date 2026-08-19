@@ -9,10 +9,10 @@ your devices via Firebase.
 **Markets:** Netherlands (anywhere), Belgium (anywhere), UK (London area only), Ireland
 (Dublin). Germany, Spain, and remote-from-anywhere/EMEA roles are deliberately excluded.
 
-**Runs:** 09:15, 14:00, 19:00 UTC on weekdays, 09:15 UTC only on weekends — i.e.
-10:15am/3pm/8pm CET, and 10:15am CET on weekends. GitHub's cron is UTC-only, so during
-CEST (late March to late October) each run lands an hour later in local time —
-11:15am/4pm/9pm. Every slot stays after the 10am revopsroles.com email either way.
+**Runs:** 10:15am, 3pm and 8pm local on weekdays, 10:15am only on weekends —
+08:15, 13:00 and 18:00 UTC. GitHub's cron is UTC-only with no DST awareness, so these
+need shifting back an hour when the clocks change on 25 Oct 2026, otherwise the morning
+run drifts to 9:15am and lands ahead of the 10am revopsroles.com email.
 See `.github/workflows/scan.yml`.
 
 ## How it works

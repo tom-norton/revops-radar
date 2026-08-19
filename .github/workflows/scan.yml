@@ -2,13 +2,15 @@ name: Daily job scan
 
 on:
   schedule:
-    # Cron here is UTC and has no DST awareness, so these are pinned to CET (UTC+1):
-    # exact in winter, one hour later in local time during CEST. The morning slot is
-    # deliberately late enough that the 10am revopsroles.com email has already landed
-    # under either offset.
-    - cron: "15 9 * * *"     # 09:15 UTC every day (10:15 CET / 11:15 CEST)
-    - cron: "0 14 * * 1-5"   # 14:00 UTC weekdays only (3pm CET / 4pm CEST)
-    - cron: "0 19 * * 1-5"   # 19:00 UTC weekdays only (8pm CET / 9pm CEST)
+    # Cron here is UTC and has no DST awareness, so these are pinned to CEST (UTC+2)
+    # and are correct as-is through 25 Oct 2026, when the clocks go back.
+    #
+    # TODO(25 Oct 2026): shift each of these back an hour -- "15 9 * * *",
+    # "0 14 * * 1-5", "0 19 * * 1-5" -- or the morning run lands at 9:15am, ahead of
+    # the 10am revopsroles.com email it is meant to pick up.
+    - cron: "15 8 * * *"     # 08:15 UTC every day (10:15am local)
+    - cron: "0 13 * * 1-5"   # 13:00 UTC weekdays only (3pm local)
+    - cron: "0 18 * * 1-5"   # 18:00 UTC weekdays only (8pm local)
   workflow_dispatch:
     inputs:
       backfill:
