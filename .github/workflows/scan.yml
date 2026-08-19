@@ -2,9 +2,13 @@ name: Daily job scan
 
 on:
   schedule:
-    - cron: "0 6 * * *"      # 06:00 UTC every day (~8am Barcelona)
-    - cron: "0 13 * * 1-5"   # +13:00 UTC weekdays only (~3pm Barcelona)
-    - cron: "0 19 * * 1-5"   # +19:00 UTC weekdays only (~9pm Barcelona)
+    # Cron here is UTC and has no DST awareness, so these are pinned to CET (UTC+1):
+    # exact in winter, one hour later in local time during CEST. The morning slot is
+    # deliberately late enough that the 10am revopsroles.com email has already landed
+    # under either offset.
+    - cron: "15 9 * * *"     # 09:15 UTC every day (10:15 CET / 11:15 CEST)
+    - cron: "0 14 * * 1-5"   # 14:00 UTC weekdays only (3pm CET / 4pm CEST)
+    - cron: "0 19 * * 1-5"   # 19:00 UTC weekdays only (8pm CET / 9pm CEST)
   workflow_dispatch:
     inputs:
       backfill:
