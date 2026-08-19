@@ -1407,43 +1407,65 @@ APIFY_HIRINGCAFE_SEARCHES = [
     # CS titles at GRC/compliance/legaltech companies, NL/IE/UK-London
     "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22kxY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Ireland%22%2C%22short_name%22%3A%22IE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Ireland%22%2C%22population%22%3A4853506%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22xRg1yZQBoEtHp_8UXQ1z%22%2C%22types%22%3A%5B%22locality%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22London%22%2C%22short_name%22%3A%22London%22%2C%22types%22%3A%5B%22locality%22%5D%7D%2C%7B%22long_name%22%3A%22England%22%2C%22short_name%22%3A%22ENG%22%2C%22types%22%3A%5B%22administrative_area_level_1%22%5D%7D%2C%7B%22long_name%22%3A%22United+Kingdom%22%2C%22short_name%22%3A%22GB%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22geometry%22%3A%7B%22location%22%3A%7B%22lat%22%3A51.50853%2C%22lon%22%3A-0.12574%7D%7D%2C%22formatted_address%22%3A%22London%2C+England%2C+GB%22%2C%22population%22%3A8961989%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22radius%22%3A50%2C%22radius_unit%22%3A%22miles%22%2C%22ignore_radius%22%3Afalse%7D%7D%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22Customer+success%5C%22%22%2C%22jobDescriptionQuery%22%3A%22GRC+OR+compliance+OR+legaltech%22%7D",
 ]
+# Short labels for the searches above, same order, used only for the per-search status line.
+APIFY_SEARCH_LABELS = ["revops-broad", "cs-nl", "cs-senior", "cs-grc"]
 APIFY_MAX_ITEMS = 200   # across all four searches combined; ~$0.25/run at $1.25/1000 results
 
-def fetch_apify_hiringcafe(token):
+def fetch_apify_hiringcafe(token, diag=None):
     """Runs Tom's saved hiring.cafe searches through the Apify actor
     memo23/apify-hiring-cafe-scraper. Each search already encodes its own
     location/title/language filters; dateFetchedPastNDays=21 in the searches is wider
-    than our own MAX_POST_AGE_DAYS, so the age filter downstream still applies."""
+    than our own MAX_POST_AGE_DAYS, so the age filter downstream still applies.
+
+    One actor call per search, not one call for all four startUrls together. A combined
+    call was silently returning a flat ~30 items total run after run for six-plus weeks
+    regardless of how the market moved -- an Atlassian Amsterdam CSM req that Tom found
+    browsing hiring.cafe directly, and that a live fetch of just the cs-nl search alone
+    returns near the top of 15 results, never once appeared in that combined feed. The
+    actor's own docs only document a global maxItems, not a per-URL cap, so the most
+    likely explanation is the four searches starving each other (or the actor only
+    paginating the first of them) inside one run -- calling separately, each with its own
+    budget, is the direct fix and also gives a raw count per search (diag) instead of one
+    opaque total, so a search silently going quiet again is visible in the status footer."""
     out = []
-    r = requests.post(
-        f"https://api.apify.com/v2/acts/{APIFY_ACTOR}/run-sync-get-dataset-items",
-        params={"token": token},
-        json={"startUrls": APIFY_HIRINGCAFE_SEARCHES, "maxItems": APIFY_MAX_ITEMS,
-              "enrichDescription": True},
-        timeout=280)
-    r.raise_for_status()
-    items = r.json()
-    bump_raw("hiring.cafe", len(items))
-    for j in items:
-        info = j.get("job_information", {}) or {}; proc = j.get("v5_processed_job_data", {}) or {}
-        title = info.get("title") or proc.get("core_job_title", "")
-        loc = proc.get("formatted_workplace_location", "")
-        reason = prefilter(title, loc)
-        if reason:
-            record_drop({"id": "hc-" + str(j.get("id", ""))[:60], "title": title,
-                         "location": loc, "company": proc.get("company_name", ""),
-                         "source": "hiring.cafe"}, "prefilter", reason)
+    per_url_budget = max(1, APIFY_MAX_ITEMS // len(APIFY_HIRINGCAFE_SEARCHES))
+    for label, url in zip(APIFY_SEARCH_LABELS, APIFY_HIRINGCAFE_SEARCHES):
+        try:
+            r = requests.post(
+                f"https://api.apify.com/v2/acts/{APIFY_ACTOR}/run-sync-get-dataset-items",
+                params={"token": token},
+                json={"startUrls": [url], "maxItems": per_url_budget,
+                      "enrichDescription": True},
+                timeout=280)
+            r.raise_for_status()
+            items = r.json()
+        except Exception as e:
+            if diag is not None:
+                diag[f"hiringcafe:{label}"] = f"FAIL: {e}"
             continue
-        sal = ""
-        if proc.get("yearly_min_compensation"):
-            cur = proc.get("listed_compensation_currency") or ""
-            sal = f"{int(proc['yearly_min_compensation'])}-{int(proc.get('yearly_max_compensation') or proc['yearly_min_compensation'])} {cur}".strip()
-        out.append({"id": "hc-" + str(j.get("id", ""))[:60], "company": proc.get("company_name", ""),
-                    "title": title, "location": loc, "country": "",
-                    "market": market_of("", loc), "salary": sal,
-                    "url": j.get("apply_url") or "", "source": "hiring.cafe",
-                    "description": strip_html(info.get("description", "")),
-                    "posted_at": proc.get("estimated_publish_date", "")})
+        if diag is not None:
+            diag[f"hiringcafe:{label}"] = f"raw {len(items)}"
+        bump_raw("hiring.cafe", len(items))
+        for j in items:
+            info = j.get("job_information", {}) or {}; proc = j.get("v5_processed_job_data", {}) or {}
+            title = info.get("title") or proc.get("core_job_title", "")
+            loc = proc.get("formatted_workplace_location", "")
+            reason = prefilter(title, loc)
+            if reason:
+                record_drop({"id": "hc-" + str(j.get("id", ""))[:60], "title": title,
+                             "location": loc, "company": proc.get("company_name", ""),
+                             "source": "hiring.cafe"}, "prefilter", reason)
+                continue
+            sal = ""
+            if proc.get("yearly_min_compensation"):
+                cur = proc.get("listed_compensation_currency") or ""
+                sal = f"{int(proc['yearly_min_compensation'])}-{int(proc.get('yearly_max_compensation') or proc['yearly_min_compensation'])} {cur}".strip()
+            out.append({"id": "hc-" + str(j.get("id", ""))[:60], "company": proc.get("company_name", ""),
+                        "title": title, "location": loc, "country": "",
+                        "market": market_of("", loc), "salary": sal,
+                        "url": j.get("apply_url") or "", "source": "hiring.cafe",
+                        "description": strip_html(info.get("description", "")),
+                        "posted_at": proc.get("estimated_publish_date", "")})
     return out
 
 # ---------------------------------------------------------------- Claude scoring
@@ -1780,8 +1802,8 @@ def main():
     apify_token = os.environ.get("APIFY_API_TOKEN", "")
     if apify_token:
         try:
-            jobs = fetch_apify_hiringcafe(apify_token); found += jobs
-            src_status["hiring.cafe (Apify)"] = src_line("hiring.cafe", len(jobs))
+            jobs = fetch_apify_hiringcafe(apify_token, diag); found += jobs
+            src_status["hiring.cafe (Apify)"] = f"{src_line('hiring.cafe', len(jobs))} | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("hiringcafe:"))
         except Exception as e:
             src_status["hiring.cafe (Apify)"] = f"FAIL: {e}"
     else:

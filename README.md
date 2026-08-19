@@ -229,6 +229,14 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
 
 ## Known limits
 
+- **hiring.cafe (Apify)** was silently returning a flat ~30 raw items per run, every run, for
+  six-plus weeks, regardless of how the market moved — one combined actor call across all four
+  saved searches, apparently starving each other. An Atlassian Amsterdam CSM role Tom found
+  browsing hiring.cafe directly never once appeared, even though a live fetch of just one of
+  the four saved searches returned it near the top. Fixed by calling the actor once per search
+  instead of once for all four `startUrls` together; the status footer now shows a raw count
+  per search (`hiringcafe:cs-nl=raw 15`, etc.) so a search going quiet again is visible instead
+  of hiding inside one opaque total.
 - **JobSpy/Indeed** may be blocked from GitHub's datacenter IPs some days; it's marked "skipped"
   in the status footer and the other sources carry the run. Ireland still comes through the ATS feeds.
 - **LinkedIn's guest search endpoint** is unofficial and could change or get rate-limited without
