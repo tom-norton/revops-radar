@@ -41,7 +41,26 @@ See `.github/workflows/scan.yml`.
 8. A free **title + location filter** drops anything off-function or off-market before a token is spent.
 9. An **age filter** drops anything older than 7 days when the source gives a posted date.
 10. **Cross-source, cross-run dedupe** collapses the same role found via multiple sources
-    or on different days into one dashboard entry.
+    or on different days into one dashboard entry — before it is screened or scored, so a
+    duplicate costs nothing. Sources disagree about how to write both halves of a job's
+    identity, so this compares normalised forms rather than exact strings: legal form,
+    region and feed provenance come off the employer name ("Heidi" = "Heidi Health",
+    "Semrush" = "Semrush UK Ltd.", "Rubrik" = "Rubrik Job Board"), and titles are
+    abbreviation-expanded and compared as word sets, so "Rev Ops Manager" = "Revenue
+    Operations Manager" and "Manager, Sales Operations" = "Sales Operations Manager". One
+    title may be a shortening of the other, which is what catches an aggregator's truncated
+    version of a posting. See `same_role()` for the guards that stop that from merging jobs
+    that only look alike — the seniority band has to match, and a word that appears in one
+    title and not the other must not be the kind of word that makes two postings different
+    jobs. "Renewals Manager" and "Renewals Manager - French Speaker" stay separate, as do
+    "Senior Renewals Manager", the fixed-term version of a role, and the 1-3 and 3-6 YoE
+    variants of the same title. **The dashboard itself is collapsed on every run too**, so
+    duplicates that landed before a matching rule existed clear themselves rather than
+    sitting there; `python scan.py --dedupe` does that alone, without a scan. The surviving
+    row is the best copy — a scored row over an unscored one, then the employer's own ATS
+    feed over an aggregator — and it carries the ids of the rows it absorbed, so a Hide or
+    Mark applied recorded against a duplicate still holds. It lists the other sources that
+    had the same posting as "also on" links.
 11. Every UK/NL company is matched against the **official sponsor registers** (gov.uk daily
     CSV, IND monthly register) and badged: sponsor / sponsor (likely) / not on register / n/a.
 
@@ -113,6 +132,8 @@ python scan.py --unkill-history --days 14  # same, but walks git history for the
                                            # file's per-stage sample no longer holds
 python scan.py --ignore-age                # one run with the 7-day age filter relaxed
 python scan.py --rescore                   # clear all scored rows and rescore from scratch
+python scan.py --dedupe                    # collapse duplicates already on the dashboard,
+                                           # without running a scan
 ```
 
 `docs/excluded.json` keeps only a bounded sample per stage, so a week of scans can produce
@@ -201,6 +222,15 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   live audit before and after a change — a widened alternative can silently break an existing
   one, which is what `test_widening_did_not_lose_anything_previously_kept` guards.
 - **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
+- **What counts as the same posting:** `same_role()`, and the four lists it reads —
+  `COMPANY_SUFFIX` / `COMPANY_REGION` (noise on an employer name), `TITLE_ALIASES` (the
+  abbreviations the market uses interchangeably), `DISTINGUISHING` (words that make two
+  postings different jobs even when the rest of the title matches) and `DEDUPE_CITY` /
+  `PLACE_NOISE` (the city bucket two rows must share before they are compared at all).
+  Loosening any of these is only safe while the must-not-merge half of
+  `test_same_role_keeps_genuinely_different_postings_apart` still passes — every pair in it
+  is two real postings the feeds carried at the same time. Preview a change with
+  `python scan.py --dedupe`, which prints each keep/drop pair before writing anything.
 - **Scoring:** what the model judges is in `profile.md` and `score_system()`; what the code
   decides is `RUBRIC` (the weights) and `weighted_total()`. `TITLE_BANDS` feeds
   `score_flags()`, which annotates a row without changing its score. `VISA_FLOORS` feeds

@@ -406,35 +406,173 @@ def test_score_schema_covers_every_rubric_dimension():
     assert "score" not in scan.SCORE_SCHEMA["properties"]
 
 
-def test_dkey_separates_dutch_cities():
+def _same(a, b):
+    return scan.same_role(scan.role_key(a), scan.role_key(b))
+
+
+def _complete(j):
+    return scan.role_key_complete(scan.role_key(j))
+
+
+def test_dedupe_separates_dutch_cities():
     """The regression this exists for: the city bucket was a slice of the regex *pattern*,
     so every Dutch city hashed to the literal "amster" and the same role in Amsterdam and
     Rotterdam collapsed into a single dashboard entry."""
     ams = {"company": "Adyen", "title": "Revenue Operations Manager", "location": "Amsterdam"}
     rot = {"company": "Adyen", "title": "Revenue Operations Manager", "location": "Rotterdam"}
     utr = {"company": "Adyen", "title": "Revenue Operations Manager", "location": "Utrecht"}
-    assert scan.dkey(ams) != scan.dkey(rot)
-    assert scan.dkey(ams) != scan.dkey(utr)
-    assert len({scan.dkey(x) for x in (ams, rot, utr)}) == 3
+    assert not _same(ams, rot)
+    assert not _same(ams, utr)
+    assert not _same(rot, utr)
 
 
-def test_dkey_collapses_genuine_duplicates():
+def test_dedupe_collapses_genuine_duplicates():
     # same role, two sources, company written differently
-    a = {"company": "Adyen N.V.", "title": "Revenue Operations Manager", "location": "Amsterdam"}
-    b = {"company": "Adyen", "title": "Revenue Operations Manager", "location": "Amsterdam, NL"}
-    assert scan.dkey(a) == scan.dkey(b)
+    assert _same({"company": "Adyen N.V.", "title": "Revenue Operations Manager",
+                  "location": "Amsterdam"},
+                 {"company": "Adyen", "title": "Revenue Operations Manager",
+                  "location": "Amsterdam, NL"})
     # The Hague's three spellings are one bucket
-    hague = [{"company": "X", "title": "T", "location": loc}
+    hague = [{"company": "Adyen", "title": "Revenue Operations Manager", "location": loc}
              for loc in ("The Hague", "Den Haag", "Hague")]
-    assert len({scan.dkey(h) for h in hague}) == 1
+    assert _same(hague[0], hague[1]) and _same(hague[1], hague[2])
 
 
-def test_dkey_is_incomplete_without_a_city():
-    """all(key) is the guard main() uses before deduping; an unrecognised city must leave
-    the key incomplete so unrelated rows are never collapsed."""
-    assert not all(scan.dkey({"company": "X", "title": "T", "location": "Groningen"}))
-    assert not all(scan.dkey({"company": "", "title": "T", "location": "Amsterdam"}))
-    assert all(scan.dkey({"company": "X", "title": "T", "location": "Amsterdam"}))
+def test_a_row_without_a_place_is_never_deduped():
+    """role_key_complete() is the guard main() uses before comparing anything: a row with no
+    company, no title or no identifiable place is never compared, so it can't swallow
+    unrelated rows.
+
+    A city outside DEDUPE_CITY used to leave the key incomplete too, which meant no row in
+    Nijverdal, Delft or Staines was ever deduped against anything -- the live dashboard was
+    carrying byte-identical pairs because of it. Such a city now buckets on its own name,
+    which is what keeps Staines and Slough apart while still collapsing Staines twice. A
+    location naming only a country stays incomplete: "Netherlands" must not become a bucket
+    that two different Dutch cities fall into."""
+    assert not _complete({"company": "", "title": "T", "location": "Amsterdam"})
+    assert not _complete({"company": "X", "title": "", "location": "Amsterdam"})
+    assert not _complete({"company": "X", "title": "T", "location": "Netherlands"})
+    assert not _complete({"company": "X", "title": "T", "location": "United Kingdom"})
+    assert not _complete({"company": "X", "title": "T", "location": "Remote - EMEA"})
+    assert _complete({"company": "X", "title": "T", "location": "Amsterdam"})
+    assert _complete({"company": "X", "title": "T", "location": "Groningen"})
+    assert scan.dedupe_city("Staines, Surrey") == scan.dedupe_city("Staines-upon-Thames, England")
+    assert scan.dedupe_city("Groningen") != scan.dedupe_city("Maastricht")
+
+
+def test_same_role_collapses_a_shortened_company_name():
+    """The Heidi case: revopsroles carried "Heidi Health", hiring.cafe carried "Heidi", and
+    the exact-match key treated them as two employers -- so the same posting was screened
+    and deep-scored twice and sat on the dashboard twice."""
+    assert _same({"company": "Heidi Health", "title": "GTM Operations Analyst",
+                  "location": "London, United Kingdom"},
+                 {"company": "Heidi", "title": "GTM Operations Analyst",
+                  "location": "London, London, United Kingdom"})
+    # legal form, region and feed provenance are all noise on an employer name
+    for other in ("Semrush UK Ltd.", "Semrush B.V.", "Semrush Job Board",
+                  "Semrush, a DoorDash company"):
+        assert _same({"company": "Semrush", "title": "Sales Operations Manager",
+                      "location": "London"},
+                     {"company": other, "title": "Sales Operations Manager",
+                      "location": "London"}), other
+
+
+def test_same_role_collapses_an_abbreviated_title():
+    """The flatfair case: Adzuna's "Rev Ops Manager" and revopsroles' "Revenue Operations
+    Manager", same company, same city, two dashboard rows and two Opus calls."""
+    assert _same({"company": "flatfair", "title": "Revenue Operations Manager",
+                  "location": "London, United Kingdom"},
+                 {"company": "flatfair", "title": "Rev Ops Manager",
+                  "location": "Somers Town, North West London"})
+    same_title = ["Head of Sales Ops & Enablement", "Head of Sales Operations & Enablement",
+                  "Head of Sales Operations and Enablement"]
+    for t in same_title[1:]:
+        assert _same({"company": "Altor", "title": same_title[0], "location": "London Area"},
+                     {"company": "Altor", "title": t, "location": "London"}), t
+    # word order is not identity: the same role gets written both ways round
+    assert _same({"company": "Adyen", "title": "Manager, Sales Operations", "location": "Amsterdam"},
+                 {"company": "Adyen", "title": "Sales Operations Manager", "location": "Amsterdam"})
+    # a product or region suffix on one side only
+    assert _same({"company": "IFS", "title": "Head of Revenue Operations", "location": "Staines, UK"},
+                 {"company": "IFS", "title": "Head of Revenue Operations | IFS Copperleaf",
+                  "location": "Staines-upon-Thames, England"})
+
+
+def test_same_role_keeps_genuinely_different_postings_apart():
+    """The other half of the trade. Loosening the match is only safe while these stay
+    separate -- each pair is two real postings the live feeds carried at once, and merging
+    any of them would hide a job rather than a duplicate."""
+    def diff(a, b, why):
+        assert not _same(a, b), why
+
+    # seniority is never shortened away
+    diff({"company": "Salesforce", "title": "Renewals Manager", "location": "Dublin"},
+         {"company": "Salesforce", "title": "Senior Renewals Manager", "location": "Dublin"},
+         "senior vs not")
+    diff({"company": "Intercom", "title": "Senior Customer Success Manager", "location": "Dublin"},
+         {"company": "Intercom", "title": "Principal Customer Success Manager, Enterprise",
+          "location": "Dublin"}, "senior vs principal")
+    # a language requirement makes it a different job -- and one of the two gets dropped
+    # by requires_other_language() anyway, which it can't be if it was merged away first
+    diff({"company": "MongoDB", "title": "Renewals Manager", "location": "Dublin"},
+         {"company": "MongoDB", "title": "Renewals Manager - French Speaker", "location": "Dublin"},
+         "French speaker")
+    diff({"company": "Wise", "title": "Senior Customer Success Manager", "location": "London"},
+         {"company": "Wise", "title": "Senior Customer Success Manager (German Speaking)",
+          "location": "London"}, "German speaking")
+    # so does a fixed term, and so does an experience band
+    diff({"company": "LinkedIn", "title": "Sales Operations Associate", "location": "Dublin"},
+         {"company": "LinkedIn", "title": "Sales Operations Associate (Fixed-Term Contract)",
+          "location": "Dublin"}, "fixed-term")
+    diff({"company": "Vega", "title": "Strategy & Operations (1-3 YoE)", "location": "London"},
+         {"company": "Vega", "title": "Strategy & Operations (3-6 YoE)", "location": "London"},
+         "years of experience")
+    # different function, same company and city
+    diff({"company": "Salesforce", "title": "Renewals Manager", "location": "Dublin"},
+         {"company": "Salesforce", "title": "Manager, Quota and Capacity Planning",
+          "location": "Dublin"}, "different function")
+    # one company name containing another is not enough on its own
+    diff({"company": "Zoom", "title": "Revenue Operations Manager", "location": "London"},
+         {"company": "ZoomInfo", "title": "Revenue Operations Manager", "location": "London"},
+         "Zoom vs ZoomInfo")
+    # and the city still separates everything, which is what dkey was first fixed for
+    diff({"company": "Adyen", "title": "Revenue Operations Manager", "location": "Amsterdam"},
+         {"company": "Adyen", "title": "Revenue Operations Manager", "location": "Rotterdam"},
+         "different city")
+
+
+def test_collapse_duplicates_keeps_the_best_copy_and_carries_the_ids():
+    """A collapsed duplicate must not cost a Hide / Mark applied. The dashboard reads state
+    against dupe_ids as well as the row's own id, so the surviving row has to carry them."""
+    ats = {"id": "gh-1", "company": "Heidi Health", "title": "GTM Operations Analyst",
+           "location": "London", "source": "greenhouse", "score": 7.0}
+    agg = {"id": "az-2", "company": "Heidi", "title": "GTM Operations Analyst",
+           "location": "London, London, United Kingdom", "source": "adzuna", "score": 6.5}
+    kept, dropped = scan.collapse_duplicates([agg, ats])
+    assert len(kept) == 1 and len(dropped) == 1
+    assert kept[0]["id"] == "gh-1"              # higher score wins
+    assert "az-2" in kept[0]["dupe_ids"]
+    assert [a["source"] for a in kept[0]["also_seen"]] == ["adzuna"]
+    # unscored rows fall back to the source: the employer's own feed over an aggregator
+    for r in (ats, agg):
+        r.pop("score", None), r.pop("dupe_ids", None), r.pop("also_seen", None)
+    kept, _ = scan.collapse_duplicates([dict(agg), dict(ats)])
+    assert kept[0]["id"] == "gh-1"
+
+
+def test_collapse_duplicates_leaves_distinct_rows_alone():
+    rows = [{"id": "1", "company": "Adyen", "title": "Revenue Operations Manager",
+             "location": "Amsterdam"},
+            {"id": "2", "company": "Adyen", "title": "Revenue Operations Manager",
+             "location": "Rotterdam"},
+            {"id": "3", "company": "Mollie", "title": "Revenue Operations Manager",
+             "location": "Amsterdam"},
+            {"id": "4", "company": "", "title": "Revenue Operations Manager",
+             "location": "Amsterdam"},
+            {"id": "5", "company": "", "title": "Revenue Operations Manager",
+             "location": "Amsterdam"}]
+    kept, dropped = scan.collapse_duplicates(rows)
+    assert not dropped and len(kept) == 5        # rows 4 and 5 have no company: never merged
 
 
 def test_gate_and_floor_are_ordered():

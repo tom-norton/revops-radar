@@ -61,6 +61,7 @@ Usage:
   python scan.py --ignore-age   one run with the 7-day age filter relaxed; pair it with
                              --unkill-history, whose rows are older than the cutoff by now
   python scan.py --rescore   clear scored rows so the corpus re-runs under the current engine
+  python scan.py --dedupe    collapse duplicates already on the dashboard, without scanning
 """
 
 import email, html, imaplib, json, os, re, subprocess, sys, time
@@ -688,6 +689,20 @@ def record_drop(job, stage, reason):
         "dropped_at": now_iso(),
     })
 
+def trim_drop_rows(rows):
+    """Bound the committed drop log: newest first, capped per stage. Retained per stage
+    rather than as one flat list, so thousands of routine title rejects can't push the
+    handful of Haiku kills and scoring errors -- the rows actually worth reviewing -- out
+    of the file."""
+    out, per_group = [], {}
+    for d in rows:
+        g = str(d.get("stage", "")).split(":")[0]
+        if per_group.get(g, 0) >= DROP_KEEP_PER_STAGE.get(g, DROP_KEEP_DEFAULT):
+            continue
+        per_group[g] = per_group.get(g, 0) + 1
+        out.append(d)
+    return out[:DROP_MAX_ROWS]
+
 def bump_raw(source, n):
     """Count rows a source returned before filtering, so a regex change that silently
     zeroes a source looks different from a genuinely quiet week."""
@@ -763,8 +778,34 @@ COUNTRY_CODES = {
 def country_code(v):
     return COUNTRY_CODES.get((v or "").strip().lower(), "")
 
-# ---------------------------------------------------------------- cross-source dedupe key
-COMPANY_SUFFIX = re.compile(r"\b(inc|ltd|llc|bv|gmbh|corp|co|plc|nv)\b\.?", re.I)
+# ---------------------------------------------------------------- cross-source dedupe
+# The same posting reaches this pipeline from up to seven sources, and each one writes the
+# employer and the title its own way. An exact (company, title, city) triple therefore
+# missed most real duplicates -- "Heidi" vs "Heidi Health", "Rev Ops Manager" vs "Revenue
+# Operations Manager", "Semrush" vs "Semrush UK Ltd." -- and every miss is a second full
+# Haiku + Opus scoring run on a job that is already on the dashboard, plus a row Tom has to
+# read past twice.
+#
+# So both halves of the identity are normalised hard, and the comparison itself allows one
+# name to be a shortening of the other. What stops that from collapsing roles that merely
+# look alike lives in same_role(): the seniority band must match, and the words that are
+# only in the longer title must not be the words that make two postings different jobs
+# (a language requirement, a fixed term, a years-of-experience band).
+
+COMPANY_SUFFIX = re.compile(
+    r"\b(inc|incorporated|ltd|limited|llc|plc|corp|corporation|company|co|holdings?|group"
+    r"|international|bv|nv|gmbh|ag|sa|sarl|srl|spa|oy|ab|aps|pte|pty)\b\.?", re.I)
+# Provenance the feeds tack onto the employer name: "Rubrik Job Board", "SevenRooms, a
+# DoorDash company". Stripped before the suffix list, since it carries its own "company".
+COMPANY_NOISE = re.compile(r",?\s+(a|an)\s+[\w'&.-]+(\s+[\w'&.-]+)?\s+(company|brand|business)\b"
+                           r"|\bjob board\b|\bcareers?\b", re.I)
+# A country or region in the employer name is provenance too ("Semrush UK Ltd.",
+# "SevenRooms - United Kingdom"), never the thing that distinguishes two employers.
+COMPANY_REGION = {"uk", "gb", "gbr", "britain", "british", "england", "ireland", "irish",
+                  "netherlands", "nederland", "holland", "dutch", "belgium", "emea",
+                  "europe", "european", "eu", "usa", "us", "america", "american",
+                  "united", "kingdom", "states", "apac", "dach", "benelux", "global"}
+
 # One bucket per city. These used to share a single bucket per regex alternation group,
 # because the code took a slice of the *pattern* string rather than the matched text -- so
 # "amster" stood in for every Dutch city and the same role in Amsterdam and in Rotterdam
@@ -772,18 +813,223 @@ COMPANY_SUFFIX = re.compile(r"\b(inc|ltd|llc|bv|gmbh|corp|co|plc|nv)\b\.?", re.I
 DEDUPE_CITY = re.compile(r"amsterdam|rotterdam|utrecht|eindhoven|den haag|the hague|hague"
                          r"|dublin|london|brussels|antwerp|ghent", re.I)
 CITY_ALIAS = {"the hague": "denhaag", "den haag": "denhaag", "hague": "denhaag"}
+# Words in a location string that name no particular place. A location made only of these
+# leaves the key incomplete, which means the row is never deduped -- "Netherlands" on its
+# own must not become a bucket that two different Dutch cities fall into.
+PLACE_NOISE = {"remote", "hybrid", "onsite", "on", "site", "office", "based", "area",
+               "region", "greater", "county", "city", "metro", "north", "south", "east",
+               "west", "central", "and", "or", "of", "the", "nl", "be", "ie", "gb", "uk",
+               "netherlands", "nederland", "holland", "belgium", "belgie", "belgique",
+               "ireland", "eire", "irl", "nld", "bel", "united", "kingdom", "great",
+               "britain", "england", "scotland", "wales", "europe", "emea", "eu",
+               "anywhere", "worldwide", "global", "flanders", "wallonia"}
+
+# Abbreviations the market uses interchangeably. Expanded on both sides before comparison,
+# so "Rev Ops Manager" and "Revenue Operations Manager" are one role rather than two.
+# Order matters: the compound forms run before the bare "ops" rule.
+TITLE_ALIASES = [
+    (re.compile(r"\brev(enue)?\s*[-/]?\s*ops\b", re.I), " revenue operations "),
+    (re.compile(r"\bsales\s*[-/]?\s*ops\b", re.I), " sales operations "),
+    (re.compile(r"\bcs\s*[-/]?\s*ops\b", re.I), " customer success operations "),
+    (re.compile(r"\b(biz|business)\s*[-/]?\s*ops\b", re.I), " business operations "),
+    (re.compile(r"\b(marketing|mktg)\s*[-/]?\s*ops\b", re.I), " marketing operations "),
+    (re.compile(r"\bops\b", re.I), " operations "),
+    (re.compile(r"\bgtm\b|\bg2m\b|\bgo[- ]to[- ]market\b", re.I), " go to market "),
+    (re.compile(r"\bcsm\b", re.I), " customer success manager "),
+    (re.compile(r"\bsr\.?\b|\bsnr\.?\b", re.I), " senior "),
+    (re.compile(r"\bjr\.?\b", re.I), " junior "),
+    (re.compile(r"\bmgr\.?\b", re.I), " manager "),
+    (re.compile(r"\bmgmt\b", re.I), " management "),
+    (re.compile(r"\bvp\b|\bv\.p\.", re.I), " vice president "),
+    (re.compile(r"\bexec\.?\b", re.I), " executive "),
+    (re.compile(r"\bintl\b", re.I), " international "),
+    (re.compile(r"\bacct\b", re.I), " account "),
+]
+TITLE_STOPWORDS = {"of", "the", "and", "for", "a", "an", "to", "in", "at", "on", "with",
+                   "or", "de", "het", "een", "van"}
+# Words that, when they appear in one title and not the other, mean the two postings are
+# different jobs rather than the same job written twice. Without this list "Renewals
+# Manager" would swallow "Renewals Manager - French Speaker" and "Sales Operations
+# Associate" would swallow the fixed-term version of itself.
+DISTINGUISHING = {
+    "fixed", "term", "temporary", "temp", "contract", "contractor", "interim", "intern",
+    "internship", "graduate", "placement", "apprentice", "maternity", "paternity",
+    "parental", "cover", "secondment", "part", "time", "yoe", "year",
+    "french", "german", "dutch", "flemish", "spanish", "italian", "portuguese", "polish",
+    "swedish", "danish", "norwegian", "finnish", "turkish", "arabic", "hebrew", "japanese",
+    "korean", "mandarin", "chinese", "russian", "czech", "hungarian", "romanian", "greek",
+    "nordic", "speaking", "speaker", "native", "bilingual", "fluent", "language",
+}
+# Beyond this many extra words, the longer title is describing a different job, not the
+# same one with a product or region suffix.
+DEDUPE_MAX_EXTRA_TITLE_WORDS = 4
+
+def company_tokens(s):
+    """The words that actually identify an employer, as a set. Legal form, provenance and
+    region are all stripped, so "Heidi", "Heidi Health" and "Semrush UK Ltd." reduce to
+    something a subset test can compare."""
+    t = COMPANY_NOISE.sub(" ", (s or "").lower())
+    t = re.sub(r"[^a-z0-9 ]", " ", t)
+    t = COMPANY_SUFFIX.sub(" ", t)
+    toks = [w for w in t.split() if w not in COMPANY_REGION]
+    # Single letters are the debris of a punctuated legal form ("S.a.r.l." -> s a r l), not
+    # part of the name -- unless they are all that is left, since X is a real employer.
+    return frozenset([w for w in toks if len(w) > 1] or toks)
 
 def norm_company(s):
-    return re.sub(r"\s+", "", COMPANY_SUFFIX.sub("", re.sub(r"[^a-z0-9 ]", "", (s or "").lower())))
+    """Order-insensitive string form of company_tokens(), kept because dkey() is a hashable
+    key and a frozenset doesn't read well in a drop reason."""
+    return "".join(sorted(company_tokens(s)))
 
-def dkey(j):
-    """(company, title, city) identity for collapsing the same role found twice. All three
-    parts must be non-empty before it's used to dedupe, so a row with no company never
-    swallows unrelated rows."""
-    m = DEDUPE_CITY.search(j.get("location") or "")
-    city = CITY_ALIAS.get(m.group(0).lower(), m.group(0).lower()) if m else ""
-    return (norm_company(j.get("company")),
-            re.sub(r"[^a-z0-9]", "", (j.get("title") or "").lower())[:40], city)
+def title_tokens(s):
+    """The words that identify a role, as a set: abbreviations expanded, punctuation and
+    filler dropped, plurals folded. A set rather than a sequence, so "Manager, Sales
+    Operations" and "Sales Operations Manager" are the same role."""
+    t = " " + (s or "").lower() + " "
+    for rx, rep in TITLE_ALIASES:
+        t = rx.sub(rep, t)
+    out = set()
+    for w in re.sub(r"[^a-z0-9]+", " ", t).split():
+        if w in TITLE_STOPWORDS:
+            continue
+        if len(w) > 3 and w.endswith("s") and not w.endswith(("ss", "us", "is")):
+            w = w[:-1]          # renewals/renewal, operations/operation
+        out.add(w)
+    return frozenset(out)
+
+# Seniority is the one thing a shorter title is never allowed to be shortened out of:
+# "Renewals Manager" and "Senior Renewals Manager" are two postings, not one.
+SENIORITY_BANDS = [({"chief", "ceo", "cro", "coo", "cfo", "cto", "cmo"}, 6),
+                   ({"vice", "president", "svp", "evp"}, 5),
+                   ({"director", "head"}, 4),
+                   ({"principal", "staff"}, 3),
+                   ({"senior", "lead"}, 2),
+                   ({"junior", "graduate", "intern", "internship", "entry", "trainee"}, 0)]
+
+def title_seniority(tokens):
+    """Rank of the most senior band named in a title; 1 when none is."""
+    return max((rank for words, rank in SENIORITY_BANDS if tokens & words), default=1)
+
+def dedupe_city(location):
+    """The city bucket two rows must share before they can be compared at all. A named
+    target city wins; failing that, the first word of the location that names a place, so
+    Staines rows can dedupe against each other without Staines and Slough merging. A
+    location that names only a country or a region yields "", which leaves the key
+    incomplete and the row un-dedupable."""
+    loc = location or ""
+    m = DEDUPE_CITY.search(loc)
+    if m:
+        return CITY_ALIAS.get(m.group(0).lower(), m.group(0).lower())
+    for w in re.split(r"[^a-z]+", loc.lower()):
+        if len(w) > 2 and w not in PLACE_NOISE:
+            return w
+    return ""
+
+def role_key(j):
+    """(company words, title words, city, seniority) identity of a posting. Not hashable as
+    an equality key -- same_role() compares two of these -- because the whole point is that
+    two rows can name the same job with different numbers of words."""
+    tt = title_tokens(j.get("title"))
+    return (company_tokens(j.get("company")), tt, dedupe_city(j.get("location")),
+            title_seniority(tt))
+
+def role_key_complete(k):
+    """Company, title and city all present. A row missing any of them is never deduped, so
+    a blank company can't swallow unrelated rows."""
+    return bool(k[0] and k[1] and k[2])
+
+def same_role(ka, kb):
+    """True when two role keys are the same posting seen twice.
+
+    Company: one name's words must contain the other's ("Heidi" inside "Heidi Health"),
+    which is safe only because the title and city have to agree too -- on its own it would
+    happily merge two different employers.
+    Title: identical word sets, or the shorter contained in the longer with the guards
+    above -- same seniority band, at most a few extra words, and none of those words a
+    DISTINGUISHING one."""
+    if not (role_key_complete(ka) and role_key_complete(kb)):
+        return False
+    if ka[2] != kb[2] or ka[3] != kb[3]:
+        return False
+    ca, cb = ka[0], kb[0]
+    if not (ca <= cb or cb <= ca):
+        return False
+    ta, tb = ka[1], kb[1]
+    if ta == tb:
+        return True
+    short, long_ = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
+    if len(short) < 2 or not short <= long_:
+        return False
+    extra = long_ - short
+    if len(extra) > DEDUPE_MAX_EXTRA_TITLE_WORDS:
+        return False
+    return not any(w in DISTINGUISHING or w.isdigit() for w in extra)
+
+# Which copy of a duplicate to keep. A scored row always beats an unscored one, then the
+# source: an employer's own ATS feed carries the clean company name, the full description
+# and the real location, while the big aggregators are the ones that shorten a title to
+# "Rev Ops Manager" and file a London role under "Somers Town".
+DEDUPE_SOURCE_RANK = {"greenhouse": 0, "lever": 0, "ashby": 0, "workday": 1,
+                      "revopsroles": 2, "hiring.cafe": 3, "linkedin": 4, "reed": 5,
+                      "adzuna": 6, "indeed": 7}
+
+def _row_rank(j):
+    return (-(j.get("score") or 0), DEDUPE_SOURCE_RANK.get(j.get("source"), 9),
+            -len(j.get("description") or ""), -len(j.get("title") or ""))
+
+def prefer_row(a, b):
+    """The better of two rows for the same posting."""
+    return a if _row_rank(a) <= _row_rank(b) else b
+
+DEDUPE_ALSO_CAP = 4
+
+def absorb_duplicate(winner, loser):
+    """Fold a duplicate into the row that survives it. The loser's id is carried on the
+    winner so the dashboard can treat a Hide or Mark-applied recorded against either id as
+    applying to the surviving row -- otherwise collapsing a duplicate would silently
+    un-apply a job Tom had already applied to."""
+    ids = set(winner.get("dupe_ids") or []) | set(loser.get("dupe_ids") or [])
+    ids.add(str(loser.get("id", "")))
+    ids.discard(str(winner.get("id", "")))
+    winner["dupe_ids"] = sorted(i for i in ids if i)
+    also = {(a.get("source"), a.get("url")) for a in (winner.get("also_seen") or [])}
+    also |= {(a.get("source"), a.get("url")) for a in (loser.get("also_seen") or [])}
+    also.add((loser.get("source", ""), loser.get("url", "")))
+    also.discard((winner.get("source"), winner.get("url")))
+    winner["also_seen"] = [{"source": s, "url": u} for s, u in sorted(also) if s][:DEDUPE_ALSO_CAP]
+    return winner
+
+def collapse_duplicates(rows):
+    """Reduce a list of rows to one per posting, keeping the best copy of each. Returns
+    (kept, dropped_with_their_winner). Used on the dashboard itself as well as on a run's
+    fetches, so duplicates that landed before this logic existed heal on the next scan
+    instead of sitting there forever."""
+    kept, kept_keys, dropped = [], [], []
+    buckets = {}                      # city -> indices into kept, so this stays linear-ish
+    for r in rows:
+        k = role_key(r)
+        hit = None
+        if role_key_complete(k):
+            for i in buckets.get(k[2], ()):
+                if same_role(k, kept_keys[i]):
+                    hit = i
+                    break
+        if hit is None:
+            buckets.setdefault(k[2], []).append(len(kept))
+            kept.append(r)
+            kept_keys.append(k)
+            continue
+        winner = prefer_row(kept[hit], r)
+        loser = r if winner is kept[hit] else kept[hit]
+        kept[hit] = absorb_duplicate(winner, loser)
+        kept_keys[hit] = role_key(winner)
+        dropped.append((loser, winner))
+    return kept, dropped
+
+def dupe_reason(winner):
+    """The drop reason written into the excluded log, naming what it collapsed into."""
+    where = f"{winner.get('company') or '?'} - {winner.get('title') or '?'}"
+    return f"same posting as {where} ({winner.get('source') or 'dashboard'}), already kept"
 
 def market_of(country, location):
     """Which target market a row belongs to ('NL' / 'BE' / 'UK-London' / 'IE-Dublin'),
@@ -1714,6 +1960,33 @@ def cmd_rescore():
     print(f"Cleared {len(jobs)} scored rows; {len(ids & seen)} ids freed from seen.json. "
           f"Run scan.py to rescore.")
 
+def cmd_dedupe():
+    """Collapse duplicates already on the dashboard, without running a scan.
+
+    A normal run does this too -- see the dedupe stage in main() -- so this exists for the
+    case where you want the dashboard cleaned now rather than at the next scan, and for
+    seeing exactly what a change to same_role() would collapse before letting a run do it."""
+    jobs = load_json("docs/jobs.json", [])
+    kept, dropped = collapse_duplicates(jobs)
+    for loser, winner in dropped:
+        record_drop(loser, "dedupe", dupe_reason(winner))
+        print(f"  keep {winner.get('score', '-'):>4}  {winner.get('company')} | "
+              f"{winner.get('title')} | {winner.get('location')} [{winner.get('source')}]")
+        print(f"  drop {loser.get('score', '-'):>4}  {loser.get('company')} | "
+              f"{loser.get('title')} | {loser.get('location')} [{loser.get('source')}]\n")
+    if not dropped:
+        print("No duplicates on the dashboard.")
+        return
+    prev = load_json("docs/excluded.json", {})
+    prev["rows"] = trim_drop_rows(DROPS + prev.get("rows", []))
+    prev["counts"] = {**prev.get("counts", {}),
+                      "dedupe": prev.get("counts", {}).get("dedupe", 0) + len(dropped)}
+    json.dump(kept, open("docs/jobs.json", "w"), indent=1)
+    json.dump(prev, open("docs/excluded.json", "w"), indent=1)
+    print(f"{len(jobs)} rows -> {len(kept)}: {len(dropped)} duplicates collapsed. "
+          f"The ids they were shown under are carried on the surviving row, so a Hide or "
+          f"Mark applied recorded against one still holds.")
+
 def main():
     verify, dry = "--verify" in sys.argv, "--dry" in sys.argv
     here = os.path.dirname(os.path.abspath(__file__))
@@ -1734,6 +2007,8 @@ def main():
         return cmd_unkill()
     if "--rescore" in sys.argv:
         return cmd_rescore()
+    if "--dedupe" in sys.argv:
+        return cmd_dedupe()
 
     if "--ignore-age" in sys.argv:
         # One-run escape hatch for the backfill: rows freed by --unkill-history are older
@@ -1850,16 +2125,60 @@ def main():
 
     # cross-source dedupe: the same role can arrive from Indeed + Greenhouse etc, and
     # can also resurface via a different source in a later run than the one that first
-    # found it -- so seed dseen with everything already on the dashboard, not just this run.
-    dseen = {dkey(j) for j in existing if all(dkey(j))}
-    deduped = []
+    # found it -- so this compares against everything already on the dashboard, not just
+    # this run. See same_role() for what counts as the same posting.
+    #
+    # The dashboard itself is collapsed first. Duplicates that landed while the old exact
+    # (company, title, city) key was missing them are still sitting there, and a row that
+    # is only ever compared against, never re-examined, would keep its twin forever.
+    existing, healed = collapse_duplicates(existing)
+    for loser, winner in healed:
+        record_drop(loser, "dedupe", dupe_reason(winner))
+
+    kept_keys, buckets, deduped = [], {}, []
+    for j in existing:
+        k = role_key(j)
+        if role_key_complete(k):
+            buckets.setdefault(k[2], []).append(len(kept_keys))
+        kept_keys.append(k)
+    on_dashboard = len(kept_keys)               # indices below this are existing rows
+
     for j in found:
-        k = dkey(j)
-        if k in dseen and all(k):   # only dedupe when company+title+city all present
-            record_drop(j, "dedupe", f"same company+title+city already on the dashboard ({k[2]})")
+        k = role_key(j)
+        hit = None
+        if role_key_complete(k):
+            for i in buckets.get(k[2], ()):
+                if same_role(k, kept_keys[i]):
+                    hit = i
+                    break
+        if hit is None:
+            if role_key_complete(k):
+                buckets.setdefault(k[2], []).append(len(kept_keys))
+            kept_keys.append(k)
+            deduped.append(j)
             continue
-        dseen.add(k); deduped.append(j)
+        if hit < on_dashboard:
+            # Already scored and on the dashboard. The scored row always wins, whatever
+            # source this copy came from -- re-scoring a job Tom has already been shown is
+            # the exact cost this whole stage exists to avoid.
+            winner = existing[hit]
+            record_drop(j, "dedupe", dupe_reason(winner))
+            absorb_duplicate(winner, j)
+            continue
+        # Both copies are new this run and neither is scored yet, so keep the better record
+        # (see DEDUPE_SOURCE_RANK) in the position the first one held -- the screening cap
+        # reads this list in order, and reordering it would starve whichever source fetches
+        # last.
+        incumbent = deduped[hit - on_dashboard]
+        winner = prefer_row(incumbent, j)
+        loser = j if winner is incumbent else incumbent
+        record_drop(loser, "dedupe", dupe_reason(winner))
+        absorb_duplicate(winner, loser)
+        deduped[hit - on_dashboard] = winner
+        kept_keys[hit] = role_key(winner)
     found = deduped
+    src_status["dedupe"] = (f"{len(healed)} collapsed on the dashboard, "
+                            f"{DROP_COUNTS.get('dedupe', 0) - len(healed)} duplicate fetches dropped")
 
     new_jobs = [j for j in found if j["id"] not in seen]
     print(f"Fetched {len(found)} relevant, {len(new_jobs)} new.")
@@ -1978,18 +2297,8 @@ def main():
     if DROP_COUNTS:
         src_status["dropped"] = ", ".join(f"{k} {v}" for k, v in sorted(DROP_COUNTS.items()))
 
-    # Rolling audit trail of what was thrown away, newest first. Retained per stage rather
-    # than as one flat list, so thousands of routine title rejects can't push the handful of
-    # Haiku kills and scoring errors -- the rows actually worth reviewing -- out of the file.
-    prev = load_json("docs/excluded.json", {}).get("rows", [])
-    rows, per_group = [], {}
-    for d in DROPS + prev:
-        g = str(d.get("stage", "")).split(":")[0]
-        if per_group.get(g, 0) >= DROP_KEEP_PER_STAGE.get(g, DROP_KEEP_DEFAULT):
-            continue
-        per_group[g] = per_group.get(g, 0) + 1
-        rows.append(d)
-    rows = rows[:DROP_MAX_ROWS]
+    # Rolling audit trail of what was thrown away, newest first.
+    rows = trim_drop_rows(DROPS + load_json("docs/excluded.json", {}).get("rows", []))
 
     json.dump(sorted(seen), open("seen.json", "w"))
     json.dump(merged, open("docs/jobs.json", "w"), indent=1)

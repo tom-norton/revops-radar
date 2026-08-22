@@ -111,6 +111,13 @@ function loadSet(key){
 function saveSet(key,set){ localStorage.setItem(key, JSON.stringify([...set])); }
 let hiddenIds = loadSet("rr_hidden");
 let appliedIds = loadSet("rr_applied");
+
+// A row that absorbed duplicates carries their ids in dupe_ids. Hide / Mark applied are
+// recorded against whichever id was on screen at the time, so state has to be looked up
+// against every id a row stands for -- otherwise collapsing a duplicate would silently
+// un-apply a job that had already been applied to.
+function idsOf(j){ return [String(j.id||""), ...((j.dupe_ids||[]).map(String))]; }
+function marked(set, j){ return idsOf(j).some(id=>set.has(id)); }
 let syncApi = false; // becomes true once Firebase responds
 
 // Cross-device sync: a Firebase Realtime Database node holds the shared state.
@@ -173,8 +180,15 @@ function card(j, reviewed){
   const caps = (j.caps_applied||[]).map(c=>`<span class="tag cap">capped (legacy): ${esc(c)}</span>`).join("");
   const rawNote = (j.caps_applied||[]).length && j.score_raw != null
     ? `<span class="tag cap">scored ${Number(j.score_raw).toFixed(1)} before the cap; rescan to clear</span>` : "";
+  // Sources that had the same posting and were collapsed into this row, so a duplicate
+  // reads as one entry with two places to open it rather than two entries.
+  const also = (j.also_seen||[]).length
+    ? " · also on " + (j.also_seen||[]).map(a=>a.url
+        ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.source)}</a>`
+        : esc(a.source)).join(", ")
+    : "";
   const actions = reviewed
-    ? `<div class="actions"><span class="status">${appliedIds.has(id) ? "Applied" : "Hidden"}</span>
+    ? `<div class="actions"><span class="status">${marked(appliedIds, j) ? "Applied" : "Hidden"}</span>
         <button data-act="restore" data-id="${id}">Restore</button></div>`
     : `<div class="actions">
         <button data-act="hide" data-id="${id}">Hide</button>
@@ -193,7 +207,7 @@ function card(j, reviewed){
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
-      <span class="src">${j.source||""} · ${fresh(j.found_at)}</span>
+      <span class="src">${j.source||""}${also} · ${fresh(j.found_at)}</span>
     </div>
     ${actions}`;
   return el;
@@ -267,8 +281,8 @@ function renderExcluded(lowScored){
 }
 
 function renderAll(){
-  const jobs = allJobs.filter(j=>!hiddenIds.has(String(j.id)) && !appliedIds.has(String(j.id)));
-  const reviewed = allJobs.filter(j=>hiddenIds.has(String(j.id)) || appliedIds.has(String(j.id)));
+  const jobs = allJobs.filter(j=>!marked(hiddenIds, j) && !marked(appliedIds, j));
+  const reviewed = allJobs.filter(j=>marked(hiddenIds, j) || marked(appliedIds, j));
 
   const apply = jobs.filter(j=>(j.score??0) >= GATE);
   const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);
@@ -314,7 +328,11 @@ document.body.addEventListener("click", (e)=>{
   const id = btn.dataset.id, act = btn.dataset.act;
   if(act === "hide"){ hiddenIds.add(id); saveSet("rr_hidden", hiddenIds); }
   else if(act === "applied"){ appliedIds.add(id); saveSet("rr_applied", appliedIds); }
-  else if(act === "restore"){ hiddenIds.delete(id); appliedIds.delete(id);
+  else if(act === "restore"){
+    // Clear every id this row stands for, or an absorbed duplicate's old mark would put it
+    // straight back into the hidden/applied section on the next render.
+    const job = allJobs.find(j=>String(j.id||"") === id);
+    (job ? idsOf(job) : [id]).forEach(x=>{ hiddenIds.delete(x); appliedIds.delete(x); });
     saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds); }
   pushState();
   renderAll();
