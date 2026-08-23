@@ -128,6 +128,13 @@ INCLUDE_TITLE = re.compile(
     # Analytics Manager" was the one genuinely relevant role this gate lost in a week.
     r"|strategy[ ,&]{1,3}(and[ ,&]{1,3})?(planning|business|revenue|sales|commercial)?[ ,&]{0,3}"
     r"(op(eration)?s|planning|analytics)\b"
+    # "Strategy & Program Manager" doesn't fit the connector rule above -- "program" isn't
+    # followed by operations/planning/analytics, it IS the noun. Adyen's "Strategy & Program
+    # Manager, Scaled Account Management" (designing automated/self-service processes for an
+    # account-management org) was dropped here and never reached the screen. Program design
+    # for a commercial function is the same work as "Strategy & Operations" under a different
+    # noun, so it belongs in this gate rather than needing its own separate track.
+    r"|strategy[ ,&]{1,3}(and[ ,&]{1,3})?program\b"
     r"|strategic operations|\bs ?& ?o\b|business strategy"
     r"|business operations|commercial operations|biz ?ops"
     r"|sales strategy|revenue strategy|revenue enablement|sales enablement"

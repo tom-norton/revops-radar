@@ -333,7 +333,9 @@ def test_include_title_admits_strategy_and_operations_wordings():
               "Strategy, Planning & Operations Manager", "Strategic Operations Manager",
               "Business Strategy & Analytics Manager", "S&O Manager, EMEA",
               "EMEA Strategy Lead, AWS EMEA Sales Strategy",
-              "GTM Systems Manager, Revenue Operations"]:
+              "GTM Systems Manager, Revenue Operations",
+              "Strategy & Program Manager, Scaled Account Management",
+              "Strategy and Program Lead"]:
         assert scan.INCLUDE_TITLE.search(t), f"lost again: {t}"
 
 
