@@ -881,6 +881,15 @@ def norm_company(s):
     key and a frozenset doesn't read well in a drop reason."""
     return "".join(sorted(company_tokens(s)))
 
+def company_initials(s):
+    """First letter of each word in a company name, as a lowercase string -- so "London
+    Stock Exchange Group" reduces to "lseg". Unlike company_tokens() this keeps a word like
+    "Group" that COMPANY_SUFFIX treats as noise for the subset check, because it's exactly
+    the letter a real acronym is built from; stripping it there would turn "lseg" into
+    "lse" and miss the match it exists to catch."""
+    words = [w for w in re.findall(r"[a-z]+", (s or "").lower()) if w not in {"and", "of", "the"}]
+    return "".join(w[0] for w in words)
+
 def title_tokens(s):
     """The words that identify a role, as a set: abbreviations expanded, punctuation and
     filler dropped, plurals folded. A set rather than a sequence, so "Manager, Sales
@@ -926,24 +935,39 @@ def dedupe_city(location):
     return ""
 
 def role_key(j):
-    """(company words, title words, city, seniority) identity of a posting. Not hashable as
-    an equality key -- same_role() compares two of these -- because the whole point is that
-    two rows can name the same job with different numbers of words."""
+    """(company words, title words, city, seniority, company initials) identity of a
+    posting. Not hashable as an equality key -- same_role() compares two of these --
+    because the whole point is that two rows can name the same job with different numbers
+    of words."""
     tt = title_tokens(j.get("title"))
     return (company_tokens(j.get("company")), tt, dedupe_city(j.get("location")),
-            title_seniority(tt))
+            title_seniority(tt), company_initials(j.get("company")))
 
 def role_key_complete(k):
     """Company, title and city all present. A row missing any of them is never deduped, so
     a blank company can't swallow unrelated rows."""
     return bool(k[0] and k[1] and k[2])
 
+def _same_company(ka, kb):
+    """One name's words contain the other's ("Heidi" inside "Heidi Health"), or one side is
+    a bare acronym matching the other's initials ("LSEG" / "London Stock Exchange Group",
+    "AWS" / "Amazon Web Services (AWS)"). The acronym check only fires when the shorter
+    side is a single token -- "Amazon" alone is not an acronym of anything -- and it's safe
+    on its own only because the title and city have to agree too; a subset match still
+    covers most of the real world so it's tried first."""
+    ca, cb = ka[0], kb[0]
+    if ca <= cb or cb <= ca:
+        return True
+    if len(ca) == 1 and len(next(iter(ca))) >= 2 and next(iter(ca)) == kb[4]:
+        return True
+    if len(cb) == 1 and len(next(iter(cb))) >= 2 and next(iter(cb)) == ka[4]:
+        return True
+    return False
+
 def same_role(ka, kb):
     """True when two role keys are the same posting seen twice.
 
-    Company: one name's words must contain the other's ("Heidi" inside "Heidi Health"),
-    which is safe only because the title and city have to agree too -- on its own it would
-    happily merge two different employers.
+    Company: see _same_company().
     Title: identical word sets, or the shorter contained in the longer with the guards
     above -- same seniority band, at most a few extra words, and none of those words a
     DISTINGUISHING one."""
@@ -951,8 +975,7 @@ def same_role(ka, kb):
         return False
     if ka[2] != kb[2] or ka[3] != kb[3]:
         return False
-    ca, cb = ka[0], kb[0]
-    if not (ca <= cb or cb <= ca):
+    if not _same_company(ka, kb):
         return False
     ta, tb = ka[1], kb[1]
     if ta == tb:
@@ -999,37 +1022,114 @@ def absorb_duplicate(winner, loser):
     winner["also_seen"] = [{"source": s, "url": u} for s, u in sorted(also) if s][:DEDUPE_ALSO_CAP]
     return winner
 
+def group_duplicates(rows):
+    """Partition row indices into duplicate groups (singletons included), using the full
+    transitive closure of same_role() rather than a single first-match pass.
+
+    same_role() is not transitive: Adzuna's "AWS" and hiring.cafe's "Amazon" don't match
+    each other, but both match LinkedIn's "Amazon Web Services (AWS)". A pass that stops
+    at the first match a row finds pairs the LinkedIn row with whichever partial name it
+    meets first and never revisits the other one, so "Amazon" stayed on the dashboard next
+    to the row it was really a duplicate of. Union-find closes that: as long as AWS~full
+    and Amazon~full are each discovered somewhere in the bucket, both unions land on the
+    same root regardless of which row triggered them or in what order, so the group ends
+    up {AWS, Amazon, full} even though AWS and Amazon were never compared directly.
+
+    Bucketed by city, same as the callers used to do their own bucketing, so this stays
+    linear in practice rather than comparing every row in the run to every other."""
+    parent = list(range(len(rows)))
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    keys = [role_key(r) for r in rows]
+    buckets = {}
+    for i, k in enumerate(keys):
+        if role_key_complete(k):
+            for j in buckets.get(k[2], ()):
+                if same_role(k, keys[j]):
+                    union(i, j)
+            buckets.setdefault(k[2], []).append(i)
+
+    groups = {}
+    for i in range(len(rows)):
+        groups.setdefault(find(i), []).append(i)
+    return list(groups.values())
+
+def fold_group(rows, idxs):
+    """Reduce one duplicate group to its best row, folding every other member's ids and
+    sources into it. `idxs` order controls nothing about correctness -- prefer_row is
+    applied pairwise as a running tournament, so the final winner is the group's overall
+    best regardless of how many members there are or what order they arrive in."""
+    winner = rows[idxs[0]]
+    for i in idxs[1:]:
+        other = rows[i]
+        new_winner = prefer_row(winner, other)
+        loser = other if new_winner is winner else winner
+        winner = new_winner
+        absorb_duplicate(winner, loser)
+    return winner
+
 def collapse_duplicates(rows):
     """Reduce a list of rows to one per posting, keeping the best copy of each. Returns
     (kept, dropped_with_their_winner). Used on the dashboard itself as well as on a run's
     fetches, so duplicates that landed before this logic existed heal on the next scan
     instead of sitting there forever."""
-    kept, kept_keys, dropped = [], [], []
-    buckets = {}                      # city -> indices into kept, so this stays linear-ish
-    for r in rows:
-        k = role_key(r)
-        hit = None
-        if role_key_complete(k):
-            for i in buckets.get(k[2], ()):
-                if same_role(k, kept_keys[i]):
-                    hit = i
-                    break
-        if hit is None:
-            buckets.setdefault(k[2], []).append(len(kept))
-            kept.append(r)
-            kept_keys.append(k)
+    kept, dropped = [], []
+    for idxs in group_duplicates(rows):
+        if len(idxs) == 1:
+            kept.append(rows[idxs[0]])
             continue
-        winner = prefer_row(kept[hit], r)
-        loser = r if winner is kept[hit] else kept[hit]
-        kept[hit] = absorb_duplicate(winner, loser)
-        kept_keys[hit] = role_key(winner)
-        dropped.append((loser, winner))
+        winner = fold_group(rows, idxs)
+        kept.append(winner)
+        dropped.extend((rows[i], winner) for i in idxs if rows[i] is not winner)
     return kept, dropped
 
 def dupe_reason(winner):
     """The drop reason written into the excluded log, naming what it collapsed into."""
     where = f"{winner.get('company') or '?'} - {winner.get('title') or '?'}"
     return f"same posting as {where} ({winner.get('source') or 'dashboard'}), already kept"
+
+def merge_found_into_dashboard(existing, found):
+    """Fold one run's fetches into the dashboard, one row per posting -- covers both this
+    run's cross-source duplicates and any still sitting on the dashboard from before this
+    matching existed, in a single pass.
+
+    Grouped with the rest of `existing`, so a group made only of existing rows heals the
+    dashboard exactly as a standalone self-heal pass would. But a group that mixes an
+    existing row with a fresh fetch can never let the fetch become the winner, whatever
+    prefer_row's score/source ranking would otherwise say: an already-scored dashboard row
+    always keeps its identity, since re-scoring a job Tom has already been shown is the one
+    cost this whole stage exists to avoid.
+
+    Returns (existing, found, drops): existing and found have one row per posting apiece,
+    every winner mutated in place with the ids and sources it absorbed; drops pairs every
+    folded-away row with what it folded into, for record_drop()."""
+    combined = existing + found
+    n_existing = len(existing)
+    kept_existing, kept_found, drops = [], [], []
+    for idxs in group_duplicates(combined):
+        existing_idxs = [i for i in idxs if i < n_existing]
+        found_idxs = [i for i in idxs if i >= n_existing]
+        if existing_idxs:
+            winner = fold_group(combined, existing_idxs)
+            kept_existing.append(winner)
+            drops.extend((combined[i], winner) for i in existing_idxs if combined[i] is not winner)
+            for i in found_idxs:
+                loser = combined[i]
+                absorb_duplicate(winner, loser)
+                drops.append((loser, winner))
+            continue
+        winner = fold_group(combined, found_idxs)
+        kept_found.append(winner)
+        drops.extend((combined[i], winner) for i in found_idxs if combined[i] is not winner)
+    return kept_existing, kept_found, drops
 
 def market_of(country, location):
     """Which target market a row belongs to ('NL' / 'BE' / 'UK-London' / 'IE-Dublin'),
@@ -2123,62 +2223,20 @@ def main():
                                f"{MAX_POST_AGE_DAYS}d; {no_date} had no usable date (kept)")
     found = kept_age
 
-    # cross-source dedupe: the same role can arrive from Indeed + Greenhouse etc, and
-    # can also resurface via a different source in a later run than the one that first
-    # found it -- so this compares against everything already on the dashboard, not just
-    # this run. See same_role() for what counts as the same posting.
-    #
-    # The dashboard itself is collapsed first. Duplicates that landed while the old exact
-    # (company, title, city) key was missing them are still sitting there, and a row that
-    # is only ever compared against, never re-examined, would keep its twin forever.
-    existing, healed = collapse_duplicates(existing)
-    for loser, winner in healed:
+    # cross-source dedupe: the same role can arrive from Indeed + Greenhouse etc, and can
+    # also resurface via a different source in a later run than the one that first found
+    # it -- so this compares against everything already on the dashboard, not just this
+    # run, and heals any dashboard duplicates left over from before this matching existed
+    # in the same pass. See same_role() for what counts as the same posting and
+    # merge_found_into_dashboard() for why this has to be one combined pass rather than
+    # dashboard-then-fetches: same_role() isn't transitive (Adzuna's "AWS" and hiring.cafe's
+    # "Amazon" don't match each other, only both match LinkedIn's "Amazon Web Services
+    # (AWS)"), so comparing the dashboard and the fetches as two separate passes can pair a
+    # fuller name with whichever partial name it meets first and never revisit the other.
+    existing, found, dedupe_drops = merge_found_into_dashboard(existing, found)
+    for loser, winner in dedupe_drops:
         record_drop(loser, "dedupe", dupe_reason(winner))
-
-    kept_keys, buckets, deduped = [], {}, []
-    for j in existing:
-        k = role_key(j)
-        if role_key_complete(k):
-            buckets.setdefault(k[2], []).append(len(kept_keys))
-        kept_keys.append(k)
-    on_dashboard = len(kept_keys)               # indices below this are existing rows
-
-    for j in found:
-        k = role_key(j)
-        hit = None
-        if role_key_complete(k):
-            for i in buckets.get(k[2], ()):
-                if same_role(k, kept_keys[i]):
-                    hit = i
-                    break
-        if hit is None:
-            if role_key_complete(k):
-                buckets.setdefault(k[2], []).append(len(kept_keys))
-            kept_keys.append(k)
-            deduped.append(j)
-            continue
-        if hit < on_dashboard:
-            # Already scored and on the dashboard. The scored row always wins, whatever
-            # source this copy came from -- re-scoring a job Tom has already been shown is
-            # the exact cost this whole stage exists to avoid.
-            winner = existing[hit]
-            record_drop(j, "dedupe", dupe_reason(winner))
-            absorb_duplicate(winner, j)
-            continue
-        # Both copies are new this run and neither is scored yet, so keep the better record
-        # (see DEDUPE_SOURCE_RANK) in the position the first one held -- the screening cap
-        # reads this list in order, and reordering it would starve whichever source fetches
-        # last.
-        incumbent = deduped[hit - on_dashboard]
-        winner = prefer_row(incumbent, j)
-        loser = j if winner is incumbent else incumbent
-        record_drop(loser, "dedupe", dupe_reason(winner))
-        absorb_duplicate(winner, loser)
-        deduped[hit - on_dashboard] = winner
-        kept_keys[hit] = role_key(winner)
-    found = deduped
-    src_status["dedupe"] = (f"{len(healed)} collapsed on the dashboard, "
-                            f"{DROP_COUNTS.get('dedupe', 0) - len(healed)} duplicate fetches dropped")
+    src_status["dedupe"] = f"{len(dedupe_drops)} duplicates collapsed (dashboard + this run's fetches)"
 
     new_jobs = [j for j in found if j["id"] not in seen]
     print(f"Fetched {len(found)} relevant, {len(new_jobs)} new.")

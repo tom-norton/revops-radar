@@ -541,6 +541,101 @@ def test_same_role_keeps_genuinely_different_postings_apart():
          "different city")
 
 
+def test_same_role_collapses_a_bare_acronym():
+    """The LSEG case: Adzuna carried the legal name, LinkedIn carried the acronym alone,
+    and they share no word at all -- "lseg" is not a subset of {"london", "stock",
+    "exchange"} or the reverse, so the ordinary company check never fires. Only the
+    initials of the full name, "lseg", line up with the acronym."""
+    assert _same({"company": "London Stock Exchange Group",
+                  "title": "Revenue Operations Business Partner – Northern Europe",
+                  "location": "London, UK"},
+                 {"company": "LSEG",
+                  "title": "Revenue Operations Business Partner – Northern Europe",
+                  "location": "London, England, United Kingdom"})
+    # the acronym still has to be the whole company on that side, not a word inside a
+    # longer name that happens to start the same way
+    diff = not _same({"company": "London Stock Exchange Group", "title": "T", "location": "London"},
+                     {"company": "LSE Analytics", "title": "T", "location": "London"})
+    assert diff
+
+
+def test_same_role_does_not_merge_on_a_coincidental_acronym():
+    """The flip side of the acronym check: it only closes the gap same_role() would
+    otherwise leave for a genuine abbreviation, not license to merge on company alone.
+    Two unrelated three-letter companies whose initials happen to line up with some other
+    firm's name must still fail on title or city."""
+    assert not _same({"company": "London Stock Exchange Group", "title": "Revenue Operations Manager",
+                      "location": "London"},
+                     {"company": "LSEG", "title": "Software Engineer", "location": "London"})
+    assert not _same({"company": "London Stock Exchange Group", "title": "Revenue Operations Manager",
+                      "location": "London"},
+                     {"company": "LSEG", "title": "Revenue Operations Manager", "location": "Dublin"})
+
+
+def test_group_duplicates_closes_a_non_transitive_chain():
+    """The Amazon/AWS case, and the reason group_duplicates() exists instead of the single
+    first-match pass dedupe used to do. "AWS" (Adzuna) and "Amazon" (hiring.cafe) don't
+    match each other -- neither name's tokens contain the other's -- but both match
+    LinkedIn's "Amazon Web Services (AWS)". A pass that stops at the first match a row
+    finds pairs the full name with whichever partial one it meets first and never revisits
+    the other, so the live dashboard carried "Amazon" and "Amazon Web Services (AWS)" as
+    two separate rows for months after cross-source dedupe first shipped. Union-find closes
+    the gap: both AWS~full and Amazon~full get discovered somewhere in the bucket, and
+    unioning each onto the same root lands all three in one group even though AWS and
+    Amazon are never compared directly."""
+    title = "Business Operations Mgr, UKGI AWS SMGS Ops Sales Ops-WWPS"
+    rows = [
+        {"id": "az-1", "company": "AWS", "title": title, "location": "London, UK", "source": "adzuna"},
+        {"id": "hc-1", "company": "Amazon", "title": title, "location": "London, UK", "source": "hiring.cafe"},
+        {"id": "li-1", "company": "Amazon Web Services (AWS)", "title": title,
+         "location": "London, UK", "source": "linkedin"},
+    ]
+    assert not _same(rows[0], rows[1])          # confirms this needs the transitive closure
+    groups = scan.group_duplicates(rows)
+    assert len(groups) == 1 and len(groups[0]) == 3
+    kept, dropped = scan.collapse_duplicates(rows)
+    assert len(kept) == 1 and len(dropped) == 2
+    assert set(kept[0]["dupe_ids"]) == {"az-1", "li-1"} or set(kept[0]["dupe_ids"]) == {"hc-1", "li-1"} \
+        or set(kept[0]["dupe_ids"]) == {"az-1", "hc-1"}
+
+
+def test_group_duplicates_does_not_chain_through_an_unrelated_row():
+    """The closure has to stop at same_role(), not run away with anything in the same city
+    bucket. A fourth London row that matches neither AWS name must stay its own group."""
+    title = "Business Operations Mgr, UKGI AWS SMGS Ops Sales Ops-WWPS"
+    rows = [
+        {"id": "az-1", "company": "AWS", "title": title, "location": "London, UK"},
+        {"id": "li-1", "company": "Amazon Web Services (AWS)", "title": title, "location": "London, UK"},
+        {"id": "az-2", "company": "Salesforce", "title": "Renewals Manager", "location": "London, UK"},
+    ]
+    groups = sorted(scan.group_duplicates(rows), key=len)
+    assert [len(g) for g in groups] == [1, 2]
+
+
+def test_merge_found_into_dashboard_never_promotes_a_fetch_over_an_existing_row():
+    """Even a group where a fresh fetch would out-rank the dashboard row on prefer_row's
+    own terms (a real score vs. none yet) must keep the dashboard row as the winner -- the
+    whole point of this stage is that a job Tom has already been shown never gets
+    rescored. Mixed with a same-run duplicate of the fetch, to confirm both the existing
+    row and the extra fetch fold into the same winner."""
+    existing = [{"id": "az-1", "company": "AWS",
+                "title": "Business Operations Mgr, UKGI AWS SMGS Ops Sales Ops-WWPS",
+                "location": "London, UK", "source": "adzuna", "score": 5.0}]
+    found = [
+        {"id": "hc-1", "company": "Amazon",
+         "title": "Business Operations Mgr, UKGI AWS SMGS Ops Sales Ops-WWPS",
+         "location": "London, UK", "source": "hiring.cafe"},
+        {"id": "li-1", "company": "Amazon Web Services (AWS)",
+         "title": "Business Operations Mgr, UKGI AWS SMGS Ops Sales Ops-WWPS",
+         "location": "London, UK", "source": "linkedin"},
+    ]
+    kept_existing, kept_found, drops = scan.merge_found_into_dashboard(existing, found)
+    assert kept_existing == [existing[0]]        # same object, not a fetch standing in for it
+    assert kept_found == []                      # nothing left to screen or score
+    assert len(drops) == 2
+    assert set(existing[0]["dupe_ids"]) == {"hc-1", "li-1"}
+
+
 def test_collapse_duplicates_keeps_the_best_copy_and_carries_the_ids():
     """A collapsed duplicate must not cost a Hide / Mark applied. The dashboard reads state
     against dupe_ids as well as the row's own id, so the surviving row has to carry them."""

@@ -49,12 +49,24 @@ See `.github/workflows/scan.yml`.
     abbreviation-expanded and compared as word sets, so "Rev Ops Manager" = "Revenue
     Operations Manager" and "Manager, Sales Operations" = "Sales Operations Manager". One
     title may be a shortening of the other, which is what catches an aggregator's truncated
-    version of a posting. See `same_role()` for the guards that stop that from merging jobs
-    that only look alike — the seniority band has to match, and a word that appears in one
-    title and not the other must not be the kind of word that makes two postings different
-    jobs. "Renewals Manager" and "Renewals Manager - French Speaker" stay separate, as do
-    "Senior Renewals Manager", the fixed-term version of a role, and the 1-3 and 3-6 YoE
-    variants of the same title. **The dashboard itself is collapsed on every run too**, so
+    version of a posting. A bare acronym also matches the initials of the full name it's
+    short for ("LSEG" = "London Stock Exchange Group"), which a subset-of-words check alone
+    can't catch since the two share no actual word. See `same_role()` for the guards that
+    stop that from merging jobs that only look alike — the seniority band has to match, and
+    a word that appears in one title and not the other must not be the kind of word that
+    makes two postings different jobs. "Renewals Manager" and "Renewals Manager - French
+    Speaker" stay separate, as do "Senior Renewals Manager", the fixed-term version of a
+    role, and the 1-3 and 3-6 YoE variants of the same title.
+
+    Matching itself is pairwise, but grouping isn't: `group_duplicates()` takes the full
+    transitive closure of every match in a run rather than stopping at the first one a row
+    finds, because two partial names for the same company routinely don't match *each
+    other* even though both match a third, fuller one — Adzuna's "AWS" and hiring.cafe's
+    "Amazon" share no word and aren't acronym-related, but both match LinkedIn's "Amazon
+    Web Services (AWS)". A pass that stops at the first hit pairs the full name with
+    whichever partial one it meets first and leaves the other sitting on the dashboard
+    next to the row it's actually a duplicate of — which is exactly what happened before
+    this closure existed. **The dashboard itself is collapsed on every run too**, so
     duplicates that landed before a matching rule existed clear themselves rather than
     sitting there; `python scan.py --dedupe` does that alone, without a scan. The surviving
     row is the best copy — a scored row over an unscored one, then the employer's own ATS
@@ -227,7 +239,12 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   abbreviations the market uses interchangeably), `DISTINGUISHING` (words that make two
   postings different jobs even when the rest of the title matches) and `DEDUPE_CITY` /
   `PLACE_NOISE` (the city bucket two rows must share before they are compared at all).
-  Loosening any of these is only safe while the must-not-merge half of
+  `company_initials()` is the acronym fallback when neither name's words contain the
+  other's. **How matches get grouped, not just compared, is `group_duplicates()`** — it
+  takes the transitive closure of every pairwise match in a run instead of stopping at the
+  first one each row finds, because `same_role()` is not itself transitive (two partial
+  company names routinely don't match each other even though both match a fuller third
+  one). Loosening any of these is only safe while the must-not-merge half of
   `test_same_role_keeps_genuinely_different_postings_apart` still passes — every pair in it
   is two real postings the feeds carried at the same time. Preview a change with
   `python scan.py --dedupe`, which prints each keep/drop pair before writing anything.
