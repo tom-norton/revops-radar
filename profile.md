@@ -13,7 +13,8 @@ needs employer visa sponsorship for any EU role.
 
 ## Experience (for Experience Alignment, 25%)
 - NAVEX — Customer Success Manager (Dec 2021 - Aug 2025). Managed $5.2M ARR across 22
-  enterprise accounts. Ran renewal forecasts and surfaced performance insights for sales
+  enterprise accounts. Contributed account-level renewal risk assessments into the forecast
+  and surfaced performance insights for sales
   leadership. Beat NRR targets three straight years (108-110%), Top Performer. Designed a
   QBR format (product recommendations + usage data) later adopted across CS and AE teams.
   Built a Gainsight post-implementation handoff playbook rolled out to all CSMs. Operationalized
@@ -37,7 +38,7 @@ needs employer visa sponsorship for any EU role.
 ## Skills (for Skills Match, 20%)
 Salesforce (Admin cert in progress), HubSpot, Gainsight, Revenue Operations, GTM strategy,
 funnel modeling, CAC / NRR / retention analytics, QBR systems, CRM architecture, lead scoring
-and routing, Power BI, SQL (basic), Excel, data analysis.
+and routing, SQL (basic), Excel, data analysis.
 
 ## Seniority fit (15%)
 Target band: Manager or senior IC (Senior/Lead/Principal). Senior/Principal CSM at

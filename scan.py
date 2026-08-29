@@ -388,17 +388,21 @@ RUBRIC = [
      "Judge required tools/certs (Salesforce, SQL, BI) and functional skills (territory "
      "planning, quota modelling, pipeline analysis) separately."),
     ("seniority", "Seniority Fit", 15,
-     "Manager is the target zone for this pivot. Too senior (Director/Head of, or 10+ years "
-     "of dedicated RevOps required) penalises hard. Senior Manager fits when the posting "
-     "welcomes adjacent backgrounds. Judge the level from the POSTING, not the title noun: "
-     "read the scope, the reporting line, whether it owns a team or a system end to end, "
-     "the years-of-experience band, and any stated salary. An Analyst, Specialist, "
-     "Associate or Coordinator title is a prompt to check, not an automatic penalty -- at a "
-     "tier-1 employer these routinely carry manager-level scope and a band well clear of "
-     "the visa floor, and the market uses 'Senior Analyst, Sales Strategy & Operations' for "
-     "work that is Manager-grade elsewhere. Penalise the level only when the posting itself "
-     "reads junior: 0-3 years wanted, execution-only or admin duties, reporting into a "
-     "Manager with no ownership, or a stated band below the market's visa floor."),
+     "Manager is the target zone for this pivot (MBA + 11 yrs adjacent SaaS). Too senior "
+     "(Director/Head of, or 10+ years of dedicated RevOps required) penalises hard. Senior "
+     "Manager fits only with a referral or when the posting explicitly welcomes adjacent "
+     "backgrounds. Judge the level from the POSTING, not the title noun: read the scope, the "
+     "reporting line, whether it owns a team or a system end to end, the years-of-experience "
+     "band, and any stated salary. At a tier-1 employer an Analyst, Specialist, Associate or "
+     "Coordinator title routinely carries manager-level scope, and the market uses 'Senior "
+     "Analyst, Sales Strategy & Operations' for work that is Manager-grade elsewhere. But a "
+     "2-4 year experience ceiling screened against 11 years plus an MBA is a real filter risk, "
+     "so score these titles 4-6 depending on how hard the posting's experience ceiling reads. "
+     "Apply that as a single penalty for overqualification risk only. Do NOT also penalise "
+     "them on compensation here -- comp is assessed separately against actual salary data, "
+     "never inferred from the title noun. Penalise the level further only when the posting "
+     "itself reads junior: 0-3 years wanted, execution-only or admin duties, or reporting into "
+     "a Manager with no ownership."),
     ("domain", "Domain / Industry Fit", 15,
      "B2B SaaS or tech is strong (8-10). GRC/compliance/legal/regulatory adds a familiarity "
      "bonus but is not required for a high score. Non-tech, non-SaaS (manufacturing, retail, "
