@@ -1115,7 +1115,37 @@ def advance(state, job, bank, tg, api_key, answers_text):
     return False
 
 
+REQUIRED_SECRETS = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "BULLET_BANK_PAT"]
+
+
+def configuration_state():
+    """(state, missing). Not-yet-configured and configured-but-broken are different
+    situations and deserve different noise. The cron fires every 15 minutes from the moment
+    this lands on main, which may be days before the secrets exist; failing red that whole
+    time would teach the Actions tab to be ignored, and a red cross that means nothing is
+    worse than no cross at all. A partial setup is a genuine mistake and still fails."""
+    missing = [s for s in REQUIRED_SECRETS if not os.environ.get(s)]
+    if len(missing) == len(REQUIRED_SECRETS):
+        return "unconfigured", missing
+    return ("partial" if missing else "ready"), missing
+
+
 def tick(dry=False):
+    state_of_config, missing = configuration_state()
+    if state_of_config == "unconfigured" and not dry:
+        print("Apply queue is not set up yet: none of "
+              f"{', '.join(REQUIRED_SECRETS)} are set.\n"
+              "Nothing to do. Add them under Settings -> Secrets and variables -> Actions "
+              "and this starts working on the next tick.")
+        return 0
+    if state_of_config == "partial" and not dry:
+        # Half-configured is a real error. Say which half.
+        raise RuntimeError(
+            f"Apply queue is half set up: {', '.join(missing)} "
+            f"{'is' if len(missing) == 1 else 'are'} missing. Add "
+            f"{'it' if len(missing) == 1 else 'them'} under Settings -> Secrets and "
+            f"variables -> Actions.")
+
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     tg = Telegram(os.environ.get("TELEGRAM_BOT_TOKEN", ""),
                   os.environ.get("TELEGRAM_CHAT_ID", ""), dry=dry)

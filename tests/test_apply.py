@@ -347,6 +347,35 @@ def test_a_failing_audit_retries_a_few_ticks_then_gives_up_loudly():
     assert "Gave up" in tg.last() and "500 from the API" in tg.last()
 
 
+def test_an_unconfigured_queue_is_quiet_and_a_half_configured_one_is_not():
+    """Before the secrets exist the cron still fires every 15 minutes. Red crosses for days
+    would teach the Actions tab to be ignored, so no secrets at all is a no-op. Some but not
+    all is a mistake someone made, and says which one."""
+    keep = {k: os.environ.pop(k, None) for k in applyq.REQUIRED_SECRETS}
+    try:
+        assert applyq.configuration_state()[0] == "unconfigured"
+        assert applyq.tick() == 0                      # returns, does not raise
+
+        os.environ["TELEGRAM_BOT_TOKEN"] = "x"
+        state, missing = applyq.configuration_state()
+        assert state == "partial"
+        assert missing == ["TELEGRAM_CHAT_ID", "BULLET_BANK_PAT"]
+        try:
+            applyq.tick()
+            raise AssertionError("a half-configured queue should have raised")
+        except RuntimeError as e:
+            assert "TELEGRAM_CHAT_ID" in str(e) and "BULLET_BANK_PAT" in str(e)
+
+        for k in applyq.REQUIRED_SECRETS:
+            os.environ[k] = "x"
+        assert applyq.configuration_state() == ("ready", [])
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+
 def test_answer_bank_ids_do_not_collide_within_a_day():
     existing = "### [A-%s-01] - x\n" % applyq.datetime.now(
         applyq.timezone.utc).strftime("%Y%m%d")
