@@ -447,6 +447,14 @@ RUBRIC_KEYS = [k for k, _, _, _ in RUBRIC]
 # using the same facts the model reports (see SCORE_SCHEMA), rather than clamping a score
 # the role was never going to keep.
 
+def _as_float(v):
+    """Tolerant float(): the model reports salary figures as numbers, but a null or a
+    stray string shouldn't take down the whole parse."""
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
 def weighted_total(dims):
     """sum(dimension * weight) / 100, on a 0-10 scale."""
     total = sum(float(dims.get(k, 0) or 0) * w for k, _, w, _ in RUBRIC) / 100.0
@@ -1927,6 +1935,14 @@ def parse_score_result(job, data):
         "dimensions": dims,
         "tier": job.get("market") or "outside target markets",
         "flags": flags[:10], "verdict": str(data.get("verdict", ""))[:180],
+        # What the scorer read off the posting about pay, kept on the row so the apply
+        # queue can decide comp risk from the same numbers rather than re-reading the ad.
+        # A row scored before this existed has no "comp" key at all, and applyq.py treats
+        # that as "not stated" -- the conservative direction, since that asks Tom rather
+        # than assuming the money is fine.
+        "comp": {"stated": bool(data.get("salary_stated")),
+                 "min_base": _as_float(data.get("salary_min_base")),
+                 "currency": str(data.get("salary_currency") or "").upper()[:3]},
     }
 
 def score_job(api_key, system, job):

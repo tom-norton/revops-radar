@@ -1,0 +1,59 @@
+name: Apply queue
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub runs scheduled workflows on a best-effort basis and drops
+    # or delays them under load, which is fine here: a missed tick just means the next
+    # question arrives 15 minutes later. Nothing in this workflow is time-critical, and
+    # nothing expires -- a gap interview waits for Tom however long it takes.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: "Run the state machine without Claude calls, Telegram sends or commits"
+        type: boolean
+        default: false
+      status:
+        description: "Print the queue and what's in flight, then stop"
+        type: boolean
+        default: false
+
+# Serial, and enforced here as well as in the code. Two overlapping ticks would both read
+# the same run state out of the bullet bank, both advance it, and the second push would
+# lose whichever answer the first one recorded.
+concurrency:
+  group: apply-queue
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Offline tests
+        # Pure functions and the state machine, with the model calls and the chat stubbed.
+        # Catches a broken comp gate or a regressed honesty rule before a tick spends money
+        # or asks Tom a question it shouldn't.
+        run: |
+          python tests/test_scoring.py
+          python tests/test_apply.py
+      - name: Status only
+        if: inputs.status
+        env:
+          BULLET_BANK_PAT: ${{ secrets.BULLET_BANK_PAT }}
+        run: python applyq.py --status
+      - name: Tick
+        if: ${{ !inputs.status }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BULLET_BANK_PAT: ${{ secrets.BULLET_BANK_PAT }}
+        run: python applyq.py ${{ inputs.dry && '--dry' || '' }}

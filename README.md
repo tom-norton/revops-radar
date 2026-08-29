@@ -3,8 +3,9 @@
 Finds new RevOps / GTM / Sales Ops / CS Ops / Senior CSM roles across your four target
 markets, cheaply screens out the obvious no-fits, deep-scores the survivors against your
 real profile with Claude, checks each UK/NL company against the official visa-sponsor
-registers, and shows you the good ones on a dashboard. Hide/Applied state syncs across
-your devices via Firebase.
+registers, and shows you the good ones on a dashboard. Tap **Apply** and it runs the front
+half of the job-application-workflow skill for you and asks whatever it genuinely needs
+over Telegram. Hide/Apply/Applied state syncs across your devices via Firebase.
 
 **Markets:** Netherlands (anywhere), Belgium (anywhere), UK (London area only), Ireland
 (Dublin). Germany, Spain, and remote-from-anywhere/EMEA roles are deliberately excluded.
@@ -126,6 +127,57 @@ See `.github/workflows/scan.yml`.
     **5.0–5.9 into a collapsed "borderline"** section, and puts everything below 5 plus
     every row dropped earlier in the pipeline into a collapsed **"excluded"** section.
 
+## The apply queue
+
+Everything after "this role looks good". `applyq.py` runs on a 15-minute cron
+(`.github/workflows/apply.yml`) and works **one role at a time** — a gap interview that
+interleaved questions from two roles would be unusable on a phone, which is the only place
+they get answered.
+
+**Queueing.** Tap **Apply** on a dashboard card, or send the bot `/apply <id>`. Both write
+the same `queued` array on the Firebase node, next to `hidden` and `applied`. Queued is not
+applied: the role stays in its section with a tag until the application actually goes out.
+
+**What a tick does.** Loads the run state, drains Telegram, pushes the role in flight as far
+as it can go, persists, exits. A tick with nothing to do costs nothing and commits nothing.
+The stages:
+
+1. **Salary gate** — runs *only* when the deep score flagged comp risk: no stated salary, a
+   figure that can't be compared to the market floor, or a stated floor within 10% of it.
+   The bot names the risk and offers to research; you decide. **Roles with a band clearly
+   clear of the floor are never researched.** At 30+ scored roles a run, blanket salary
+   research is the fastest way to spend the month's budget on comparables nobody reads.
+   When it does run it obeys the skill's comparable-title rules — a RevOps role benchmarked
+   against "Operations Analyst" pulls in logistics coordinators and returns a garbage median.
+2. **Bullet audit** — pulls `bullet-bank.md` from the private bank, picks the sub-track
+   (ANALYTICS / BUILDER / CS), decides per bullet, flags metric gaps, and works out which
+   posting keywords no bullet covers.
+3. **Gap interview** — checks `answer-bank.md` first and only escalates what the bank can't
+   answer. One question at a time over Telegram, at most three. **No timeout.** The workflow
+   persists and waits, however long that takes. Answers commit to `answer-bank.md`, so the
+   bank grows with every application and the questions thin out.
+4. **Packet** — new bullets drafted strictly from your own answers, written to
+   `packets/` in the private repo with the audit, the answers and the per-phase token cost.
+
+**The honesty rule, which is the point of the whole thing:** a gap you didn't answer, or
+answered "no meaningful experience" to, produces no bullet. The drafting call is never even
+shown it. Nothing gets filled in by inference, and the posting's own language is never
+treated as evidence you did something. `tests/test_apply.py` asserts this directly.
+
+**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/help`. When it asks a
+numbered question, reply with the number or just describe it — both work.
+
+**Where things live.** State, answers, bullets and packets all live in the private
+`tom-bullet-bank` repo. This repo is public and `docs/` is served by Pages, so nothing from
+the bank is ever written into it. That makes `BULLET_BANK_PAT` a hard dependency: without
+it there is nowhere to persist an interview that spans days, and the poller fails loudly
+rather than proceeding.
+
+**Not in this phase.** The CV build, the variation review, cover letters and autonomous
+submission are Phases 2-4. So is the Step 2 company strategic brief — it feeds the summary
+variations, which the CV build owns. A packet is the input to that, not a finished
+application.
+
 ## Reviewing what got thrown away
 
 Nothing disappears silently. Every rejected row is logged to `docs/excluded.json` with the
@@ -188,8 +240,12 @@ anywhere other than markets and the CSM track, the radar is the one that's wrong
 
 ```
 python tests/test_scoring.py    # pure functions: weighted total, flags, title gate, location, dedupe
+python tests/test_apply.py      # comp gate, answer handling, the apply state machine across ticks
 python scan.py --selftest       # replay stored dimension scores through the engine, offline
 python scan.py --dry            # full pipeline, no Claude calls
+python applyq.py --selftest     # apply-queue pure functions, offline
+python applyq.py --dry          # one tick, no Claude calls, no Telegram, no commits
+python applyq.py --status       # what's queued and what's in flight
 ```
 
 The unit tests also run in CI before the scan, so a broken filter or a mis-weighted rubric
@@ -205,6 +261,10 @@ Repository secrets (Settings → Secrets and variables → Actions):
 - `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` — free, https://developer.adzuna.com/ (already set)
 - `REED_API_KEY` — free, https://www.reed.co.uk/developers/jobseeker
 - `APIFY_API_TOKEN` — from https://console.apify.com/settings/integrations, needed for hiring.cafe
+- `TELEGRAM_BOT_TOKEN` — from @BotFather, `/newbot`
+- `TELEGRAM_CHAT_ID` — message the bot once, then read it off
+  `api.telegram.org/bot<TOKEN>/getUpdates`
+- `BULLET_BANK_PAT` — fine-grained PAT, read/write contents on `tom-bullet-bank` only
 
 Pages: Settings → Pages → Deploy from a branch → `main` / `/docs`.
 Dashboard: `https://tom-norton.github.io/revops-radar/`.
