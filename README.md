@@ -99,16 +99,21 @@ See `.github/workflows/scan.yml`.
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout.
 16. **Two more hard disqualifiers, this time from what Opus reports** rather than a text
-    match: a stated salary below the market's visa floor, and a posting that makes a
-    non-English language a hard requirement. These catch what the regex checks in step 13
-    miss — an oddly-worded requirement, a salary buried in prose — by actually reading the
-    posting instead of matching a sentence. `deep_score_disqualifier()` drops the role the
-    same way steps 12–13 do: not scored, not shown, logged to `docs/excluded.json` under
-    `language-required` or `below-visa-floor`. The below-floor check only ever fires on pay
-    actually stated in the ad, in the market's own currency — **Adzuna's predicted salaries
-    are discarded** (`salary_is_predicted`), because they are modelled from the title and
-    location rather than published by the employer, and a GBP figure is never compared
-    against a EUR floor.
+    match: a stated salary whose **top end** is below the market's visa floor, and a posting
+    that makes a non-English language a hard requirement. These catch what the regex checks
+    in step 13 miss — an oddly-worded requirement, a salary buried in prose — by actually
+    reading the posting instead of matching a sentence. `deep_score_disqualifier()` drops
+    the role the same way steps 12–13 do: not scored, not shown, logged to
+    `docs/excluded.json` under `language-required` or `below-visa-floor`. The pay comparison
+    is against the **top** of an advertised range, not the bottom: an employer hires anywhere
+    inside its own published band, so a range that starts below the floor and ends above it
+    stays in — it survives to be scored, and `applyq.comp_risk()` picks it up as a reason to
+    research the real band before Tom applies. Comparing the bottom is what threw away
+    Cockroach Labs (58,000–95,000 GBP, London) and Saga (65,000–85,000 EUR, Amsterdam). The
+    check only ever fires on pay actually stated in the ad, in the market's own currency —
+    **Adzuna's predicted salaries are discarded** (`salary_is_predicted`), because they are
+    modelled from the title and location rather than published by the employer, and a GBP
+    figure is never compared against a EUR floor.
 17. **The score itself is computed in Python**, not by the model, for every role that
     survives to be scored — `weighted_total()` does the arithmetic, so the number is
     reproducible from the six dimension scores instead of being whatever total the model
@@ -191,7 +196,7 @@ an over-tight regex or a silently-broken source looks different from a quiet wee
 Two commands act on what you find there:
 
 ```
-python scan.py --unkill                    # free every stage-1 Haiku kill still in the file
+python scan.py --unkill                    # free every reversible drop still in the file
 python scan.py --unkill-history --days 14  # same, but walks git history for the ones the
                                            # file's per-stage sample no longer holds
 python scan.py --ignore-age                # one run with the 7-day age filter relaxed
@@ -199,6 +204,11 @@ python scan.py --rescore                   # clear all scored rows and rescore f
 python scan.py --dedupe                    # collapse duplicates already on the dashboard,
                                            # without running a scan
 ```
+
+"Reversible" is `UNKILL_STAGES`: stage-1 Haiku kills, scoring errors, and
+`below-visa-floor`. The last is there because that rule changed — it used to compare the
+**bottom** of an advertised range against the visa floor, so every row logged under it was
+decided by a rule that no longer exists and deserves a fresh reading.
 
 `docs/excluded.json` keeps only a bounded sample per stage, so a week of scans can produce
 twice as many stage-1 kills as the committed file holds. `--unkill-history` reads every
@@ -220,10 +230,10 @@ The deep score reads `profile.md`. Edit that file whenever your background, targ
 floors, or market list change. Keep it factual.
 
 Two things are **not** driven by `profile.md` alone, because code reads them directly: the
-salary floors in `VISA_FLOORS` (used by `deep_score_disqualifier()` to drop a stated salary
-below the floor) and the market list in `market_of()` (which gates the pipeline). Change a
-comp floor or add a market and you need to update both, or the prose and the code will
-disagree.
+salary floors in `VISA_FLOORS` (used by `deep_score_disqualifier()` to drop a range whose
+top is below the floor, and by `applyq.comp_risk()` to decide what is worth researching)
+and the market list in `market_of()` (which gates the pipeline). Change a comp floor or add
+a market and you need to update both, or the prose and the code will disagree.
 
 `profile.md` diverges from the `job-application-workflow` skill in exactly two places, both
 deliberate: **markets** — it rejects Germany, Spain, and remote-EMEA outright (the skill
@@ -314,12 +324,14 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   `deep_score_disqualifier()` instead, which drops the row outright rather than flagging it
   — see the next bullet.
 - **What the deep scorer may drop outright, not just flag:** `deep_score_disqualifier()`.
-  Only two things: a stated salary below the market's visa floor, and a hard non-English
-  language requirement. Both are absolute — a role Tom can't legally take, or can't
-  actually do — so they're policy-identical to the pre-model `says_no_sponsorship()` /
-  `requires_other_language()` regex checks, just decided from the model's reading instead
-  of a text match. Everything else the model reports (off-target function, title band, CSM
-  outside NL) is a flag on a scored row, not a drop.
+  Only two things: a stated salary whose top end is below the market's visa floor, and a
+  hard non-English language requirement. Both are absolute — a role Tom can't legally take,
+  or can't actually do — so they're policy-identical to the pre-model `says_no_sponsorship()`
+  / `requires_other_language()` regex checks, just decided from the model's reading instead
+  of a text match. A range that straddles the floor is neither: it is scored like anything
+  else, and `applyq.comp_risk()` treats it as a reason to research the real band. Everything
+  else the model reports (off-target function, title band, CSM outside NL) is a flag on a
+  scored row, not a drop.
 - **What the cheap screen may throw away:** `SCREEN_SYSTEM`. It can kill on exactly two
   grounds, location and unambiguously wrong function, and is explicitly forbidden from
   killing on seniority. It used to do the latter, and quietly lost a week's worth of

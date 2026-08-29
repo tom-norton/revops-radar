@@ -330,26 +330,40 @@ class Bank:
 
 # ---------------------------------------------------------------- salary gate
 
+def _base_float(v):
+    """Tolerant float() for a persisted comp figure; 0.0 for anything unusable."""
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def comp_risk(job):
     """(risky, reason). Risk is the only thing that opens salary research: at 30+ scored
     roles a run, researching comp on every one of them is the fastest way to spend the
     month's budget on comparables nobody reads.
 
-    Two triggers, both from what the deep scorer already read off the posting:
+    Three triggers, all from what the deep scorer already read off the posting:
       - no salary stated at all
-      - a stated floor within COMP_RISK_MARGIN of the market's visa floor
+      - a band whose TOP is within COMP_RISK_MARGIN of the market's visa floor
+      - a band whose top clears the floor but whose BOTTOM does not
+
+    That last one is the case scan.salary_floor_flag() deliberately no longer drops. An
+    employer hires anywhere inside its own advertised range, so a band spanning the floor
+    is a role Tom can take -- at the right number. Which number that is decides whether the
+    visa works at all, so it is exactly the question worth spending a research call on
+    before he applies.
 
     A row scored before scan.py started persisting `comp` has no data, which reads as not
     stated. That asks a question that may not be needed; the alternative is assuming the
-    money is fine on a role Tom might take, which is worse."""
+    money is fine on a role Tom might take, which is worse. A row scored before `max_base`
+    existed carries only the bottom of its band, which reads as a single figure."""
     comp = job.get("comp") or {}
     if not comp.get("stated"):
         return True, "no salary stated in the posting"
-    try:
-        low = float(comp.get("min_base") or 0)
-    except (TypeError, ValueError):
-        low = 0.0
-    if low <= 0:
+    low, high = _base_float(comp.get("min_base")), _base_float(comp.get("max_base"))
+    high = high or low          # a single stated figure, or a pre-max_base row, is its own top
+    if high <= 0:
         return True, "salary mentioned but no usable base figure"
     market = job.get("market") or ""
     floor, cur = scan.VISA_FLOORS.get(market, (0, ""))
@@ -360,10 +374,14 @@ def comp_risk(job):
         # No FX guessing, same rule as scan.salary_floor_flag(). A figure that can't be
         # compared to the floor is a figure that can't clear it either.
         return True, f"stated in {stated_cur}, floor is {cur} - not directly comparable"
-    if low < floor * (1 + COMP_RISK_MARGIN):
-        return True, (f"stated floor {int(low)} {cur} is within "
+    band = f"{int(low)}-{int(high)}" if 0 < low < high else str(int(high))
+    if high < floor * (1 + COMP_RISK_MARGIN):
+        return True, (f"stated pay {band} {cur} tops out within "
                       f"{int(COMP_RISK_MARGIN * 100)}% of the {market} visa floor "
                       f"({floor} {cur})")
+    if 0 < low < floor:
+        return True, (f"stated band {band} {cur} starts below the {market} visa floor "
+                      f"({floor} {cur}) - an offer at the bottom of it would not clear")
     return False, ""
 
 
@@ -1261,6 +1279,9 @@ def cmd_selftest():
     ok("band just over the floor is still risk",
        comp_risk({"market": "NL", "comp": {"stated": True, "min_base": 73000,
                                            "currency": "EUR"}})[0] is True)
+    ok("a band straddling the floor is risk, not a drop",
+       comp_risk({"market": "NL", "comp": {"stated": True, "min_base": 65000,
+                                           "max_base": 85000, "currency": "EUR"}})[0] is True)
     ok("mismatched currency is risk",
        comp_risk({"market": "NL", "comp": {"stated": True, "min_base": 90000,
                                            "currency": "GBP"}})[0] is True)

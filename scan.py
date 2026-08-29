@@ -29,21 +29,21 @@ Pipeline:
         -> hard disqualifiers on the raw text (no sponsorship / non-English required)
         -> STAGE 1 cheap screen (Claude Haiku, kill/keep)
         -> STAGE 2 deep score (Claude Opus, dimension scores vs profile.md)
-        -> hard disqualifiers from what Opus read (below-floor salary / hard language)
+        -> hard disqualifiers from what Opus read (whole band below floor / hard language)
         -> weighted total, computed here in Python, for whatever survives
         -> write docs/jobs.json + docs/status.json + docs/excluded.json
 
 Scoring split: the model scores the six rubric dimensions and reports facts it can only get
 by reading the posting (stated salary, hard language requirement, function match, whether
-the employer is a standout). Two of those facts -- a stated salary below the market's visa
-floor, and a hard non-English language requirement -- are absolute, so deep_score_
-disqualifier() drops the role before it is ever scored, the same policy as the pre-model
-says_no_sponsorship() / requires_other_language() checks, just decided from a real reading
-of the posting instead of a text match. Everything else lands in the six dimensions;
-weighted_total() does the arithmetic on those, so the score is reproducible rather than
-whatever number the model felt like reporting, and nothing clamps it afterwards. What
-remains of the old ceilings (off-target function, title band, CSM outside NL) travels as a
-flag via score_flags() instead -- shown, not scored -- matching how the
+the employer is a standout). Two of those facts -- a stated salary whose top end is below
+the market's visa floor, and a hard non-English language requirement -- are absolute, so
+deep_score_disqualifier() drops the role before it is ever scored, the same policy as the
+pre-model says_no_sponsorship() / requires_other_language() checks, just decided from a
+real reading of the posting instead of a text match. Everything else lands in the six
+dimensions; weighted_total() does the arithmetic on those, so the score is reproducible
+rather than whatever number the model felt like reporting, and nothing clamps it
+afterwards. What remains of the old ceilings (off-target function, title band, CSM outside
+NL) travels as a flag via score_flags() instead -- shown, not scored -- matching how the
 job-application-workflow skill works.
 
 Every row the pipeline rejects is logged to docs/excluded.json with the stage and reason,
@@ -54,7 +54,8 @@ Usage:
   python scan.py --dry       everything except the Claude calls
   python scan.py --verify    test the optional ATS company slugs, no scoring
   python scan.py --selftest  replay stored dimension scores through the scoring engine, offline
-  python scan.py --unkill    free stage-1 kills from seen.json so they get re-evaluated
+  python scan.py --unkill    free reversible drops (stage-1 kills, scoring errors,
+                             below-visa-floor) from seen.json so they get re-evaluated
   python scan.py --unkill-history [--days N]
                              same, but walks git history of docs/excluded.json (default 14
                              days) to reach kills the committed sample no longer holds
@@ -440,12 +441,12 @@ RUBRIC_KEYS = [k for k, _, _, _ in RUBRIC]
 # genuinely move the number, it belongs inside a dimension score -- that is what the rubric
 # guidance tells the model to do.
 #
-# The other two -- a below-floor stated salary and a hard non-English language requirement
-# -- are not flags at all. Both are absolute the same way says_no_sponsorship() and
-# requires_other_language() already are: a role Tom cannot legally take, or cannot actually
-# do, is not worth a fit score. deep_score_disqualifier() drops these before scoring runs,
-# using the same facts the model reports (see SCORE_SCHEMA), rather than clamping a score
-# the role was never going to keep.
+# The other two -- a stated salary band topping out below the floor and a hard non-English
+# language requirement -- are not flags at all. Both are absolute the same way
+# says_no_sponsorship() and requires_other_language() already are: a role Tom cannot
+# legally take, or cannot actually do, is not worth a fit score. deep_score_disqualifier()
+# drops these before scoring runs, using the same facts the model reports (see
+# SCORE_SCHEMA), rather than clamping a score the role was never going to keep.
 
 def _as_float(v):
     """Tolerant float(): the model reports salary figures as numbers, but a null or a
@@ -470,31 +471,44 @@ def is_csm_title(title):
     return bool(re.search(r"customer success", title or "", re.I))
 
 def salary_floor_flag(market, obs):
-    """A note when a salary is actually stated, in the market's own currency, and below its
-    visa floor; "" otherwise. No FX guessing: a GBP figure is never compared to a EUR floor.
+    """A note when a stated salary cannot reach the market's visa floor even at the TOP of
+    its range, in the market's own currency; "" otherwise. No FX guessing: a GBP figure is
+    never compared to a EUR floor.
+
+    The comparison is against the top of the range, not the bottom, and that is the whole
+    point of the function. An advertised band is a band: an employer can hire anywhere
+    inside its own published range, so a role whose top clears the floor is a role Tom can
+    legally be hired into, and the bottom of a band is a negotiating position rather than
+    the offer. Comparing the bottom threw away roles that were fine -- Cockroach Labs'
+    London Strategy & Operations Manager and Saga's Amsterdam Revenue Operations Expert
+    were both dropped on the low end of a range whose top was comfortably above the floor.
+    A range that straddles the floor is a comp risk, not a disqualifier: it survives to be
+    scored, and applyq.comp_risk() picks it up as a reason to research the real band before
+    Tom applies. Only a top below the floor -- or a single stated figure, which is its own
+    top -- ends the application here.
 
     Despite the name this is no longer a dashboard flag -- deep_score_disqualifier() below
     uses it to drop the job outright, the same way says_no_sponsorship() and
     requires_other_language() drop on a regex match before the model ever runs. A role that
-    cannot clear the visa floor on its own stated salary is not one Tom can take, so there
-    is nothing to show a flag on; the name stays because the function itself -- find the
-    note, or don't -- hasn't changed. Most EU postings state no salary at all, and the ones
-    that do often state a range whose bottom is a negotiating position rather than the
-    offer, which is exactly why this only fires on a real, market-matched, stated figure."""
+    cannot clear the visa floor at the top of its own stated band is not one Tom can take,
+    so there is nothing to show a flag on; the name stays because the function itself --
+    find the note, or don't -- hasn't changed."""
     if not market or not obs.get("salary_stated"):
         return ""
-    try:
-        low = float(obs.get("salary_min_base") or 0)
-    except (TypeError, ValueError):
-        return ""
+    low = _as_float(obs.get("salary_min_base"))
+    # A posting stating one figure rather than a range reports no top; the figure is the
+    # top. A row scored before salary_max_base existed has no top either, and reads the
+    # same way -- the old, stricter comparison, which is the safe direction for stale data.
+    high = _as_float(obs.get("salary_max_base")) or low
     floor, cur = VISA_FLOORS.get(market, (0, ""))
-    if low <= 0 or not floor:
+    if high <= 0 or not floor:
         return ""
     stated = (obs.get("salary_currency") or "").upper()
     if stated and stated != cur:
         return ""
-    if low < floor:
-        return f"stated salary {int(low)} {cur} below the {market} visa floor ({floor} {cur})"
+    if high < floor:
+        band = f"{int(low)}-{int(high)}" if 0 < low < high else str(int(high))
+        return f"stated salary {band} {cur} below the {market} visa floor ({floor} {cur})"
     return ""
 
 def deep_score_disqualifier(job, obs):
@@ -564,13 +578,14 @@ SCORE_SCHEMA = {
         "language_hard_requirement": {"type": "boolean"},
         "salary_stated": {"type": "boolean"},
         "salary_min_base": {"type": "number"},
+        "salary_max_base": {"type": "number"},
         "salary_currency": {"type": "string"},
         "flags": {"type": "array", "items": {"type": "string"}},
         "verdict": {"type": "string"},
     },
     "required": ["dimensions", "function_match", "company_standout",
                  "language_hard_requirement", "salary_stated", "salary_min_base",
-                 "salary_currency", "flags", "verdict"],
+                 "salary_max_base", "salary_currency", "flags", "verdict"],
     "additionalProperties": False,
 }
 
@@ -627,7 +642,7 @@ Calibration, so the dimension scores land on a consistent scale: 8-10 is a bulls
 
 Do NOT compute a total. The weighted total is computed in code from the six dimension scores you give, and for every role that actually gets scored nothing overrides it afterwards -- there are no caps or ceilings. Every consideration that should move the score has to land inside a dimension: if the posting reads junior, that belongs in Seniority Fit; if the function is off-target, that belongs in Domain and Career Trajectory.
 
-Two facts are handled differently: a stated salary below the market's visa floor, and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
+Two facts are handled differently: a stated salary whose TOP END is below the market's visa floor, and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_max_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong reading here either puts a role in front of Tom that he cannot actually take, or throws away a role that was fine. Note that the pay comparison is on the top of the band, not the bottom: a range that starts below the floor and ends above it is NOT a disqualifier, so reporting the top accurately matters as much as the bottom.
 
 A title band (analyst / specialist / director_plus / normal) is given to you in the job details. It is a signal to read the posting carefully, not a verdict. Do not mark a role down merely because its title contains "Analyst", "Specialist", "Associate" or "Coordinator" -- score what the posting actually describes.
 
@@ -635,7 +650,7 @@ Alongside the dimensions, report these observations from the posting:
 - function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
-- salary_stated / salary_min_base / salary_currency: the annual base-salary floor of any stated range, as a number, with its ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_currency "". A stated figure below the market's visa floor DROPS the role -- see above.
+- salary_stated / salary_min_base / salary_max_base / salary_currency: the annual base-salary range stated in the posting, as numbers, with its ISO currency code. salary_min_base is the bottom of the range and salary_max_base the top; when the posting states a single figure rather than a range, report that figure as both. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_max_base 0, salary_currency "". Only a range whose TOP is below the market's visa floor DROPS the role -- see above.
 
 The market (Netherlands / Belgium / UK-London / Ireland-Dublin) has already been resolved in code and is given to you in the job details. Trust it. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted.
 
@@ -1942,6 +1957,10 @@ def parse_score_result(job, data):
         # than assuming the money is fine.
         "comp": {"stated": bool(data.get("salary_stated")),
                  "min_base": _as_float(data.get("salary_min_base")),
+                 # The top of the band, so applyq can tell a range that straddles the visa
+                 # floor from one that sits under it. A row scored before this existed has
+                 # no max_base, and both readers fall back to min_base for those.
+                 "max_base": _as_float(data.get("salary_max_base")),
                  "currency": str(data.get("salary_currency") or "").upper()[:3]},
     }
 
@@ -2009,15 +2028,24 @@ def cmd_selftest():
           "were produced\nunder the previous rubric wording. Re-running the scan will move "
           "some of them again.")
 
+# Drop stages a re-run can legitimately reverse, so --unkill and --unkill-history free them
+# from seen.json. stage1-kill and score-error are the cheap screen and a transient failure.
+# below-visa-floor is here because the rule itself changed: the check used to compare the
+# BOTTOM of an advertised range against the visa floor and threw away roles whose top was
+# well above it, so every row logged under that stage was decided by a rule that no longer
+# exists and deserves a fresh reading.
+UNKILL_STAGES = ("stage1-kill", "score-error", "below-visa-floor")
+
 def cmd_unkill():
-    """Clear stage-1 Haiku kills out of seen.json so they get re-evaluated next run.
-    Replaces hand-editing the JSON when the cheap screen throws away something good."""
+    """Clear reversible drops (see UNKILL_STAGES) out of seen.json so they get re-evaluated
+    next run. Replaces hand-editing the JSON when the cheap screen -- or a rule that has
+    since changed -- throws away something good."""
     dropped = load_json("docs/excluded.json", {}).get("rows", [])
-    killed = {d["id"] for d in dropped if d.get("stage") == "stage1-kill" and d.get("id")}
+    killed = {d["id"] for d in dropped if d.get("stage") in UNKILL_STAGES and d.get("id")}
     seen = set(load_json("seen.json", []))
     freed = killed & seen
     json.dump(sorted(seen - freed), open("seen.json", "w"))
-    print(f"Freed {len(freed)} stage-1 kills for re-evaluation "
+    print(f"Freed {len(freed)} reversible drops for re-evaluation "
           f"({len(killed)} recorded, {len(killed) - len(freed)} already absent from seen.json).")
 
 def cmd_unkill_history(days=14):
@@ -2042,7 +2070,7 @@ def cmd_unkill_history(days=14):
     killed, titles = {}, {}
     def absorb(rows):
         for r in rows:
-            if r.get("stage") in ("stage1-kill", "score-error") and r.get("id"):
+            if r.get("stage") in UNKILL_STAGES and r.get("id"):
                 killed[str(r["id"])] = r.get("stage")
                 titles[str(r["id"])] = f"{r.get('title','?')} - {r.get('company','?')}"
 
@@ -2060,8 +2088,9 @@ def cmd_unkill_history(days=14):
     json.dump(sorted(seen - freed), open("seen.json", "w"))
 
     print(f"Walked {len(shas)} commits of docs/excluded.json over the last {days} days.")
-    print(f"Found {len(killed)} distinct stage-1 kills / scoring errors; freed {len(freed)} "
-          f"from seen.json ({len(killed) - len(freed)} were already absent).\n")
+    print(f"Found {len(killed)} distinct reversible drops ({'/'.join(UNKILL_STAGES)}); "
+          f"freed {len(freed)} from seen.json ({len(killed) - len(freed)} were already "
+          f"absent).\n")
     for jid in sorted(freed, key=lambda i: titles.get(i, "")):
         print(f"  {titles[jid]}")
     print("\nThese only come back if they are STILL LIVE in a source feed -- excluded.json\n"

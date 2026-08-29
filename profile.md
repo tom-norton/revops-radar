@@ -50,7 +50,8 @@ penalty: at established employers these routinely carry manager-level scope and 
 band well clear of the visa floor, and plenty of companies title Manager-grade Strategy &
 Operations work as "Senior Analyst". Mark the seniority down only when the posting itself
 reads junior — 0-3 years of experience wanted, execution-only or admin duties, no ownership
-of a system or a process, reporting into a Manager, or a stated band below the market floor.
+of a system or a process, reporting into a Manager, or a band whose top is below the market
+floor.
 
 Director+ / Head of is a stretch for a candidate without dedicated RevOps tenure and should
 score lower on this dimension, but it is not disqualifying — at a smaller company "Head of
@@ -81,13 +82,17 @@ CAN sponsor but the specific role must still clear the salary/threshold rules. "
 register" is a caution (registers use legal names and miss trading names), not an auto-reject.
 
 ## Salary handling
-Most EU postings don't list salary. If a posting states a salary and its base is genuinely
-below the market's visa floor, the role is dropped outright, not scored and not shown — a
-role Tom cannot legally take at that pay is not worth a fit score. Report the salary fields
-accurately regardless of how strong the rest of the posting looks; the drop happens in code
-from what you report, not from your own judgment call on whether it's close enough. If
-salary is NOT stated, do not reject; estimate comp risk from seniority and company and add
-a visible "comp not listed, verify vs floor" flag.
+Most EU postings don't list salary. When one does, what matters is the TOP of the stated
+range, not the bottom. An employer hires anywhere inside its own advertised band, so a
+range that starts below the market's visa floor and ends above it is a role Tom can take at
+the right number — it stays in, and the comp gate researches the real band before he
+applies. Only a range whose top is below the floor gets dropped outright, not scored and
+not shown: at that pay there is no number in the band he could legally be hired at, so
+there is no fit score worth computing. Report both ends of the range accurately regardless
+of how strong the rest of the posting looks; the drop happens in code from what you report,
+not from your own judgment call on whether it's close enough. If salary is NOT stated, do
+not reject; estimate comp risk from seniority and company and add a visible "comp not
+listed, verify vs floor" flag.
 
 ## Career trajectory (10%)
 Deliberate pivot from post-sale CS/AM into RevOps/GTM strategy, backed by the MBA and the GTM

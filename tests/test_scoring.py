@@ -33,7 +33,7 @@ def dims(experience=5, skills=5, seniority=5, domain=5, location_visa=5, traject
 
 NO_OBS = {"function_match": "core", "company_standout": True,
           "language_hard_requirement": False, "salary_stated": False,
-          "salary_min_base": 0, "salary_currency": ""}
+          "salary_min_base": 0, "salary_max_base": 0, "salary_currency": ""}
 
 
 def test_weighted_total():
@@ -107,6 +107,51 @@ def test_deep_score_disqualifier_on_below_visa_floor():
     assert scan.deep_score_disqualifier(job, obs) == (None, None)
 
 
+def test_a_range_is_judged_on_its_top_not_its_bottom():
+    """The reason this check exists at all. Saga advertised 65,000-85,000 EUR in Amsterdam
+    and Cockroach Labs 58,000-95,000 GBP in London; both were dropped on the bottom of a
+    band whose top was comfortably above the visa floor. An employer can hire anywhere
+    inside its own advertised range, so only a band that tops out below the floor is a
+    role Tom genuinely cannot take."""
+    nl = {"title": "Revenue Operations Expert", "market": "NL"}
+    saga = dict(NO_OBS, salary_stated=True, salary_min_base=65000,
+                salary_max_base=85000, salary_currency="EUR")
+    assert scan.salary_floor_flag("NL", saga) == ""
+    assert scan.deep_score_disqualifier(nl, saga) == (None, None)
+
+    uk = {"title": "Strategy and Operations Manager, GTM - EMEA", "market": "UK-London"}
+    cockroach = dict(NO_OBS, salary_stated=True, salary_min_base=58000,
+                     salary_max_base=95000, salary_currency="GBP")
+    assert scan.salary_floor_flag("UK-London", cockroach) == ""
+    assert scan.deep_score_disqualifier(uk, cockroach) == (None, None)
+
+    # A band whose TOP is still under the floor is the one that goes, and the note names
+    # the whole band rather than a single number.
+    doomed = dict(NO_OBS, salary_stated=True, salary_min_base=40000,
+                  salary_max_base=52000, salary_currency="EUR")
+    note = scan.salary_floor_flag("NL", doomed)
+    assert "40000-52000 EUR" in note and "below the NL visa floor" in note
+    assert scan.deep_score_disqualifier(nl, doomed)[0] == "below-visa-floor"
+
+
+def test_a_single_stated_figure_is_its_own_top():
+    """No range in the ad, and rows scored before salary_max_base existed, both arrive with
+    no top. The figure that is there is the one to compare, which keeps the old, stricter
+    reading for stale data rather than waving it through."""
+    job = {"title": "Revenue Operations Manager", "market": "NL"}
+    one = dict(NO_OBS, salary_stated=True, salary_min_base=55000,
+               salary_max_base=55000, salary_currency="EUR")
+    assert "stated salary 55000 EUR" in scan.salary_floor_flag("NL", one)
+    stale = dict(NO_OBS, salary_stated=True, salary_min_base=55000, salary_currency="EUR")
+    stale.pop("salary_max_base")
+    assert "stated salary 55000 EUR" in scan.salary_floor_flag("NL", stale)
+    assert scan.deep_score_disqualifier(job, stale)[0] == "below-visa-floor"
+    # A top with no usable bottom is still a top, and still decides the call on its own.
+    top_only = dict(NO_OBS, salary_stated=True, salary_min_base=0,
+                    salary_max_base=95000, salary_currency="EUR")
+    assert scan.salary_floor_flag("NL", top_only) == ""
+
+
 def test_deep_score_disqualifier_language_wins_when_both_fire():
     """A role can only be dropped once. Language is checked first, so that's what gets
     logged when a posting is both a below-floor salary and a hard language requirement."""
@@ -115,6 +160,22 @@ def test_deep_score_disqualifier_language_wins_when_both_fire():
                salary_min_base=40000, salary_currency="EUR")
     stage, _ = scan.deep_score_disqualifier(job, obs)
     assert stage == "language-required"
+
+
+def test_the_scored_row_carries_the_whole_band():
+    """applyq.comp_risk() decides whether to spend a research call on a role, and it can
+    only tell a band that straddles the visa floor from one sitting under it if the row
+    carries both ends. Nothing else re-reads the posting, so this is the only place the
+    top of the band can come from."""
+    job = {"title": "Revenue Operations Expert", "market": "NL"}
+    data = {"dimensions": dims(), "function_match": "core", "company_standout": True,
+            "language_hard_requirement": False, "salary_stated": True,
+            "salary_min_base": 65000, "salary_max_base": 85000, "salary_currency": "EUR",
+            "flags": [], "verdict": "worth applying"}
+    res = scan.parse_score_result(job, data)
+    assert not res.get("disqualified")
+    assert res["comp"] == {"stated": True, "min_base": 65000.0, "max_base": 85000.0,
+                           "currency": "EUR"}
 
 
 def test_below_floor_never_compares_across_currencies():
@@ -126,7 +187,8 @@ def test_below_floor_never_compares_across_currencies():
     assert "GBP" in scan.salary_floor_flag("UK-London", obs)
     # unparseable, absent or market-less salary never disqualifies either
     assert scan.salary_floor_flag("NL", dict(NO_OBS, salary_stated=True,
-                                             salary_min_base="n/a")) == ""
+                                             salary_min_base="n/a",
+                                             salary_max_base="n/a")) == ""
     assert scan.salary_floor_flag("NL", NO_OBS) == ""
     assert scan.salary_floor_flag(None, obs) == ""
 

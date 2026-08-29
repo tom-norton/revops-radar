@@ -142,6 +142,33 @@ def test_comp_risk_fires_inside_the_margin_above_the_floor():
                                   "currency": "EUR"}})[0] is True
 
 
+def test_comp_risk_fires_on_a_band_that_straddles_the_floor():
+    """The other half of the range fix in scan.py. A 65,000-85,000 EUR band in NL is no
+    longer thrown away -- its top clears the 71,304 floor -- but an offer at the bottom of
+    it would not clear, so it is exactly the role worth researching before applying."""
+    risky, reason = applyq.comp_risk(
+        {"market": "NL", "comp": {"stated": True, "min_base": 65000, "max_base": 85000,
+                                  "currency": "EUR"}})
+    assert risky is True
+    assert "starts below" in reason and "65000-85000" in reason
+
+
+def test_comp_risk_is_quiet_when_the_whole_band_clears_the_floor():
+    assert applyq.comp_risk(
+        {"market": "NL", "comp": {"stated": True, "min_base": 90000, "max_base": 120000,
+                                  "currency": "EUR"}})[0] is False
+
+
+def test_comp_risk_reads_the_top_of_the_band_for_the_margin_check():
+    # A band bottoming out above the floor but topping out inside the 10% margin is still
+    # the thin case the gate exists for; the old code only ever looked at the bottom.
+    risky, reason = applyq.comp_risk(
+        {"market": "NL", "comp": {"stated": True, "min_base": 72000, "max_base": 75000,
+                                  "currency": "EUR"}})
+    assert risky is True
+    assert "tops out within" in reason
+
+
 def test_comp_risk_never_guesses_across_currencies():
     risky, reason = applyq.comp_risk(
         {"market": "NL", "comp": {"stated": True, "min_base": 90000, "currency": "GBP"}})
