@@ -388,17 +388,21 @@ RUBRIC = [
      "Judge required tools/certs (Salesforce, SQL, BI) and functional skills (territory "
      "planning, quota modelling, pipeline analysis) separately."),
     ("seniority", "Seniority Fit", 15,
-     "Manager is the target zone for this pivot. Too senior (Director/Head of, or 10+ years "
-     "of dedicated RevOps required) penalises hard. Senior Manager fits when the posting "
-     "welcomes adjacent backgrounds. Judge the level from the POSTING, not the title noun: "
-     "read the scope, the reporting line, whether it owns a team or a system end to end, "
-     "the years-of-experience band, and any stated salary. An Analyst, Specialist, "
-     "Associate or Coordinator title is a prompt to check, not an automatic penalty -- at a "
-     "tier-1 employer these routinely carry manager-level scope and a band well clear of "
-     "the visa floor, and the market uses 'Senior Analyst, Sales Strategy & Operations' for "
-     "work that is Manager-grade elsewhere. Penalise the level only when the posting itself "
-     "reads junior: 0-3 years wanted, execution-only or admin duties, reporting into a "
-     "Manager with no ownership, or a stated band below the market's visa floor."),
+     "Manager is the target zone for this pivot (MBA + 11 yrs adjacent SaaS). Too senior "
+     "(Director/Head of, or 10+ years of dedicated RevOps required) penalises hard. Senior "
+     "Manager fits only with a referral or when the posting explicitly welcomes adjacent "
+     "backgrounds. Judge the level from the POSTING, not the title noun: read the scope, the "
+     "reporting line, whether it owns a team or a system end to end, the years-of-experience "
+     "band, and any stated salary. At a tier-1 employer an Analyst, Specialist, Associate or "
+     "Coordinator title routinely carries manager-level scope, and the market uses 'Senior "
+     "Analyst, Sales Strategy & Operations' for work that is Manager-grade elsewhere. But a "
+     "2-4 year experience ceiling screened against 11 years plus an MBA is a real filter risk, "
+     "so score these titles 4-6 depending on how hard the posting's experience ceiling reads. "
+     "Apply that as a single penalty for overqualification risk only. Do NOT also penalise "
+     "them on compensation here -- comp is assessed separately against actual salary data, "
+     "never inferred from the title noun. Penalise the level further only when the posting "
+     "itself reads junior: 0-3 years wanted, execution-only or admin duties, or reporting into "
+     "a Manager with no ownership."),
     ("domain", "Domain / Industry Fit", 15,
      "B2B SaaS or tech is strong (8-10). GRC/compliance/legal/regulatory adds a familiarity "
      "bonus but is not required for a high score. Non-tech, non-SaaS (manufacturing, retail, "
@@ -442,6 +446,14 @@ RUBRIC_KEYS = [k for k, _, _, _ in RUBRIC]
 # do, is not worth a fit score. deep_score_disqualifier() drops these before scoring runs,
 # using the same facts the model reports (see SCORE_SCHEMA), rather than clamping a score
 # the role was never going to keep.
+
+def _as_float(v):
+    """Tolerant float(): the model reports salary figures as numbers, but a null or a
+    stray string shouldn't take down the whole parse."""
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 def weighted_total(dims):
     """sum(dimension * weight) / 100, on a 0-10 scale."""
@@ -1923,6 +1935,14 @@ def parse_score_result(job, data):
         "dimensions": dims,
         "tier": job.get("market") or "outside target markets",
         "flags": flags[:10], "verdict": str(data.get("verdict", ""))[:180],
+        # What the scorer read off the posting about pay, kept on the row so the apply
+        # queue can decide comp risk from the same numbers rather than re-reading the ad.
+        # A row scored before this existed has no "comp" key at all, and applyq.py treats
+        # that as "not stated" -- the conservative direction, since that asks Tom rather
+        # than assuming the money is fine.
+        "comp": {"stated": bool(data.get("salary_stated")),
+                 "min_base": _as_float(data.get("salary_min_base")),
+                 "currency": str(data.get("salary_currency") or "").upper()[:3]},
     }
 
 def score_job(api_key, system, job):

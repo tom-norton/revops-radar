@@ -54,6 +54,9 @@
         background:transparent; color:var(--sub); cursor:pointer}
   .actions button:hover{border-color:var(--teal); color:var(--teal)}
   .actions button[data-act="applied"]:hover{border-color:var(--good); color:var(--good)}
+  .actions button[data-act="queue"]{border-color:var(--teal); color:var(--teal)}
+  .actions button[data-act="queue"]:hover{background:var(--teal); color:#fff}
+  .tag.queued{border-color:var(--teal); color:var(--teal)}
   .actions .status{font-size:11px; padding:3px 8px; border-radius:20px; color:var(--sub)}
   .job.reviewed{opacity:.6}
   details.borderline>summary,details.reviewed>summary,details.excluded>summary{
@@ -84,7 +87,7 @@
 <body>
   <h1><span>RevOps</span> Radar</h1>
   <div class="meta" id="meta">Loading…</div>
-  <div class="note" id="synclabel">Hide / Mark applied are saved in this browser only — they won't follow you to another device.</div>
+  <div class="note" id="synclabel">Hide / Apply / Mark applied are saved in this browser only — they won't follow you to another device.</div>
 
   <div id="apply-wrap">
     <h2 id="apply-h">Apply — 6.0 and up</h2>
@@ -111,6 +114,11 @@ function loadSet(key){
 function saveSet(key,set){ localStorage.setItem(key, JSON.stringify([...set])); }
 let hiddenIds = loadSet("rr_hidden");
 let appliedIds = loadSet("rr_applied");
+// Roles handed to the apply queue. applyq.py reads this same Firebase array on a
+// 15-minute cron, works one role at a time, and asks whatever it needs over Telegram.
+// Queued is not the same as applied: the role stays in its section, tagged, until the
+// application actually goes out.
+let queuedIds = loadSet("rr_queued");
 
 // A row that absorbed duplicates carries their ids in dupe_ids. Hide / Mark applied are
 // recorded against whichever id was on screen at the time, so state has to be looked up
@@ -136,16 +144,24 @@ async function syncFromServer(){
       // Firebase omits empty-array fields entirely, so treat missing as []
       (Array.isArray(server.hidden) ? server.hidden : []).forEach(id=>hiddenIds.add(id));
       (Array.isArray(server.applied) ? server.applied : []).forEach(id=>appliedIds.add(id));
+      // The poller removes an id from `queued` the moment it picks it up, so the server's
+      // list is authoritative here -- unioning would put a finished role back in the queue
+      // on every page load.
+      queuedIds = new Set(Array.isArray(server.queued) ? server.queued.map(String) : []);
       saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
+      saveSet("rr_queued", queuedIds);
     }
     const note = document.getElementById("synclabel");
-    if(note) note.textContent = "Hide / Mark applied sync across your devices.";
+    if(note) note.textContent = "Hide / Apply / Mark applied sync across your devices.";
   }catch(e){ /* Firebase unreachable -- stay on localStorage only */ }
 }
+// PATCH, not PUT. applyq.py writes `queued` from the other side, and a PUT from here
+// would delete whatever it had just written -- including a role it is mid-interview on.
 function pushState(){
   if(!syncApi) return;
-  fetch(FIREBASE_STATE_URL, {method:"PUT", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({hidden:[...hiddenIds], applied:[...appliedIds]})}).catch(()=>{});
+  fetch(FIREBASE_STATE_URL, {method:"PATCH", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({hidden:[...hiddenIds], applied:[...appliedIds],
+                          queued:[...queuedIds]})}).catch(()=>{});
 }
 
 // Titles, companies and verdicts come from scraped HTML and go into innerHTML, so they get
@@ -173,6 +189,8 @@ function card(j, reviewed){
     spon = `<span class="tag ${good?'spon':'nospon'}">${j.sponsor}</span>`;
   }
   const flags = (j.flags||[]).map(f=>`<span class="tag flag">${esc(f)}</span>`).join("");
+  const queued = marked(queuedIds, j);
+  const queuedTag = queued ? `<span class="tag queued">in the apply queue</span>` : "";
   // Score caps were retired: the score is now the weighted rubric total and nothing clamps
   // it. Rows scored before that still carry caps_applied, so they keep rendering here,
   // labelled so it's clear the ceiling no longer applies to anything new. New rows have an
@@ -191,6 +209,10 @@ function card(j, reviewed){
     ? `<div class="actions"><span class="status">${marked(appliedIds, j) ? "Applied" : "Hidden"}</span>
         <button data-act="restore" data-id="${id}">Restore</button></div>`
     : `<div class="actions">
+        ${queued
+          ? `<span class="status">Queued — the poller picks it up within 15 minutes</span>
+             <button data-act="unqueue" data-id="${id}">Remove</button>`
+          : `<button data-act="queue" data-id="${id}">Apply</button>`}
         <button data-act="hide" data-id="${id}">Hide</button>
         <button data-act="applied" data-id="${id}">Mark applied</button>
       </div>`;
@@ -203,7 +225,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${j.tier?`<span class="tag">${esc(j.tier)}</span>`:""}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${j.tier?`<span class="tag">${esc(j.tier)}</span>`:""}${queuedTag}${spon}${rawNote}${caps}${flags}</div>
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
@@ -328,12 +350,19 @@ document.body.addEventListener("click", (e)=>{
   const id = btn.dataset.id, act = btn.dataset.act;
   if(act === "hide"){ hiddenIds.add(id); saveSet("rr_hidden", hiddenIds); }
   else if(act === "applied"){ appliedIds.add(id); saveSet("rr_applied", appliedIds); }
+  else if(act === "queue"){ queuedIds.add(id); saveSet("rr_queued", queuedIds); }
+  else if(act === "unqueue"){
+    const job = allJobs.find(j=>String(j.id||"") === id);
+    (job ? idsOf(job) : [id]).forEach(x=>queuedIds.delete(x));
+    saveSet("rr_queued", queuedIds); }
   else if(act === "restore"){
     // Clear every id this row stands for, or an absorbed duplicate's old mark would put it
     // straight back into the hidden/applied section on the next render.
     const job = allJobs.find(j=>String(j.id||"") === id);
-    (job ? idsOf(job) : [id]).forEach(x=>{ hiddenIds.delete(x); appliedIds.delete(x); });
-    saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds); }
+    (job ? idsOf(job) : [id]).forEach(x=>{ hiddenIds.delete(x); appliedIds.delete(x);
+                                           queuedIds.delete(x); });
+    saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
+    saveSet("rr_queued", queuedIds); }
   pushState();
   renderAll();
 });
