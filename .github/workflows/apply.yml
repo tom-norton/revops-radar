@@ -9,6 +9,12 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
+      message:
+        description: "A message from Tom, relayed by the Telegram webhook. Leave blank."
+        default: ""
+      chat_id:
+        description: "Chat the message came from. Set by the relay. Leave blank."
+        default: ""
       dry:
         description: "Run the state machine without Claude calls, Telegram sends or commits"
         type: boolean
@@ -60,4 +66,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           BULLET_BANK_PAT: ${{ secrets.BULLET_BANK_PAT }}
+          # Present only when the Telegram relay started this run and handed Tom's message
+          # along. When it is set, applyq.py uses it instead of polling -- a webhook and
+          # getUpdates cannot both be active on one bot.
+          APPLYQ_INBOUND: ${{ inputs.message }}
         run: python applyq.py ${{ inputs.dry && '--dry' || '' }}

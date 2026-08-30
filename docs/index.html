@@ -133,6 +133,19 @@ let syncApi = false; // becomes true once Firebase responds
 // a strict enhancement layer, never a hard dependency.
 const FIREBASE_STATE_URL = "https://revops-radar-2822a-default-rtdb.europe-west1.firebasedatabase.app/revops-radar-state.json";
 
+// Optional relay that asks GitHub to run the apply queue immediately. Without it, tapping
+// Apply just sits in the queue until GitHub's scheduler gets round to firing -- measured at
+// 4 of an expected 60 firings over 15 hours, with gaps up to 5h45m. Set this to the
+// Worker's URL once deployed; empty means the queue still works, just slowly.
+const RELAY_URL = "";
+function pokeRelay(){
+  if(!RELAY_URL) return;
+  // Fire and forget. The queue write to Firebase is what actually matters; this only
+  // decides whether the run starts in seconds or in hours, so a failure is not worth
+  // surfacing to the person who just tapped a button.
+  fetch(RELAY_URL + "/queue", {method:"POST", mode:"no-cors"}).catch(()=>{});
+}
+
 async function syncFromServer(){
   try{
     const r = await fetch(FIREBASE_STATE_URL);
@@ -210,7 +223,7 @@ function card(j, reviewed){
         <button data-act="restore" data-id="${id}">Restore</button></div>`
     : `<div class="actions">
         ${queued
-          ? `<span class="status">Queued — the poller picks it up within 15 minutes</span>
+          ? `<span class="status">Queued${RELAY_URL ? "" : " — waiting for the next scheduled run"}</span>
              <button data-act="unqueue" data-id="${id}">Remove</button>`
           : `<button data-act="queue" data-id="${id}">Apply</button>`}
         <button data-act="hide" data-id="${id}">Hide</button>
@@ -350,7 +363,7 @@ document.body.addEventListener("click", (e)=>{
   const id = btn.dataset.id, act = btn.dataset.act;
   if(act === "hide"){ hiddenIds.add(id); saveSet("rr_hidden", hiddenIds); }
   else if(act === "applied"){ appliedIds.add(id); saveSet("rr_applied", appliedIds); }
-  else if(act === "queue"){ queuedIds.add(id); saveSet("rr_queued", queuedIds); }
+  else if(act === "queue"){ queuedIds.add(id); saveSet("rr_queued", queuedIds); pokeRelay(); }
   else if(act === "unqueue"){
     const job = allJobs.find(j=>String(j.id||"") === id);
     (job ? idsOf(job) : [id]).forEach(x=>queuedIds.delete(x));

@@ -414,6 +414,38 @@ def test_a_role_parked_on_a_retired_stage_restarts_instead_of_wedging():
     assert state["current"]["answers"] == []
 
 
+def test_push_mode_takes_the_message_without_polling():
+    """Once a Telegram webhook is registered, getUpdates returns 409 and polling is dead.
+    A relayed message has to arrive as a workflow input instead, and nothing may try to
+    poll for it."""
+    polled = []
+
+    class NoPollTelegram(FakeTelegram):
+        def updates(self, offset, wait=0):
+            polled.append(wait)
+            raise AssertionError("push mode must never call getUpdates")
+
+    keep = {k: os.environ.get(k) for k in
+            (applyq.INBOUND_ENV, "TELEGRAM_CHAT_ID", "BULLET_BANK_PAT",
+             "TELEGRAM_BOT_TOKEN")}
+    try:
+        os.environ[applyq.INBOUND_ENV] = "/status"
+        for k in ("TELEGRAM_CHAT_ID", "BULLET_BANK_PAT", "TELEGRAM_BOT_TOKEN"):
+            os.environ[k] = "x"
+        tg = NoPollTelegram()
+        # handle_commands is the layer that sees the relayed text; feeding it the same
+        # (id, text) shape tick() builds proves the message survives the hand-off.
+        queue, rest = applyq.handle_commands([(0, "/status")], {"current": None}, [], tg)
+        assert queue == [] and rest == []
+        assert "Idle" in tg.last()
+        assert polled == []
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+
 def test_answer_bank_ids_do_not_collide_within_a_day():
     existing = "### [A-%s-01] - x\n" % applyq.datetime.now(
         applyq.timezone.utc).strftime("%Y%m%d")

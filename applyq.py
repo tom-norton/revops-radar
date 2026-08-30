@@ -48,6 +48,8 @@ Environment:
   TELEGRAM_CHAT_ID      Tom's chat with the bot
   BULLET_BANK_PAT       fine-grained PAT, read/write on tom-bullet-bank only
   APPLYQ_HOLD_OPEN      seconds to wait for a reply before exiting (default 600)
+  APPLYQ_INBOUND        Tom's message, when the relay pushed it in rather than this
+                        polling for it. Set by the workflow from its `message` input.
 """
 
 import json, os, re, shutil, subprocess, sys, time
@@ -90,6 +92,16 @@ AUDIT_EFFORT = "medium"
 # model. It is never allowed to write anything -- see split_is_sane().
 SPLIT_MODEL = "claude-haiku-4-5"
 SPLIT_MAX_TOKENS = 2000
+# Telegram allows getUpdates OR a webhook, never both: once a webhook is registered,
+# getUpdates returns 409 and polling is dead. So the message can arrive two ways.
+#
+#   poll mode  (no webhook)  - getUpdates, as below
+#   push mode  (webhook set) - the relay hands Tom's message to the workflow as an input,
+#                              which arrives here as APPLYQ_INBOUND
+#
+# Push mode is the one that makes this usable: cron delivered 4 of an expected 60 runs in
+# the 15 hours after launch, and a relayed message starts a run in about a second.
+INBOUND_ENV = "APPLYQ_INBOUND"
 # After asking, hold the run open this long waiting for a reply. GitHub's cron is the
 # bottleneck, so an answer given while the runner is still alive saves hours. Telegram caps
 # one long poll at 50s, so this is several polls back to back.
@@ -1336,16 +1348,25 @@ def tick(dry=False):
     queue = [q for q in queue if q not in applied and q not in hidden]
 
     started_queue = list(queue)
-    updates, offset = tg.updates(state.get("telegram_offset", 0))
-    texts = message_texts(updates, os.environ.get("TELEGRAM_CHAT_ID", ""))
+    inbound = os.environ.get(INBOUND_ENV, "").strip()
+    push_mode = bool(inbound) or os.environ.get("APPLYQ_PUSH") == "1"
+    if inbound:
+        # Push mode: the relay already has the message, so there is nothing to poll for and
+        # nothing to acknowledge. The chat it came from was checked at the relay, against
+        # the same chat id, before it was allowed to become a workflow input.
+        texts = [(0, inbound)]
+        print(f"  inbound (push): {inbound[:80]!r}")
+    else:
+        updates, offset = tg.updates(state.get("telegram_offset", 0))
+        texts = message_texts(updates, os.environ.get("TELEGRAM_CHAT_ID", ""))
+        # Written only once the updates have actually been handled. Bumping the offset
+        # before that would acknowledge an answer a crash then threw away, and Tom would be
+        # asked the same thing again with no way to tell why.
+        state["telegram_offset"] = offset
     queue, answers = handle_commands(texts, state, queue, tg)
     # Only the newest free-text message answers the pending question. If Tom sent three
     # lines while thinking out loud, the last one is his answer.
     answer_text = answers[-1] if answers else ""
-    # Written only once the updates have actually been handled. Bumping the offset before
-    # that would acknowledge a question's answer that a crash then threw away, and Tom
-    # would be asked the same thing again with no way to tell why.
-    state["telegram_offset"] = offset
 
     # One role per tick, and one advance() per role. advance() already pushes the role as
     # far as it can go before it needs Tom, and a finished role deliberately leaves the
@@ -1376,7 +1397,9 @@ def tick(dry=False):
             # minutes would otherwise sit unread for hours. Waiting here costs nothing but
             # runner time, and the whole application finishes in this one run.
             waited = 0
-            while (not finished and state.get("current")
+            # Pointless in push mode: his reply arrives as its own run within seconds, and
+            # getUpdates would return 409 against a registered webhook anyway.
+            while (not finished and not push_mode and state.get("current")
                    and state["current"].get("stage") == "ask"
                    and state["current"].get("asked_at")
                    and waited < HOLD_OPEN_SECONDS and not dry):
