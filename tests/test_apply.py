@@ -399,6 +399,21 @@ def test_a_drafting_failure_is_loud_and_still_leaves_a_packet():
     assert [k for k in bank.files if k.startswith(applyq.PACKET_DIR + "/")]
 
 
+def test_a_role_parked_on_a_retired_stage_restarts_instead_of_wedging():
+    """The stage names changed when the conversation collapsed to one round trip. A role
+    mid-interview when that shipped has no branch to run and would sit there forever."""
+    step, state, tg, _bank, calls = machine()
+    state["current"]["stage"] = "salary_gate"
+    state["current"]["gap_index"] = 1
+    state["current"]["pending"] = {"kind": "gap"}
+    step()
+    assert "Restarting" in tg.sent[0]
+    assert calls["audit"] == 1
+    assert state["current"]["stage"] == "ask"
+    assert "pending" not in state["current"]
+    assert state["current"]["answers"] == []
+
+
 def test_answer_bank_ids_do_not_collide_within_a_day():
     existing = "### [A-%s-01] - x\n" % applyq.datetime.now(
         applyq.timezone.utc).strftime("%Y%m%d")

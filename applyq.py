@@ -1054,6 +1054,33 @@ def start_next(state, queue, tg):
     return state, queue, None
 
 
+# Stages that existed before the conversation was collapsed to one round trip. A role
+# parked on one of them when the code changed under it has no matching branch in advance()
+# and would sit there forever, so it restarts from the audit. Restarting costs one Opus
+# call and asks the questions again, which is the honest outcome: the half-finished
+# interview it was holding no longer maps onto the questions the new flow asks.
+RETIRED_STAGES = {"salary_gate": "audit", "gap_interview": "audit"}
+
+
+def migrate_stage(cur, tg):
+    """Returns True if the role was moved off a retired stage."""
+    old = (cur or {}).get("stage")
+    if old not in RETIRED_STAGES:
+        return False
+    cur["stage"] = RETIRED_STAGES[old]
+    for k in ("pending", "gaps", "gap_index", "questions", "questions_all",
+              "asked_at", "nudged", "answers", "answered_so_far"):
+        cur.pop(k, None)
+    cur["answers"] = []
+    tg.send(f"I changed how questions are asked - everything for a role now comes in one "
+            f"message instead of one at a time, because GitHub's scheduler was making a "
+            f"five-message conversation take a day.\n\n"
+            f"Restarting {cur.get('title')} from the top. You'll get one message with all "
+            f"of it shortly. Sorry about the earlier answer - it was for the old flow and "
+            f"I can't carry it across honestly.")
+    return True
+
+
 def advance(state, job, bank, tg, api_key, answers_text):
     """Push `current` as far as it can go this tick. Returns True when the role finished.
 
@@ -1061,6 +1088,8 @@ def advance(state, job, bank, tg, api_key, answers_text):
     costs a cron firing, and cron is delivering a few of those a day rather than the four
     an hour it was asked for."""
     cur = state["current"]
+    if migrate_stage(cur, tg):
+        answers_text = ""
     profile = scan.load_profile()
 
     # ---- audit: needs nothing from Tom, so it runs before anything is asked
