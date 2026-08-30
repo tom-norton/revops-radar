@@ -138,34 +138,47 @@ they get answered.
 the same `queued` array on the Firebase node, next to `hidden` and `applied`. Queued is not
 applied: the role stays in its section with a tag until the application actually goes out.
 
-**What a tick does.** Loads the run state, drains Telegram, pushes the role in flight as far
-as it can go, persists, exits. A tick with nothing to do costs nothing and commits nothing.
-The stages:
+**One round trip per role.** This is the design constraint, and it comes from measurement:
+over the 15 hours after launch, GitHub delivered **4 of an expected 60** scheduled runs,
+with gaps up to 5h45m. Scheduled workflows are best-effort and get dropped under load. So
+every wait for you costs hours, and the flow is built to need exactly one:
 
-1. **Salary gate** — runs *only* when the deep score flagged comp risk: no stated salary, a
-   figure that can't be compared to the market floor, or a stated floor within 10% of it.
-   The bot names the risk and offers to research; you decide. **Roles with a band clearly
-   clear of the floor are never researched.** At 30+ scored roles a run, blanket salary
-   research is the fastest way to spend the month's budget on comparables nobody reads.
-   When it does run it obeys the skill's comparable-title rules — a RevOps role benchmarked
-   against "Operations Analyst" pulls in logistics coordinators and returns a garbage median.
-2. **Bullet audit** — pulls `bullet-bank.md` from the private bank, picks the sub-track
-   (ANALYTICS / BUILDER / CS), decides per bullet, flags metric gaps, and works out which
-   posting keywords no bullet covers.
-3. **Gap interview** — checks `answer-bank.md` first and only escalates what the bank can't
-   answer. One question at a time over Telegram, at most three. **No timeout.** The workflow
-   persists and waits, however long that takes. Answers commit to `answer-bank.md`, so the
-   bank grows with every application and the questions thin out.
-4. **Packet** — new bullets drafted strictly from your own answers, written to
-   `packets/` in the private repo with the audit, the answers and the per-phase token cost.
+1. **Bullet audit** — needs nothing from you, so it runs first. Pulls `bullet-bank.md` from
+   the private bank, picks the sub-track (ANALYTICS / BUILDER / CS), decides per bullet,
+   flags metric gaps, and works out which posting keywords no bullet covers. Checks
+   `answer-bank.md` so a gap a previous interview already answered is never asked again.
+2. **Ask** — one message carrying every question this role will ever ask: the comp-risk
+   question if there is one, plus up to three gaps. You reply once, however you like —
+   numbers, letters, or prose. A cheap model splits your reply per question, and
+   `split_is_sane()` discards anything it returns that isn't traceable to your own words.
+   Anything you leave out gets one nudge, then it proceeds without it. **No timeout.**
+3. **Packet** — salary research if you asked for it, new bullets drafted strictly from your
+   answers, written to `packets/` in the private repo with the audit, the answers and the
+   per-phase token cost.
+
+After asking, the run stays alive for ten minutes (`APPLYQ_HOLD_OPEN`). Answer while it's
+still up and the entire application finishes in that one run.
+
+**Salary research is on-demand, never blanket.** It only asks when the deep score flagged
+comp risk: no stated salary, a figure that can't be compared to the market floor, or a
+stated floor within 10% of it. **Roles with a band clearly clear of the floor are never
+researched.** At 30+ scored roles a run, blanket research is the fastest way to spend the
+month's budget on comparables nobody reads. When it does run it obeys the skill's
+comparable-title rules — a RevOps role benchmarked against "Operations Analyst" pulls in
+logistics coordinators and returns a garbage median.
 
 **The honesty rule, which is the point of the whole thing:** a gap you didn't answer, or
 answered "no meaningful experience" to, produces no bullet. The drafting call is never even
 shown it. Nothing gets filled in by inference, and the posting's own language is never
 treated as evidence you did something. `tests/test_apply.py` asserts this directly.
 
-**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/help`. When it asks a
-numbered question, reply with the number or just describe it — both work.
+**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/help`. Answer questions
+however you like; numbers and letters both pick options.
+
+**Known limit: GitHub's cron is unreliable.** `*/15` is a request, not a promise, and in
+practice it lands every few hours. One round trip per role keeps that to a single wait, but
+the only real fix is pushing work in rather than polling for it — a Telegram webhook into
+`workflow_dispatch`, which drops latency to seconds.
 
 **Where things live.** State, answers, bullets and packets all live in the private
 `tom-bullet-bank` repo. This repo is public and `docs/` is served by Pages, so nothing from

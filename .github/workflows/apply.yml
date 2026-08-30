@@ -31,6 +31,10 @@ permissions:
 jobs:
   poll:
     runs-on: ubuntu-latest
+    # A tick that has just asked Tom something stays alive for ~10 minutes waiting for the
+    # reply, so the whole role finishes in one run instead of waiting on the next firing.
+    # This cap stops a wedged run holding the concurrency group for GitHub's 6-hour default.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -10,15 +10,24 @@ the questions it genuinely cannot answer over Telegram.
 Flow, one role at a time:
 
   Firebase `queued` <- dashboard Apply button, or Telegram /apply <id>
-    -> salary gate      (only when the deep score flagged comp risk)
-    -> bullet audit     (track selection + per-bullet decisions + gap analysis)
-    -> gap interview    (answer bank first; only what the bank can't answer)
-    -> packet           (new bullets drafted strictly from Tom's answers)
+    -> bullet audit     (track selection, per-bullet decisions, gap analysis;
+                         needs nothing from Tom, so it runs before anything is asked)
+    -> ask              (ONE message: the comp-risk question if there is one, plus
+                         every gap the answer bank can't already answer)
+    -> packet           (salary research if he asked for it; new bullets drafted
+                         strictly from his answers)
 
 Why a state machine and not a script: a gap interview has no timeout. Tom answers
-when he answers, which may be tomorrow. A GitHub Actions job cannot sit and wait,
-so each 15-minute tick loads the run state, drains Telegram, advances as far as it
-can, persists, and exits. A tick that has nothing to do costs nothing.
+when he answers, which may be tomorrow. A GitHub Actions job cannot sit and wait
+indefinitely, so each tick loads the run state, drains Telegram, advances as far as
+it can, persists, and exits. A tick with nothing to do costs nothing.
+
+Why ONE round trip and not one question at a time: cron is the bottleneck, not the
+model. Over the 15 hours after this first went live GitHub delivered 4 of an expected
+60 scheduled runs, with gaps up to 5h45m. Every wait for Tom costs one of those, so
+a five-turn conversation is a day per application. Asking everything at once makes it
+one turn. After asking, the run also holds open for HOLD_OPEN_SECONDS: an answer given
+while the runner is still alive finishes the whole role in that same run.
 
 Serial by design. One `current` role at a time. Two interleaved gap interviews are
 unusable on a phone, which is the only place Tom answers them.
@@ -38,6 +47,7 @@ Environment:
   TELEGRAM_BOT_TOKEN    @BotFather
   TELEGRAM_CHAT_ID      Tom's chat with the bot
   BULLET_BANK_PAT       fine-grained PAT, read/write on tom-bullet-bank only
+  APPLYQ_HOLD_OPEN      seconds to wait for a reply before exiting (default 600)
 """
 
 import json, os, re, shutil, subprocess, sys, time
@@ -76,6 +86,14 @@ AUDIT_MAX_TOKENS = 8000
 SALARY_MAX_TOKENS = 6000
 DRAFT_MAX_TOKENS = 6000
 AUDIT_EFFORT = "medium"
+# Splitting one reply into per-question answers is mechanical, so it runs on the cheap
+# model. It is never allowed to write anything -- see split_is_sane().
+SPLIT_MODEL = "claude-haiku-4-5"
+SPLIT_MAX_TOKENS = 2000
+# After asking, hold the run open this long waiting for a reply. GitHub's cron is the
+# bottleneck, so an answer given while the runner is still alive saves hours. Telegram caps
+# one long poll at 50s, so this is several polls back to back.
+HOLD_OPEN_SECONDS = int(os.environ.get("APPLYQ_HOLD_OPEN", "600"))
 # Web search is metered per use. The skill time-boxes salary research to 3-4 searches;
 # past that the comparables get worse, not better.
 SALARY_MAX_SEARCHES = 4
@@ -99,7 +117,12 @@ MAX_GAP_QUESTIONS = 3
 NO_MATERIAL = re.compile(r"^\s*(no|none|nope|nothing|n/?a|skip|no meaningful experience)\b",
                          re.I)
 
-STAGES = ["salary_gate", "audit", "gap_interview", "packet", "done"]
+# One round trip per role, not five. The audit needs nothing from Tom, so it runs first;
+# then every question this role will ever ask goes out in a single message and comes back
+# as a single reply. GitHub's cron is the bottleneck (it delivered 4 of an expected 60 runs
+# in the 15 hours after launch, with gaps up to 5h45m), and each extra turn costs another
+# one of those. Five turns at that rate is a day per application.
+STAGES = ["audit", "ask", "packet", "done"]
 
 HELP = (
     "RevOps Radar apply queue\n\n"
@@ -151,12 +174,12 @@ class Telegram:
         self.dry = dry
         self.enabled = bool(token and chat_id)
 
-    def _call(self, method, **params):
+    def _call(self, method, _timeout=30, **params):
         if not self.enabled:
             return None
         try:
             r = requests.post(TELEGRAM_API.format(token=self.token, method=method),
-                              json=params, timeout=30)
+                              json=params, timeout=_timeout)
             data = r.json()
             if not data.get("ok"):
                 print(f"  telegram {method} not ok: {str(data)[:200]}")
@@ -179,12 +202,17 @@ class Telegram:
             self._call("sendMessage", chat_id=self.chat_id, text=chunk,
                        disable_web_page_preview=True)
 
-    def updates(self, offset):
-        """Everything since `offset`, and the new offset. timeout=0: this is a cron tick,
-        not a long-poll daemon."""
+    def updates(self, offset, wait=0):
+        """Everything since `offset`, and the new offset.
+
+        `wait` holds the connection open server-side for up to that many seconds (Telegram
+        caps a single long poll at 50). A tick that has just asked a question uses this so
+        an answer given straight away is handled in the same run instead of waiting for the
+        next cron firing, which may be hours off."""
         if self.dry or not self.enabled:
             return [], offset
-        res = self._call("getUpdates", offset=offset, timeout=0, limit=100) or []
+        res = self._call("getUpdates", offset=offset, timeout=min(int(wait), 50),
+                         limit=100, _timeout=min(int(wait), 50) + 25) or []
         for u in res:
             offset = max(offset, u.get("update_id", 0) + 1)
         return res, offset
@@ -623,27 +651,125 @@ def pending_gaps(audit):
     return out[:MAX_GAP_QUESTIONS]
 
 
-def format_question(gap, n, total):
-    lines = [f"Question {n} of {total} - {gap.get('keyword') or 'gap'}",
-             "", gap.get("question", "")]
-    opts = [o for o in (gap.get("options") or []) if str(o).strip()][:4]
-    if opts:
-        lines.append("")
-        lines += [f"{i + 1}. {o}" for i, o in enumerate(opts)]
-        lines.append("")
-        lines.append("Reply with a number, or just describe it.")
-    return "\n".join(lines)
+def build_questions(audit, job):
+    """Every question this role will ask, in one list. The salary gate rides along as
+    question 1 when the deep score flagged comp risk, because it needs an answer from Tom
+    exactly like a gap does and there is no reason to spend a separate round trip on it.
+
+    Returns [{kind, keyword, question, options}]."""
+    qs = []
+    risky, reason = comp_risk(job)
+    if risky:
+        qs.append({"kind": "salary", "keyword": "salary", "reason": reason,
+                   "question": (f"Comp risk on this one: {reason}. "
+                                f"Want me to research the market band?"),
+                   "options": ["Yes, research it", "No, skip it"]})
+    for g in pending_gaps(audit):
+        qs.append({"kind": "gap", "keyword": g.get("keyword"),
+                   "question": g.get("question"),
+                   "options": [o for o in (g.get("options") or []) if str(o).strip()][:4],
+                   "adjacent": g.get("adjacent")})
+    return qs
+
+
+def format_questions(qs, job, audit):
+    """One message carrying the whole conversation. Numbered so Tom can answer them in one
+    reply the way a person actually would -- "1 yes, 2 did that for two quarters, 3 no" --
+    rather than being pinged once per question across a day of cron firings."""
+    head = [f"{job.get('title')} @ {job.get('company') or '?'}",
+            f"Track: {audit.get('track')} - {audit.get('track_rationale', '')}", ""]
+    if len(qs) == 1:
+        head.append("One question and I can finish this off:")
+    else:
+        head.append(f"{len(qs)} questions and I can finish this off:")
+    head.append("")
+    for i, q in enumerate(qs, 1):
+        head.append(f"{i}. {q['question']}")
+        for j, o in enumerate(q.get("options") or [], 1):
+            head.append(f"     {chr(96 + j)}) {o}")
+        head.append("")
+    head.append("Answer them all in one message, however you like. Numbers, letters, or "
+                "just write it out. If you have nothing for one of them, say so and I'll "
+                "leave it alone.")
+    return "\n".join(head)
+
+
+SPLIT_SYSTEM = """Tom was asked several numbered questions in one message and has replied \
+in one message. Split his reply into one answer per question.
+
+You are SPLITTING, not interpreting and not writing. For each question return Tom's own \
+words, as close to verbatim as the split allows. Where he answered by picking a lettered \
+option, return that option's text. Where he did not address a question at all, return an \
+empty string for it -- do not infer an answer from his tone, from the other answers, or \
+from what the question was hoping to hear. An unanswered question is a normal outcome and \
+returning "" for it is the correct result.
+
+Return ONLY a JSON object: {"answers": ["<for q1>", "<for q2>", ...]} with exactly one \
+entry per question, in order."""
+
+
+def split_reply(api_key, qs, reply):
+    """One cheap call to map a single human reply onto N questions.
+
+    Deliberately a model call and not a regex: people answer "yeah did that one for a
+    couple of quarters, nothing on the second, skip the salary thing" and no pattern
+    survives that. The prompt and the schema both constrain it to splitting rather than
+    writing, and split_is_sane() below rejects a result that invented text."""
+    numbered = "\n".join(
+        f"{i}. {q['question']}"
+        + ("".join(f"\n     {chr(96 + j)}) {o}" for j, o in enumerate(q.get('options') or [], 1)))
+        for i, q in enumerate(qs, 1))
+    schema = {"type": "object",
+              "properties": {"answers": {"type": "array", "items": {"type": "string"}}},
+              "required": ["answers"], "additionalProperties": False}
+    text = scan._claude_call(
+        api_key, SPLIT_MODEL, SPLIT_SYSTEM,
+        f"QUESTIONS:\n{numbered}\n\nTOM'S REPLY:\n{reply}", SPLIT_MAX_TOKENS,
+        extra={"output_config": {"effort": "low",
+                                 "format": {"type": "json_schema", "schema": schema}}})
+    out = (scan._extract_json(text).get("answers") or [])
+    out = [str(a or "").strip() for a in out][:len(qs)]
+    return out + [""] * (len(qs) - len(out))
+
+
+def split_is_sane(answers, reply):
+    """Cheap guard against the splitter writing rather than splitting. Every answer it
+    returns has to be traceable to something in Tom's reply or to an option he was offered;
+    an answer that is neither is discarded, and a discarded answer is an unanswered
+    question, which produces no bullet.
+
+    This exists because the whole build rests on bullets coming from Tom's words. A
+    splitter that paraphrases him into something more useful would break that quietly."""
+    hay = re.sub(r"[^a-z0-9 ]+", " ", (reply or "").lower())
+    hay_words = set(hay.split())
+    clean = []
+    for a in answers:
+        words = [w for w in re.sub(r"[^a-z0-9 ]+", " ", a.lower()).split() if len(w) > 3]
+        if not a:
+            clean.append("")
+        elif not words or sum(w in hay_words for w in words) / len(words) >= 0.5:
+            clean.append(a)
+        else:
+            print(f"  split discarded (not traceable to the reply): {a[:60]!r}")
+            clean.append("")
+    return clean
+
+
+def is_yes(text):
+    return bool(re.match(r"^\s*(a\)?|1\.?|y|yes|yep|yeah|sure|go|do it|please|ok)\b",
+                         (text or "").strip(), re.I))
 
 
 def resolve_answer(text, gap):
-    """A bare number picks an option; anything else is taken verbatim. Tom answering '2'
-    and Tom answering a paragraph both have to work, because which one he sends depends on
-    whether he is walking."""
+    """A bare number or letter picks an option; anything else is taken verbatim. Tom
+    answering "b" and Tom answering a paragraph both have to work, because which one he
+    sends depends on whether he is walking."""
     text = (text or "").strip()
     opts = [str(o) for o in (gap.get("options") or []) if str(o).strip()][:4]
-    m = re.fullmatch(r"([1-9])\.?", text)
+    m = re.fullmatch(r"([1-9])\.?", text) or re.fullmatch(r"([a-d])\)?", text, re.I)
     if m and opts:
-        i = int(m.group(1)) - 1
+        tok = m.group(1)
+        i = (int(tok) - 1) if tok.isdigit() else (ord(tok.lower()) - 97)
         if 0 <= i < len(opts):
             return opts[i]
     return text
@@ -921,7 +1047,7 @@ def start_next(state, queue, tg):
             continue
         state["current"] = {
             "id": job_id, "title": job.get("title"), "company": job.get("company"),
-            "stage": "salary_gate", "started_at": now_iso(),
+            "stage": "audit", "started_at": now_iso(),
             "answers": [], "usage": {},
         }
         return state, queue, job
@@ -931,53 +1057,13 @@ def start_next(state, queue, tg):
 def advance(state, job, bank, tg, api_key, answers_text):
     """Push `current` as far as it can go this tick. Returns True when the role finished.
 
-    Each stage either completes and falls through, or asks Tom something and returns --
-    the pending question is persisted, and the next tick that carries an answer picks up
-    exactly here."""
+    Three stages, and only one of them ever waits on Tom. That is the point: every wait
+    costs a cron firing, and cron is delivering a few of those a day rather than the four
+    an hour it was asked for."""
     cur = state["current"]
     profile = scan.load_profile()
 
-    # ---- salary gate
-    if cur["stage"] == "salary_gate":
-        pend = cur.get("pending")
-        if not pend:
-            risky, reason = comp_risk(job)
-            if not risky:
-                cur["salary"] = None
-                cur["stage"] = "audit"
-            else:
-                cur["salary_reason"] = reason
-                cur["pending"] = {"kind": "salary", "gap": {"options": ["Yes", "No"]}}
-                tg.send(f"{job.get('title')} @ {job.get('company') or '?'}\n\n"
-                        f"Comp risk: {reason}.\n\n"
-                        f"Research the market band before I go further?\n"
-                        f"1. Yes\n2. No\n\nReply with a number.")
-                return False
-        else:
-            answer = (answers_text or "").strip()
-            if not answer:
-                return False
-            yes = bool(re.match(r"^\s*(1\.?|y|yes|yep|sure|go|do it|please)\b", answer, re.I))
-            cur["pending"] = None
-            if yes:
-                before = usage_snapshot()
-                try:
-                    res = research_salary(api_key, job)
-                    cur["salary"] = res
-                    tg.send(format_salary(res))
-                except Exception as e:
-                    # Loud, not silent. Research failing is not a reason to quietly build a
-                    # packet as if comp had been checked.
-                    cur["salary"] = {"skipped": True,
-                                     "reason": f"research failed: {str(e)[:150]}"}
-                    tg.send(f"Salary research failed: {str(e)[:200]}\nCarrying on without it.")
-                record_usage(cur, "salary", before)
-            else:
-                cur["salary"] = {"skipped": True, "reason": cur.get("salary_reason", "")}
-            cur["stage"] = "audit"
-            answers_text = ""
-
-    # ---- bullet audit
+    # ---- audit: needs nothing from Tom, so it runs before anything is asked
     if cur["stage"] == "audit":
         before = usage_snapshot()
         bank_md = bank.read(BANK_FILE, "")
@@ -990,8 +1076,8 @@ def advance(state, job, bank, tg, api_key, answers_text):
             audit = run_audit(api_key, job, profile, bank_md, answers_md)
         except Exception as e:
             # Retrying next tick is right for a blip. Retrying forever is a role that
-            # silently burns an Opus call every 15 minutes, so the retries are counted and
-            # the role is dropped loudly once they run out.
+            # silently burns an Opus call every firing, so the retries are counted and the
+            # role is dropped loudly once they run out.
             n = cur.get("audit_failures", 0) + 1
             cur["audit_failures"] = n
             record_usage(cur, "audit", before)
@@ -1009,56 +1095,104 @@ def advance(state, job, bank, tg, api_key, answers_text):
         cur["audit"] = audit
         cur["audit_failures"] = 0
         record_usage(cur, "audit", before)
-        gaps = pending_gaps(audit)
-        cur["gaps"] = gaps
-        cur["gap_index"] = 0
-        reused = [g for g in (audit.get("gaps") or []) if (g.get("answered_by") or "").strip()]
-        summary = [f"{job.get('title')} @ {job.get('company') or '?'}",
-                   f"Track: {audit.get('track')} - {audit.get('track_rationale', '')}"]
-        keys = [b for b in (audit.get("bullets") or []) if "KEY" in (b.get("decision") or "")]
-        if keys:
-            summary.append("Key bullets: " + "; ".join(b.get("text_start", "") for b in keys))
-        if reused:
-            summary.append(f"{len(reused)} gap(s) answered from the answer bank already.")
-        summary.append(f"{len(gaps)} question(s) for you." if gaps else "No questions needed.")
-        tg.send("\n".join(summary))
-        cur["stage"] = "gap_interview"
+        cur["questions"] = build_questions(audit, job)
+        # The nudge path narrows cur["questions"] to what is still open, so the full list is
+        # kept separately -- the packet needs the original gap for every answer it drafts from.
+        cur["questions_all"] = list(cur["questions"])
+        cur["stage"] = "ask"
         answers_text = ""
 
-    # ---- gap interview (no timeout; one question at a time)
-    if cur["stage"] == "gap_interview":
-        gaps = cur.get("gaps") or []
-        while True:
-            i = cur.get("gap_index", 0)
-            if i >= len(gaps):
-                cur["pending"] = None
-                cur["stage"] = "packet"
-                break
-            gap = gaps[i]
-            if not cur.get("pending"):
-                cur["pending"] = {"kind": "gap", "gap": gap}
-                tg.send(format_question(gap, i + 1, len(gaps)))
+    # ---- ask: the one and only round trip
+    if cur["stage"] == "ask":
+        qs = cur.get("questions") or []
+        if not qs:
+            # Nothing to ask. Say what was found and go straight to the packet.
+            reused = [g for g in ((cur.get("audit") or {}).get("gaps") or [])
+                      if (g.get("answered_by") or "").strip()]
+            tg.send(f"{job.get('title')} @ {job.get('company') or '?'}\n"
+                    f"Track: {(cur.get('audit') or {}).get('track')}\n"
+                    + (f"{len(reused)} gap(s) already answered from the answer bank. "
+                       if reused else "")
+                    + "No questions needed - finishing it off.")
+            cur["answers"] = []
+            cur["stage"] = "packet"
+        elif not cur.get("asked_at"):
+            tg.send(format_questions(qs, job, cur.get("audit") or {}))
+            cur["asked_at"] = now_iso()
+            return False
+        else:
+            reply = (answers_text or "").strip()
+            if not reply:
                 return False
-            answer = (answers_text or "").strip()
-            if not answer:
+            before = usage_snapshot()
+            try:
+                split = split_is_sane(split_reply(api_key, qs, reply), reply)
+            except Exception as e:
+                # One question is the common case, and a single reply to a single question
+                # needs no splitting at all. Falling back keeps a splitter outage from
+                # blocking the role.
+                print(f"  split failed ({e}); falling back")
+                split = [reply] + [""] * (len(qs) - 1)
+            record_usage(cur, "split", before)
+
+            answers, unanswered = [], []
+            for q, a in zip(qs, split):
+                resolved = resolve_answer(a, q)
+                answers.append({"kind": q["kind"], "keyword": q.get("keyword"),
+                                "question": q.get("question"), "answer": resolved,
+                                "has_material": has_material(resolved), "at": now_iso()})
+                if not resolved.strip():
+                    unanswered.append(q)
+            cur["answers"] = answers
+
+            # One nudge for anything he genuinely did not touch, then proceed regardless.
+            # An unanswered question simply produces no bullet; it is never worth a second
+            # cron firing to chase the same ground twice.
+            if unanswered and not cur.get("nudged"):
+                cur["nudged"] = True
+                names = "\n".join(f"- {q['question']}" for q in unanswered)
+                tg.send(f"Got the rest. Still open:\n{names}\n\n"
+                        f"Answer if you have something, or say skip and I'll leave "
+                        f"{'it' if len(unanswered) == 1 else 'them'} out.")
+                cur["asked_at"] = now_iso()
+                cur["questions"] = unanswered
+                cur["answered_so_far"] = (cur.get("answered_so_far") or []) + [
+                    a for a in answers if a["answer"].strip()]
                 return False
-            resolved = resolve_answer(answer, gap)
-            cur.setdefault("answers", []).append({
-                "keyword": gap.get("keyword"), "question": gap.get("question"),
-                "answer": resolved, "has_material": has_material(resolved),
-                "at": now_iso()})
-            cur["gap_index"] = i + 1
-            cur["pending"] = None
+            cur["answers"] = (cur.get("answered_so_far") or []) + [
+                a for a in answers if a["answer"].strip()]
+            cur["stage"] = "packet"
             answers_text = ""
-            # Loop straight into the next question in this same tick if one is waiting.
 
     # ---- packet
     if cur["stage"] == "packet":
-        before = usage_snapshot()
         audit = cur.get("audit") or {}
-        answered = [(g, a["answer"])
-                    for g, a in zip(cur.get("gaps") or [], cur.get("answers") or [])
-                    if a.get("has_material")]
+        answers = cur.get("answers") or []
+
+        # Salary research, if he asked for it. Runs here rather than in its own stage so it
+        # costs no extra round trip.
+        sal = next((a for a in answers if a["kind"] == "salary"), None)
+        if sal is None:
+            cur["salary"] = None
+        elif is_yes(sal["answer"]):
+            before = usage_snapshot()
+            try:
+                cur["salary"] = research_salary(api_key, job)
+                tg.send(format_salary(cur["salary"]))
+            except Exception as e:
+                cur["salary"] = {"skipped": True,
+                                 "reason": f"research failed: {str(e)[:150]}"}
+                tg.send(f"Salary research failed: {str(e)[:200]}\nCarrying on without it.")
+            record_usage(cur, "salary", before)
+        else:
+            cur["salary"] = {"skipped": True, "reason": sal["answer"] or "declined"}
+
+        gap_answers = [a for a in answers if a["kind"] == "gap"]
+        before = usage_snapshot()
+        gaps_by_kw = {g.get("keyword"): g for g in (cur.get("questions_all") or [])}
+        answered = [(gaps_by_kw.get(a["keyword"], {"keyword": a["keyword"],
+                                                   "question": a["question"]}), a["answer"])
+                    for a in gap_answers if a.get("has_material")]
         try:
             drafts = draft_bullets(api_key, job, audit.get("track"), answered)
         except Exception as e:
@@ -1068,13 +1202,13 @@ def advance(state, job, bank, tg, api_key, answers_text):
                     f"The packet still has the audit and your answers.")
         record_usage(cur, "draft", before)
 
-        # Answers go in the answer bank whether or not they produced a bullet -- a "no
-        # meaningful experience" is exactly as worth remembering as a yes, because it stops
-        # the same question being asked on the next role.
+        # Answers go in the bank whether or not they produced a bullet -- a "no meaningful
+        # experience" is exactly as worth remembering as a yes, because it stops the same
+        # question being asked on the next role.
         answers_md = bank.read(ANSWER_FILE, "")
         entries = answer_entries(
-            job, [(g, a["answer"]) for g, a in zip(cur.get("gaps") or [],
-                                                   cur.get("answers") or [])],
+            job, [({"keyword": a["keyword"], "question": a["question"]}, a["answer"])
+                  for a in gap_answers],
             start_n=next_answer_index(answers_md))
         if entries:
             if not answers_md.strip():
@@ -1090,8 +1224,7 @@ def advance(state, job, bank, tg, api_key, answers_text):
 
         # State moves to done before the commit, so the packet, the answers and the fact
         # that this role is finished all land in one commit. A crash between two commits
-        # would otherwise leave a packet on disk that the state file says is still in
-        # progress, and the next tick would redo the whole thing.
+        # would otherwise leave a packet on disk that the state file says is unfinished.
         state.setdefault("history", []).append(
             {"id": cur["id"], "title": cur.get("title"), "company": cur.get("company"),
              "outcome": "done", "at": now_iso(), "packet": name,
@@ -1207,7 +1340,28 @@ def tick(dry=False):
         if not api_key and not dry:
             tg.send("ANTHROPIC_API_KEY is not set on the workflow. Nothing can run.")
         else:
-            advance(state, job, bank, tg, api_key, answer_text)
+            finished = advance(state, job, bank, tg, api_key, answer_text)
+            # If that tick ended by asking Tom something, stay alive and wait for the
+            # answer instead of exiting and leaving it to the next cron firing. Cron is
+            # delivering a handful of firings a day, so a reply given in the next few
+            # minutes would otherwise sit unread for hours. Waiting here costs nothing but
+            # runner time, and the whole application finishes in this one run.
+            waited = 0
+            while (not finished and state.get("current")
+                   and state["current"].get("stage") == "ask"
+                   and state["current"].get("asked_at")
+                   and waited < HOLD_OPEN_SECONDS and not dry):
+                chunk = min(50, HOLD_OPEN_SECONDS - waited)
+                print(f"  holding open for a reply ({waited}/{HOLD_OPEN_SECONDS}s)")
+                updates, offset = tg.updates(state.get("telegram_offset", 0), wait=chunk)
+                waited += chunk
+                if not updates:
+                    continue
+                texts = message_texts(updates, os.environ.get("TELEGRAM_CHAT_ID", ""))
+                queue, more = handle_commands(texts, state, queue, tg)
+                state["telegram_offset"] = offset
+                if more:
+                    finished = advance(state, job, bank, tg, api_key, more[-1])
 
     if queue != started_queue:
         firebase_patch({"queued": queue}, dry=dry)

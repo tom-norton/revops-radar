@@ -86,7 +86,7 @@ def machine(audit=None, comp=None, drafts=None):
     """A state machine wired to stubs. Returns (step, state, tg, bank, calls) where step()
     runs one tick with an optional inbound message from Tom."""
     tg, bank = FakeTelegram(), FakeBank({applyq.BANK_FILE: "### [NAVEX-01]\nText: ..."})
-    calls = {"audit": 0, "draft": 0, "salary": 0, "drafted_from": None}
+    calls = {"audit": 0, "draft": 0, "salary": 0, "split": 0, "drafted_from": None}
     job = dict(JOB, comp=comp if comp is not None else JOB["comp"])
 
     def fake_audit(api_key, j, profile, bank_md, answers_md):
@@ -104,12 +104,22 @@ def machine(audit=None, comp=None, drafts=None):
                 "currency": "EUR", "thirty_percent_ruling": "yes",
                 "verdict": "above_floor", "notes": ""}
 
+    def fake_split(api_key, qs, reply):
+        """Stands in for the Haiku splitter. Tom answers questions separated by ' | ',
+        which keeps the tests about the state machine rather than about parsing."""
+        calls["split"] += 1
+        parts = [p.strip() for p in reply.split("|")]
+        return (parts + [""] * len(qs))[:len(qs)]
+
     applyq.run_audit, applyq.draft_bullets, applyq.research_salary = (
         fake_audit, fake_draft, fake_salary)
+    applyq.split_reply = fake_split
+    # split_is_sane() is deliberately NOT stubbed: it is the guard standing between a model
+    # and Tom's resume, so every state-machine test runs through the real one.
     applyq.scan.load_profile = lambda: "(profile)"
 
     state = {"current": {"id": job["id"], "title": job["title"], "company": job["company"],
-                         "stage": "salary_gate", "started_at": "2026-08-29T00:00:00+00:00",
+                         "stage": "audit", "started_at": "2026-08-29T00:00:00+00:00",
                          "answers": [], "usage": {}},
              "history": []}
 
@@ -198,100 +208,108 @@ def test_firebase_object_form_queue_reads_as_a_list():
 
 
 # ---------------------------------------------------------------- state machine
+#
+# The flow is: audit (needs nothing from Tom) -> one message carrying every question ->
+# one reply -> packet. GitHub's cron delivered 4 of an expected 60 runs in the 15 hours
+# after launch, so every extra round trip costs hours. These assert that a role needs
+# exactly one.
 
-def test_no_comp_risk_skips_the_salary_gate_entirely():
+def test_a_role_asks_everything_in_one_message():
     step, state, tg, _bank, calls = machine()
     step()
-    assert calls["salary"] == 0
-    assert state["current"]["salary"] is None
-    # Straight through the gate and the audit, stopping on the first question.
     assert calls["audit"] == 1
-    assert "Question 1 of 2" in tg.last()
+    assert state["current"]["stage"] == "ask"
+    # One message, both questions in it, and nothing asked before the audit ran.
+    assert len(tg.sent) == 1
+    assert "Did you do pipeline data cleanup?" in tg.last()
+    assert "Did you build dashboards yourself?" in tg.last()
 
 
-def test_comp_risk_asks_before_spending_anything_on_research():
-    step, state, tg, _bank, calls = machine(comp={"stated": False})
+def test_comp_risk_rides_along_in_the_same_message():
+    step, _state, tg, _bank, calls = machine(comp={"stated": False})
     step()
-    assert calls["salary"] == 0 and calls["audit"] == 0
-    assert "Comp risk" in tg.sent[0]
-    assert state["current"]["stage"] == "salary_gate"
-
-    step("1")                       # yes, research it
-    assert calls["salary"] == 1
-    assert state["current"]["stage"] == "gap_interview"
+    assert calls["salary"] == 0            # nothing researched before he is asked
+    assert "Comp risk" in tg.last()
+    assert "1." in tg.last() and "3." in tg.last()   # salary + two gaps, numbered
 
 
-def test_declining_research_proceeds_without_it():
-    step, state, tg, _bank, calls = machine(comp={"stated": False})
+def test_no_comp_risk_means_no_salary_question_at_all():
+    step, _state, tg, _bank, _calls = machine()
     step()
-    step("2")                       # no
-    assert calls["salary"] == 0
-    assert state["current"]["salary"]["skipped"] is True
-    assert calls["audit"] == 1
+    assert "Comp risk" not in tg.last()
 
 
-def test_questions_are_asked_one_at_a_time_across_ticks():
-    step, state, tg, _bank, _calls = machine()
-    step()
-    assert "Question 1 of 2" in tg.last()
-    assert "pipeline hygiene" in tg.last()
-
-    # A tick with no message from Tom changes nothing and asks nothing again. This is the
-    # "no timeout" rule: the run sits here for as long as it takes.
-    before = len(tg.sent)
-    step()
-    assert len(tg.sent) == before
-    assert state["current"]["gap_index"] == 0
-
-    step("1")
-    assert "Question 2 of 2" in tg.last()
-    assert state["current"]["gap_index"] == 1
-    assert state["current"]["answers"][0]["answer"] == "Yes, pipeline cleanup"
-
-
-def test_a_full_run_ends_with_a_packet_and_a_single_commit():
+def test_one_reply_finishes_the_whole_role():
     step, state, tg, bank, calls = machine(
         drafts={"bullets": [{"gap": "pipeline hygiene", "text": "Cleaned up the pipeline.",
                              "tracks": "BUILDER", "competencies": "CRM",
                              "evidence": "Gap interview", "notes": ""}],
                 "dropped": []})
     step()
-    step("1")
-    finished = step("Yes, built them in Salesforce")
+    finished = step("Cleaned 400 stale opps over two quarters | Yes, in Salesforce")
     assert finished is True
     assert state["current"] is None
     assert state["history"][0]["outcome"] == "done"
-
     packets = [k for k in bank.files if k.startswith(applyq.PACKET_DIR + "/")]
     assert len(packets) == 1
-    body = bank.files[packets[0]]
-    assert "Track: **BUILDER**" in body
-    assert "Cleaned up the pipeline." in body
-    # One commit for the packet, the answers and the state together, so a crash can never
-    # leave a packet on disk that the state file thinks is unfinished.
+    assert "Cleaned up the pipeline." in bank.files[packets[0]]
     assert len(bank.commits) == 1
 
 
-def test_answers_reach_the_answer_bank_verbatim():
-    step, _state, _tg, bank, _calls = machine()
+def test_saying_yes_to_research_runs_it_without_another_round_trip():
+    step, state, tg, _bank, calls = machine(comp={"stated": False})
     step()
-    step("1")
-    step("Built two Salesforce dashboards for the CS team")
-    bank_text = bank.files[applyq.ANSWER_FILE]
-    assert "Built two Salesforce dashboards for the CS team" in bank_text
-    assert "Did you build dashboards yourself?" in bank_text
-    # Job id recorded, so a future run can see which role earned the answer.
-    assert JOB["id"] in bank_text
+    finished = step("yes | did the cleanup for two quarters | no dashboards")
+    assert finished is True
+    assert calls["salary"] == 1
+    # The salary answer never reaches the bullet drafter -- it is not a gap.
+    assert [k for k, _ in calls["drafted_from"]] == ["pipeline hygiene"]
 
 
-def test_a_no_answer_is_still_banked_so_it_is_not_asked_twice():
-    step, _state, _tg, bank, calls = machine()
+def test_declining_research_skips_it():
+    step, state, _tg, _bank, calls = machine(comp={"stated": False})
     step()
-    step("No meaningful experience")
-    step("No meaningful experience")
-    assert "No meaningful experience" in bank.files[applyq.ANSWER_FILE]
-    # ...but nothing was handed to the drafter, so nothing can be written from it.
-    assert calls["drafted_from"] == []
+    step("no thanks | did the cleanup | no")
+    assert calls["salary"] == 0
+    assert state["history"][0]["outcome"] == "done"
+
+
+def test_a_tick_with_no_reply_changes_nothing_and_does_not_re_ask():
+    """The no-timeout rule. It sits here for as long as it takes, and does not nag."""
+    step, state, tg, _bank, _calls = machine()
+    step()
+    asked_at = state["current"]["asked_at"]
+    before = len(tg.sent)
+    step()
+    step()
+    assert len(tg.sent) == before
+    assert state["current"]["asked_at"] == asked_at
+
+
+def test_a_partly_answered_reply_is_nudged_once_then_proceeds():
+    step, state, tg, _bank, calls = machine()
+    step()
+    step("cleaned 400 stale opps")          # answers q1, ignores q2
+    assert state["current"]["stage"] == "ask"
+    assert "Still open" in tg.last()
+    assert "dashboards" in tg.last()
+
+    finished = step("nothing there")
+    assert finished is True
+    # The first answer survived the nudge round; the second produced nothing.
+    assert calls["drafted_from"] == [("pipeline hygiene", "cleaned 400 stale opps")]
+
+
+def test_the_nudge_happens_at_most_once():
+    step, _state, tg, _bank, _calls = machine()
+    step()
+    step("cleaned 400 stale opps")
+    nudges = sum("Still open" in m for m in tg.sent)
+    assert nudges == 1
+    step("")                                 # a tick with nothing from him
+    assert sum("Still open" in m for m in tg.sent) == nudges
+    step("still nothing")
+    assert sum("Still open" in m for m in tg.sent) == nudges
 
 
 def test_an_unanswered_gap_never_reaches_the_drafter():
@@ -299,10 +317,73 @@ def test_an_unanswered_gap_never_reaches_the_drafter():
     produces no bullet, and the drafting call is not even shown it."""
     step, _state, _tg, _bank, calls = machine()
     step()
-    step("Cleaned 400 stale opportunities over two quarters")
-    step("no")
+    step("Cleaned 400 stale opportunities over two quarters | No meaningful experience")
     assert calls["drafted_from"] == [
         ("pipeline hygiene", "Cleaned 400 stale opportunities over two quarters")]
+
+
+def test_answers_reach_the_answer_bank_verbatim_including_the_no():
+    step, _state, _tg, bank, _calls = machine()
+    step()
+    step("Built two Salesforce dashboards for the CS team | No meaningful experience")
+    text = bank.files[applyq.ANSWER_FILE]
+    assert "Built two Salesforce dashboards for the CS team" in text
+    # A "no" is banked too, so the same ground is never covered twice.
+    assert "No meaningful experience" in text
+    assert JOB["id"] in text
+
+
+def test_a_role_with_no_gaps_finishes_without_asking_anything():
+    step, state, tg, _bank, calls = machine(audit=dict(AUDIT, gaps=[]))
+    finished = step()
+    assert finished is True
+    assert calls["drafted_from"] == []
+    assert not any("?" in m and "1." in m for m in tg.sent)
+    assert state["history"][0]["outcome"] == "done"
+
+
+def test_a_splitter_outage_falls_back_instead_of_blocking():
+    step, _state, _tg, _bank, calls = machine(audit=dict(AUDIT, gaps=AUDIT["gaps"][:1]))
+
+    def boom(*a, **k):
+        raise RuntimeError("haiku down")
+
+    applyq.split_reply = boom
+    step()
+    finished = step("did the cleanup for two quarters")
+    assert finished is True
+    assert calls["drafted_from"] == [("pipeline hygiene", "did the cleanup for two quarters")]
+
+
+def test_the_split_guard_discards_text_tom_never_wrote():
+    """The splitter is a model, so it could paraphrase Tom into something more useful.
+    Anything it returns that is not traceable to his own reply is dropped, and a dropped
+    answer is an unanswered question, which produces no bullet."""
+    reply = "cleaned up 400 stale opportunities over two quarters"
+    kept = applyq.split_is_sane([reply, "Built Salesforce dashboards for the whole team"],
+                                reply)
+    assert kept[0] == reply
+    assert kept[1] == ""            # invented, so discarded
+    assert applyq.split_is_sane(["", ""], reply) == ["", ""]
+
+
+def test_a_failing_audit_retries_a_few_ticks_then_gives_up_loudly():
+    """A blip deserves a retry. A broken call deserves to stop, because an audit that
+    always fails is an Opus call every firing with nobody watching."""
+    step, state, tg, _bank, _calls = machine()
+
+    def boom(*a, **k):
+        raise RuntimeError("500 from the API")
+
+    applyq.run_audit = boom
+    for _ in range(applyq.MAX_STAGE_RETRIES - 1):
+        step()
+        assert state["current"] is not None
+        assert not tg.sent
+    step()
+    assert state["current"] is None
+    assert state["history"][0]["outcome"] == "audit-failed"
+    assert "Gave up" in tg.last() and "500 from the API" in tg.last()
 
 
 def test_a_drafting_failure_is_loud_and_still_leaves_a_packet():
@@ -313,67 +394,9 @@ def test_a_drafting_failure_is_loud_and_still_leaves_a_packet():
 
     applyq.draft_bullets = boom
     step()
-    step("1")
-    step("1")
-    assert any("drafting failed" in s for s in tg.sent)
+    step("did the cleanup | built the dashboards")
+    assert any("drafting failed" in m for m in tg.sent)
     assert [k for k in bank.files if k.startswith(applyq.PACKET_DIR + "/")]
-
-
-def test_a_role_with_no_gaps_finishes_without_asking_anything():
-    step, state, tg, bank, calls = machine(audit=dict(AUDIT, gaps=[]))
-    finished = step()
-    assert finished is True
-    assert calls["drafted_from"] == []
-    assert not any("Question" in s for s in tg.sent)
-    assert state["history"][0]["outcome"] == "done"
-
-
-def test_a_failing_audit_retries_a_few_ticks_then_gives_up_loudly():
-    """A blip deserves a retry. A broken call deserves to stop, because at 15-minute ticks
-    an audit that always fails is an Opus call every quarter hour with nobody watching."""
-    step, state, tg, _bank, _calls = machine()
-
-    def boom(*a, **k):
-        raise RuntimeError("500 from the API")
-
-    applyq.run_audit = boom
-    for _ in range(applyq.MAX_STAGE_RETRIES - 1):
-        step()
-        assert state["current"] is not None
-        assert not tg.sent          # quiet while it is still just retrying
-    step()
-    assert state["current"] is None
-    assert state["history"][0]["outcome"] == "audit-failed"
-    assert "Gave up" in tg.last() and "500 from the API" in tg.last()
-
-
-def test_an_unconfigured_queue_is_quiet_and_a_half_configured_one_is_not():
-    """Before the secrets exist the cron still fires every 15 minutes. Red crosses for days
-    would teach the Actions tab to be ignored, so no secrets at all is a no-op. Some but not
-    all is a mistake someone made, and says which one."""
-    keep = {k: os.environ.pop(k, None) for k in applyq.REQUIRED_SECRETS}
-    try:
-        assert applyq.configuration_state()[0] == "unconfigured"
-        assert applyq.tick() == 0                      # returns, does not raise
-
-        os.environ["TELEGRAM_BOT_TOKEN"] = "x"
-        state, missing = applyq.configuration_state()
-        assert state == "partial"
-        assert missing == ["TELEGRAM_CHAT_ID", "BULLET_BANK_PAT"]
-        try:
-            applyq.tick()
-            raise AssertionError("a half-configured queue should have raised")
-        except RuntimeError as e:
-            assert "TELEGRAM_CHAT_ID" in str(e) and "BULLET_BANK_PAT" in str(e)
-
-        for k in applyq.REQUIRED_SECRETS:
-            os.environ[k] = "x"
-        assert applyq.configuration_state() == ("ready", [])
-    finally:
-        for k, v in keep.items():
-            os.environ.pop(k, None)
-            if v is not None:
-                os.environ[k] = v
 
 
 def test_answer_bank_ids_do_not_collide_within_a_day():
