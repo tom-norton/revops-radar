@@ -214,6 +214,16 @@ class Telegram:
             self._call("sendMessage", chat_id=self.chat_id, text=chunk,
                        disable_web_page_preview=True)
 
+    def webhook_active(self):
+        """True when a webhook is registered on this bot.
+
+        Detected rather than configured, because the two are mutually exclusive and a
+        stale config flag is worse than an extra API call: with a webhook registered
+        getUpdates returns 409, and a scheduled tick that kept polling would log a
+        confusing failure every firing forever."""
+        info = self._call("getWebhookInfo") or {}
+        return bool((info or {}).get("url"))
+
     def updates(self, offset, wait=0):
         """Everything since `offset`, and the new offset.
 
@@ -1349,14 +1359,23 @@ def tick(dry=False):
 
     started_queue = list(queue)
     inbound = os.environ.get(INBOUND_ENV, "").strip()
-    push_mode = bool(inbound) or os.environ.get("APPLYQ_PUSH") == "1"
     if inbound:
         # Push mode: the relay already has the message, so there is nothing to poll for and
         # nothing to acknowledge. The chat it came from was checked at the relay, against
         # the same chat id, before it was allowed to become a workflow input.
+        push_mode = True
         texts = [(0, inbound)]
         print(f"  inbound (push): {inbound[:80]!r}")
+    elif tg.enabled and not dry and tg.webhook_active():
+        # A webhook is registered, so this is a scheduled tick in push mode. There is
+        # nothing to read: Telegram is delivering to the relay, and getUpdates would 409.
+        # The tick still runs, because it is what starts a role queued from the dashboard
+        # and what carries one forward if the relay ever misses a message.
+        push_mode = True
+        texts = []
+        print("  webhook active; not polling")
     else:
+        push_mode = False
         updates, offset = tg.updates(state.get("telegram_offset", 0))
         texts = message_texts(updates, os.environ.get("TELEGRAM_CHAT_ID", ""))
         # Written only once the updates have actually been handled. Bumping the offset

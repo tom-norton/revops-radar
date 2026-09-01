@@ -2,9 +2,9 @@
  * Telegram -> GitHub relay. Cloudflare Worker.
  *
  * Why this exists: GitHub's scheduled workflows are best-effort and get dropped under
- * load. Measured on this repo, `*/15 * * * *` delivered 4 of an expected 60 runs over 15
- * hours, with gaps of 5h45m. That is fine for a nightly scan and useless for a
- * conversation, because every message Tom sends has to wait for the next firing.
+ * load. Measured on this repo, a once-every-15-minutes cron delivered 4 of an expected 60
+ * runs over 15 hours, with gaps of 5h45m. That is fine for a nightly scan and useless for
+ * a conversation, because every message Tom sends has to wait for the next firing.
  *
  * So instead of the queue polling for work, the work pushes itself in. Telegram delivers
  * each message here within about a second; this asks GitHub to start a run immediately and
@@ -25,6 +25,12 @@ const OWNER = "tom-norton";
 const REPO = "revops-radar";
 const WORKFLOW = "apply.yml";
 const REF = "main";
+const FIREBASE_STATE_URL =
+  "https://revops-radar-2822a-default-rtdb.europe-west1.firebasedatabase.app/revops-radar-state.json";
+// GitHub caps how much a workflow input can carry, and Telegram allows 4096 characters.
+// An answer that long is not a real answer, so it is cut rather than risking a rejected
+// dispatch that would look to Tom like the bot ignoring him.
+const MAX_MESSAGE = 3000;
 
 /** Ask GitHub to start the apply-queue workflow now. */
 async function dispatch(env, inputs) {
@@ -77,7 +83,7 @@ export default {
         return new Response("ok", { status: 200 });
       }
       const msg = update.message || update.edited_message || {};
-      const text = (msg.text || "").trim();
+      const text = (msg.text || "").trim().slice(0, MAX_MESSAGE);
       const chat = String((msg.chat || {}).id || "");
       // Telegram retries anything that is not a 200, so unwanted updates are acknowledged
       // rather than rejected: a non-text message is nothing to act on, not an error.
@@ -88,16 +94,33 @@ export default {
     }
 
     if (url.pathname === "/queue") {
-      // Called by the public dashboard, so it carries no secret and cannot. The blast
-      // radius is small by construction: this route passes no message, the run only ever
-      // acts on what is already in the Firebase queue (which is world-writable anyway, and
-      // has been since long before this existed), and the workflow's concurrency group
-      // means a flood of requests still produces at most one running and one queued run.
+      // Called by the public dashboard, so it carries no secret and cannot -- anything
+      // shipped to the page is readable by anyone who opens it. Two things keep that from
+      // mattering. This route passes no message, so it can never put words in Tom's mouth
+      // the way /telegram could. And it refuses to start a run unless the queue actually
+      // has something in it, so hammering this URL with an empty queue costs nothing and
+      // never reaches GitHub. Filling the queue first means writing to Firebase, which has
+      // been world-writable since long before this existed and is the real exposure, not
+      // this. Past that, the workflow's concurrency group caps a flood at one running run
+      // plus one queued.
+      const cors = { "Access-Control-Allow-Origin": "*" };
+      let queued = [];
+      try {
+        const state = await fetch(FIREBASE_STATE_URL).then((r) => r.json());
+        const q = (state || {}).queued;
+        // Firebase drops empty arrays entirely and returns sparse ones as index-keyed
+        // objects, so both shapes have to count as a queue.
+        queued = Array.isArray(q) ? q : q && typeof q === "object" ? Object.values(q) : [];
+      } catch (e) {
+        // If Firebase cannot be read, fall through and dispatch: a missed run is worse
+        // than a wasted one, and the run itself re-reads the queue anyway.
+        queued = ["unknown"];
+      }
+      if (!queued.filter(Boolean).length) {
+        return new Response("queue empty; not dispatching\n", { status: 200, headers: cors });
+      }
       await dispatch(env, {});
-      return new Response("ok", {
-        status: 200,
-        headers: { "Access-Control-Allow-Origin": "*" },
-      });
+      return new Response("ok", { status: 200, headers: cors });
     }
 
     return new Response("not found", { status: 404 });
