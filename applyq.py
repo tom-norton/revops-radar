@@ -126,6 +126,12 @@ MAX_STAGE_RETRIES = 3
 # At most this many gaps go to interview per role. The skill's own cap. More than three
 # questions and the phone stops being the right place to answer them.
 MAX_GAP_QUESTIONS = 3
+# Hard caps on anything a model wrote before it reaches a phone. The prompts ask for this
+# length; these are what make it true. A question over ~90 characters wraps to three lines
+# on a phone, and three of those is a wall of text between Tom and the one thing he has to
+# do.
+Q_CHARS = 110
+OPT_CHARS = 34
 
 # Answers that mean "I have nothing here". A gap that gets one of these is dropped
 # silently -- no bullet, no follow-up, no inference.
@@ -157,6 +163,29 @@ def now_iso():
 
 def today():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+# Telegram's HTML mode needs exactly these three escaped. Everything interpolated into a
+# message is escaped: job titles and company names come off scraped pages, and the
+# questions come from a model, so an unescaped "&" or "<" would make Telegram reject the
+# whole message -- and a question that never arrives leaves the run waiting on an answer
+# to something Tom never saw.
+def esc(t):
+    return (str(t if t is not None else "")
+            .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def strip_tags(t):
+    """The plain-text fallback when a formatted send is rejected."""
+    t = re.sub(r"<[^>]+>", "", t or "")
+    return (t.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+
+
+def clip(t, n):
+    """Bound a string that a model wrote before it reaches a phone screen. The prompts ask
+    for short; this is what makes it true."""
+    t = " ".join(str(t or "").split())
+    return t if len(t) <= n else t[:n - 1].rstrip(" ,.;:-") + "\u2026"
 
 
 def slugify(s, cap=40):
@@ -204,18 +233,30 @@ class Telegram:
             print(f"  telegram {method} failed: {e}")
             return None
 
-    def send(self, text):
+    def send(self, text, html=True):
+        """Send one message, formatted unless told otherwise.
+
+        Formatting is worth the risk because these are read on a phone, but the risk is
+        real: if the markup is malformed Telegram rejects the whole message rather than
+        degrading, and a question that never arrives strands the run. So a rejected
+        formatted send is retried once as plain text -- worse looking, still delivered."""
         text = (text or "").strip()
         if not text:
             return
         if self.dry or not self.enabled:
-            print(f"  [telegram] {text[:500]}")
+            print(f"  [telegram]\n{strip_tags(text)}\n")
             return
-        # Telegram hard-caps a message at 4096 characters. An audit summary can exceed it,
-        # and the API rejects the whole message rather than truncating -- so split.
+        # Telegram hard-caps a message at 4096 characters and rejects anything longer
+        # outright, so long ones are split rather than lost.
         for chunk in [text[i:i + 3800] for i in range(0, len(text), 3800)]:
-            self._call("sendMessage", chat_id=self.chat_id, text=chunk,
-                       disable_web_page_preview=True)
+            kw = {"chat_id": self.chat_id, "disable_web_page_preview": True}
+            sent = None
+            if html:
+                sent = self._call("sendMessage", text=chunk, parse_mode="HTML", **kw)
+            if sent is None:
+                if html:
+                    print("  formatted send rejected; retrying as plain text")
+                self._call("sendMessage", text=strip_tags(chunk), **kw)
 
     def webhook_active(self):
         """True when a webhook is registered on this bot.
@@ -533,17 +574,24 @@ def research_salary(api_key, job):
 def format_salary(res):
     cur = res.get("currency") or ""
     low, high = res.get("low"), res.get("high")
-    band = f"{cur} {int(low or 0):,}-{int(high or 0):,}" if (low or high) else "no usable band"
+    band = (f"{cur} {int(low or 0):,}\u2013{int(high or 0):,}" if (low or high)
+            else "no usable band")
     verdict = {"above_floor": "above floor", "borderline": "borderline",
-               "below_floor": "BELOW FLOOR"}.get(res.get("verdict"), res.get("verdict") or "?")
-    lines = [f"Salary research: {band} base", f"Verdict: {verdict}"]
+               "below_floor": "BELOW FLOOR"}.get(res.get("verdict"),
+                                                 res.get("verdict") or "?")
+    second = [verdict]
     ruling = res.get("thirty_percent_ruling")
-    if ruling and ruling != "n/a":
-        lines.append(f"30% ruling: {ruling}")
-    for s in (res.get("sources") or [])[:4]:
-        lines.append(f"- {s}")
+    if ruling and ruling not in ("n/a", "unknown"):
+        second.append(f"30% ruling: {ruling}")
+    lines = [f"<b>Salary  {esc(band)}</b>", esc(" · ".join(second))]
+    # Two sources, clipped. The full list is in the packet; on a phone a third quote is
+    # scrolling, not evidence.
+    srcs = [x for x in (res.get("sources") or []) if str(x).strip()][:2]
+    if srcs:
+        lines.append("")
+        lines += [f"\u2022 {esc(clip(x, 90))}" for x in srcs]
     if res.get("notes"):
-        lines.append(f"Note: {res['notes']}")
+        lines += ["", f"<i>{esc(clip(res['notes'], 160))}</i>"]
     return "\n".join(lines)
 
 
@@ -594,6 +642,14 @@ first.
 Each question must name the gap, ask whether he has specific experience that fits, and give \
 2-4 concrete options -- never open-ended. One of the options is always a plain "no \
 meaningful experience" wording.
+
+WRITE THESE FOR A PHONE SCREEN. Tom reads them in a chat, standing up, and answers in one \
+reply. Every question is ONE line under 90 characters, and every option is under 30. Ask \
+the question directly: no preamble about what the posting says or emphasises, no restating \
+the role, no "I noticed that". He knows which job this is. "Any pipeline hygiene or CRM \
+cleanup at NAVEX?" is right; "The posting leans on pipeline hygiene and data quality, so \
+did you do any of that work at NAVEX that isn't already on your CV?" is three times the \
+length and says no more.
 
 HARD RULES
 - Never invent experience, and never treat the posting's own language as evidence Tom has \
@@ -685,9 +741,12 @@ def build_questions(audit, job):
     qs = []
     risky, reason = comp_risk(job)
     if risky:
+        # Short form of the risk, because the long form reads as an explanation Tom has
+        # to parse before he can answer a yes/no. The full reason is in the packet.
+        short = {"no salary stated in the posting": "No salary stated"}.get(
+            reason, reason.split(" - ")[0].split(",")[0])
         qs.append({"kind": "salary", "keyword": "salary", "reason": reason,
-                   "question": (f"Comp risk on this one: {reason}. "
-                                f"Want me to research the market band?"),
+                   "question": f"{clip(short, 70)}. Research the market band?",
                    "options": ["Yes, research it", "No, skip it"]})
     for g in pending_gaps(audit):
         qs.append({"kind": "gap", "keyword": g.get("keyword"),
@@ -697,26 +756,37 @@ def build_questions(audit, job):
     return qs
 
 
+def job_line(job, audit=None):
+    """The one-line header every message about a role starts with. Company, market and
+    score on a second dim line rather than a sentence, so the eye lands on the title."""
+    bits = [job.get("company") or "?", job.get("market") or "",
+            f"{job.get('score')}" if job.get("score") is not None else ""]
+    if audit and audit.get("track"):
+        bits.append(audit["track"])
+    return (f"<b>{esc(clip(job.get('title'), 70))}</b>\n"
+            + esc(" · ".join(b for b in bits if b)))
+
+
 def format_questions(qs, job, audit):
-    """One message carrying the whole conversation. Numbered so Tom can answer them in one
-    reply the way a person actually would -- "1 yes, 2 did that for two quarters, 3 no" --
-    rather than being pinged once per question across a day of cron firings."""
-    head = [f"{job.get('title')} @ {job.get('company') or '?'}",
-            f"Track: {audit.get('track')} - {audit.get('track_rationale', '')}", ""]
-    if len(qs) == 1:
-        head.append("One question and I can finish this off:")
-    else:
-        head.append(f"{len(qs)} questions and I can finish this off:")
-    head.append("")
+    """One message carrying the whole conversation.
+
+    Read on a phone, so it is built to be scanned rather than read: title, one dim context
+    line, then the questions with nothing between them. The track rationale, the bullet
+    decisions and the metric gaps are all deliberately absent -- they are in the packet,
+    and on a phone they are wall-of-text between Tom and the thing he actually has to do.
+    Everything the model wrote is clipped, because a model asked for one sentence will
+    sometimes write four."""
+    out = [job_line(job, audit), ""]
     for i, q in enumerate(qs, 1):
-        head.append(f"{i}. {q['question']}")
+        out.append(f"<b>{i}</b>  {esc(clip(q.get('question'), Q_CHARS))}")
         for j, o in enumerate(q.get("options") or [], 1):
-            head.append(f"     {chr(96 + j)}) {o}")
-        head.append("")
-    head.append("Answer them all in one message, however you like. Numbers, letters, or "
-                "just write it out. If you have nothing for one of them, say so and I'll "
-                "leave it alone.")
-    return "\n".join(head)
+            out.append(f"    <code>{chr(96 + j)}</code>  {esc(clip(o, OPT_CHARS))}")
+        out.append("")
+    # No instructions about what to do if he has nothing -- every question carries a
+    # "nothing here" option, so saying it again is a line of prose that earns nothing.
+    out.append("<i>Reply once \u2014 " + ("\"1a\"" if len(qs) == 1 else "\"1a 2b\"")
+               + ", or just write it.</i>")
+    return "\n".join(out)
 
 
 SPLIT_SYSTEM = """Tom was asked several numbered questions in one message and has replied \
@@ -1013,8 +1083,9 @@ def handle_commands(texts, state, queue, tg):
             else:
                 queue = queue + [arg]
                 j = load_job(arg)
-                tg.send(f"Queued: {j.get('title')} at {j.get('company') or '?'} "
-                        f"({len(queue)} in the queue)")
+                tg.send(f"<b>Queued</b>  {esc(clip(j.get('title'), 60))}\n"
+                        + esc(f"{j.get('company') or '?'} · "
+                              f"{len(queue)} in the queue"))
         elif cmd == "/queue":
             if not queue:
                 tg.send("Queue is empty.")
@@ -1022,18 +1093,21 @@ def handle_commands(texts, state, queue, tg):
                 lines = []
                 for q in queue[:15]:
                     j = load_job(q)
-                    lines.append(f"- {j.get('title')} @ {j.get('company') or '?'}"
-                                 if j else f"- {q} (not on the dashboard)")
-                tg.send(f"{len(queue)} queued:\n" + "\n".join(lines))
+                    lines.append(
+                        f"\u2022 {esc(clip(j.get('title'), 60))} "
+                        f"<i>{esc(j.get('company') or '?')}</i>"
+                        if j else f"\u2022 <code>{esc(q)}</code> not on the dashboard")
+                tg.send(f"<b>{len(queue)} queued</b>\n\n" + "\n".join(lines))
         elif cmd == "/status":
             cur = state.get("current")
             if not cur:
                 tg.send(f"Idle. {len(queue)} queued.")
             else:
-                tg.send(f"Working on {cur.get('title')} @ {cur.get('company') or '?'}\n"
-                        f"Stage: {cur.get('stage')}\n"
-                        f"Started {cur.get('started_at', '')[:16]}\n"
-                        f"{len(queue)} more queued.")
+                tg.send(f"<b>{esc(clip(cur.get('title'), 70))}</b>\n"
+                        + esc(" · ".join(x for x in [
+                            cur.get("company") or "?", cur.get("stage"),
+                            f"since {cur.get('started_at', '')[:10]}"] if x))
+                        + f"\n\n<i>{len(queue)} more queued.</i>")
         elif cmd == "/cancel":
             cur = state.get("current")
             if not cur:
@@ -1161,13 +1235,13 @@ def advance(state, job, bank, tg, api_key, answers_text):
         qs = cur.get("questions") or []
         if not qs:
             # Nothing to ask. Say what was found and go straight to the packet.
-            reused = [g for g in ((cur.get("audit") or {}).get("gaps") or [])
+            audit = cur.get("audit") or {}
+            reused = [g for g in (audit.get("gaps") or [])
                       if (g.get("answered_by") or "").strip()]
-            tg.send(f"{job.get('title')} @ {job.get('company') or '?'}\n"
-                    f"Track: {(cur.get('audit') or {}).get('track')}\n"
-                    + (f"{len(reused)} gap(s) already answered from the answer bank. "
-                       if reused else "")
-                    + "No questions needed - finishing it off.")
+            tg.send(job_line(job, audit) + "\n\n"
+                    + ("<i>Nothing to ask"
+                       + (f" - {len(reused)} already in the answer bank" if reused else "")
+                       + ". Finishing it off.</i>"))
             cur["answers"] = []
             cur["stage"] = "packet"
         elif not cur.get("asked_at"):
@@ -1204,10 +1278,11 @@ def advance(state, job, bank, tg, api_key, answers_text):
             # cron firing to chase the same ground twice.
             if unanswered and not cur.get("nudged"):
                 cur["nudged"] = True
-                names = "\n".join(f"- {q['question']}" for q in unanswered)
-                tg.send(f"Got the rest. Still open:\n{names}\n\n"
-                        f"Answer if you have something, or say skip and I'll leave "
-                        f"{'it' if len(unanswered) == 1 else 'them'} out.")
+                names = "\n".join(f"<b>{i}</b>  {esc(clip(q.get('question'), 160))}"
+                                  for i, q in enumerate(unanswered, 1))
+                tg.send(f"<b>Still open</b>\n\n{names}\n\n"
+                        f"<i>Answer, or say skip and I'll leave "
+                        f"{'it' if len(unanswered) == 1 else 'them'} out.</i>")
                 cur["asked_at"] = now_iso()
                 cur["questions"] = unanswered
                 cur["answered_so_far"] = (cur.get("answered_so_far") or []) + [
@@ -1290,14 +1365,21 @@ def advance(state, job, bank, tg, api_key, answers_text):
 
         n_new = len((drafts or {}).get("bullets") or [])
         n_drop = len((drafts or {}).get("dropped") or [])
-        msg = [f"Done: {job.get('title')} @ {job.get('company') or '?'}",
-               f"Track {audit.get('track')} | {n_new} new bullet(s)"
-               + (f", {n_drop} gap(s) left open" if n_drop else ""),
-               f"Packet: {PACKET_DIR}/{name}"]
+        tally = [f"{n_new} new bullet" + ("" if n_new == 1 else "s")]
+        if n_drop:
+            tally.append(f"{n_drop} gap" + ("" if n_drop == 1 else "s") + " left open")
+        msg = [f"\u2713 <b>{esc(clip(job.get('title'), 70))}</b>",
+               esc(" · ".join([job.get("company") or "?", audit.get("track") or ""]
+                              + tally).strip(" ·")),
+               "", f"<code>{esc(name)}</code>"]
+        links = []
         if sha:
-            msg.append(f"https://{BANK_REPO}/commit/{sha}")
-        msg.append(job.get("url") or "")
-        tg.send("\n".join(m for m in msg if m))
+            links.append(f'<a href="https://{BANK_REPO}/commit/{sha}">packet</a>')
+        if job.get("url"):
+            links.append(f'<a href="{esc(job["url"])}">posting</a>')
+        if links:
+            msg.append(" · ".join(links))
+        tg.send("\n".join(msg))
         return True
     return False
 

@@ -229,8 +229,14 @@ def test_comp_risk_rides_along_in_the_same_message():
     step, _state, tg, _bank, calls = machine(comp={"stated": False})
     step()
     assert calls["salary"] == 0            # nothing researched before he is asked
-    assert "Comp risk" in tg.last()
-    assert "1." in tg.last() and "3." in tg.last()   # salary + two gaps, numbered
+    # Asserted on substance, not wording: the salary question is first, offers the choice,
+    # and is not researched until he answers.
+    assert "salary" in tg.last().lower()
+    assert "Yes, research it" in tg.last()
+    # Salary plus the two gaps, numbered 1 to 3 in one message.
+    for n in (1, 2, 3):
+        assert f"<b>{n}</b>" in tg.last()
+    assert "<b>4</b>" not in tg.last()
 
 
 def test_no_comp_risk_means_no_salary_question_at_all():
@@ -490,6 +496,62 @@ def test_a_relayed_message_from_another_chat_is_ignored():
             os.environ.pop(k, None)
             if v is not None:
                 os.environ[k] = v
+
+
+def test_messages_are_short_enough_to_read_on_a_phone():
+    """The whole point of one round trip is that the message is readable when it lands.
+    A model asked for one short question will sometimes write four sentences, so the
+    lengths are enforced in code, not just requested in the prompt."""
+    long_audit = json.loads(json.dumps(AUDIT))
+    long_audit["track_rationale"] = "Because " + "systems ownership " * 40
+    long_audit["gaps"][0]["question"] = "Did you " + "do the pipeline cleanup work " * 20
+    long_audit["gaps"][0]["options"] = ["Yes, " + "in great detail " * 20, "No"]
+    step, _state, tg, _bank, _calls = machine(audit=long_audit)
+    step()
+    msg = tg.last()
+    assert len(msg) < 900, len(msg)
+    # The rationale belongs in the packet, not on the phone.
+    assert "systems ownership systems ownership" not in msg
+    # Runaway model text is cut rather than sent.
+    assert "\u2026" in msg
+    for line in msg.split("\n"):
+        assert len(line) < 220, line
+
+
+def test_a_formatted_send_that_telegram_rejects_still_arrives():
+    """Telegram rejects a whole message on malformed markup rather than degrading, and a
+    question that never arrives strands the run waiting on an answer Tom never saw."""
+    calls = []
+
+    class PickyTelegram(applyq.Telegram):
+        def _call(self, method, _timeout=30, **params):
+            calls.append(params)
+            # Reject anything formatted, the way Telegram does on bad markup.
+            return None if params.get("parse_mode") else {"ok": True}
+
+    tg = PickyTelegram("token", "42")
+    tg.send("<b>Bold</b> and &amp; an ampersand")
+    assert len(calls) == 2                      # tried formatted, then fell back
+    assert calls[1].get("parse_mode") is None
+    assert calls[1]["text"] == "Bold and & an ampersand"
+
+
+def test_interpolated_text_cannot_break_the_markup():
+    """Titles come off scraped pages and questions come from a model, so both can contain
+    characters that would make Telegram reject the message."""
+    job = dict(JOB, title="Rev Ops <Manager> & Analyst", company="A & B")
+    out = applyq.format_questions(
+        [{"kind": "gap", "keyword": "k", "question": "Did you use <SQL> & Python?",
+          "options": ["Yes & often"]}], job, {"track": "BUILDER"})
+    assert "<Manager>" not in out and "&lt;Manager&gt;" in out
+    assert "A &amp; B" in out
+    assert "<SQL>" not in out and "&lt;SQL&gt;" in out
+    # The tags the message adds itself survive.
+    assert "<b>1</b>" in out
+    # Round-trips exactly: the four ampersands (title, company, question, option) come
+    # back as themselves once the markup is stripped, none doubled or swallowed.
+    assert applyq.strip_tags(out).count("&") == 4
+    assert "Rev Ops <Manager> & Analyst" in applyq.strip_tags(out)
 
 
 def test_answer_bank_ids_do_not_collide_within_a_day():

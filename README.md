@@ -254,6 +254,8 @@ anywhere other than markets and the CSM track, the radar is the one that's wrong
 ```
 python tests/test_scoring.py    # pure functions: weighted total, flags, title gate, location, dedupe
 python tests/test_apply.py      # comp gate, answer handling, the apply state machine across ticks
+node tests/test_worker.mjs      # the Cloudflare relay's two guards
+python tests/preview_messages.py # print every bot message as Telegram renders it (no asserts)
 python scan.py --selftest       # replay stored dimension scores through the engine, offline
 python scan.py --dry            # full pipeline, no Claude calls
 python applyq.py --selftest     # apply-queue pure functions, offline
