@@ -138,10 +138,13 @@ they get answered.
 the same `queued` array on the Firebase node, next to `hidden` and `applied`. Queued is not
 applied: the role stays in its section with a tag until the application actually goes out.
 
-**One round trip per role.** This is the design constraint, and it comes from measurement:
-over the 15 hours after launch, GitHub delivered **4 of an expected 60** scheduled runs,
-with gaps up to 5h45m. Scheduled workflows are best-effort and get dropped under load. So
-every wait for you costs hours, and the flow is built to need exactly one:
+**One round trip per phase, and never more.** This is the design constraint, and it comes
+from measurement: over the 15 hours after launch, GitHub delivered **4 of an expected 60**
+scheduled runs, with gaps up to 5h45m. Scheduled workflows are best-effort and get dropped
+under load. So every wait for you costs hours. A role asks once to get its packet, and at
+most once more to pick a summary — and that second one only fires above the review score.
+Everything else, including the company research and the whole tailoring pass, is arranged
+to run on the near side of a wait:
 
 1. **Bullet audit** — needs nothing from you, so it runs first. Pulls `bullet-bank.md` from
    the private bank, picks the sub-track (ANALYTICS / BUILDER / CS), decides per bullet,
@@ -186,10 +189,70 @@ the bank is ever written into it. That makes `BULLET_BANK_PAT` a hard dependency
 it there is nowhere to persist an interview that spans days, and the poller fails loudly
 rather than proceeding.
 
-**Not in this phase.** The CV build, the variation review, cover letters and autonomous
-submission are Phases 2-4. So is the Step 2 company strategic brief — it feeds the summary
-variations, which the CV build owns. A packet is the input to that, not a finished
-application.
+## The CV build
+
+The back half of the same run. Once the packet exists, the role carries straight on into
+two more stages, and only one of them ever asks anything.
+
+4. **CV** — a short **company strategic brief** (web search: what the company is trying to
+   do in the next twelve months, with the evidence for each claim), then one tailoring pass
+   that turns the audit into the actual contents of a page: which bullet goes where, how a
+   REVISE is worded, three summary variations scored out of 10, and the skills line.
+5. **Pick** — **only on roles scoring 7.5 or better** (`VARIATION_REVIEW_MIN_SCORE`, a
+   named constant because it is a volume dial, not a rule). Above the line you get the
+   three summaries with their scores and reply with a letter. Below it the highest-scoring
+   one is taken, and you are told which and what the others scored. Either way it is at
+   most one more wait.
+
+Then the CV is rendered, checked, and only then sent. **PDF only** — the .docx is an
+intermediate and is never delivered. It arrives in Telegram as a file, and lands in the
+private bank at `cv/YYYY-MM-DD-company-title.pdf`.
+
+**A model chooses the words; code chooses the layout.** Section placement, project order
+per track, the role-title fallbacks, US Letter, 0.75in margins, Calibri, the teal accents
+and the right-aligned tab stop at 10080 twips all live in `cv/build-cv.js` and `cvbuild.py`,
+where nothing a model returns can move them. `docx` builds the file, LibreOffice headless
+converts it, and `pdftoppm` renders the pages.
+
+**Nothing ships unlooked-at.** Every build renders the PDF to JPEG at 90dpi and measures
+the result: page count, embedded fonts, and — the one that matters — the actual glyph
+position of every date and location, straight out of the PDF, checked against the right
+margin to within 8 points. A silently broken tab stop produces a CV with the dates in the
+wrong place, and it looks perfectly fine to the code that made it. A build that fails its
+checks is **not sent**; you get the list of what failed instead, and the PDF is still kept
+in the bank so you can see it.
+
+**The CV's text is not printed into the Actions log.** This repo is public and so is its
+log; the bullets come out of the private bank. The log gets the measurements and the page
+*structure* — headings, entry headers, bullet counts — which is what catches a layout
+break. The pages themselves come to you on Telegram with the PDF. When something needs
+diagnosing, run the workflow by hand with **cv_debug** ticked: that one run prints the full
+text and keeps the page images as an artifact.
+
+**The honesty rule, extended.** Phase 1's version: a gap you didn't answer produces no
+bullet. This phase's version: every number in a bullet must already appear in the bank, the
+base CV, or your own answers, and the wording has to be traceable to one of them. The
+posting is never evidence. A bullet that fails is dropped from the CV and listed in the
+packet, because a missing bullet is visible the moment you open the PDF and an invented one
+is not. The same screen runs again before anything reaches the bank — a fabrication on one
+CV is one bad application, and the same fabrication promoted into the bank is every
+application after it.
+
+**Bullet bank write-back is autonomous**, one commit per role, no approval. It runs only
+after a CV that passed its checks. New bullets from your answers always go back; a
+tailored revision is promoted only if it clears all four of the skill's tests, and is
+logged as a job-specific variant if it doesn't. A bullet cut on three separate roles is
+retired automatically — that count is arithmetic this system keeps, not something a model
+has to remember. Every pass bumps `Last updated:` and writes one CHANGE LOG row per change.
+
+**The CV skeleton** (who, where, when, and the section structure) is `cv-base.json`. The
+copy in the private bank wins; the one in this repo is the seed it is created from on the
+first build. Edit the bank's copy in the GitHub web UI to add locations on roles, degree
+details, or any bullet from your current CV you want kept as a starting point.
+
+**Not in this phase.** Cover letters are Phase 3, on request via `/cover <id>`, and
+autonomous submission is Phase 4. The hiring-manager outreach email the skill describes is
+out of scope entirely.
 
 ## Reviewing what got thrown away
 
@@ -254,8 +317,10 @@ anywhere other than markets and the CSM track, the radar is the one that's wrong
 ```
 python tests/test_scoring.py    # pure functions: weighted total, flags, title gate, location, dedupe
 python tests/test_apply.py      # comp gate, answer handling, the apply state machine across ticks
+python tests/test_cv.py         # layout policy, the honesty screen, the review gate, bank write-back
 node tests/test_worker.mjs      # the Cloudflare relay's two guards
 python tests/preview_messages.py # print every bot message as Telegram renders it (no asserts)
+python tests/test_cv_render.py --install  # the real render: docx -> PDF -> JPEG, measured
 python scan.py --selftest       # replay stored dimension scores through the engine, offline
 python scan.py --dry            # full pipeline, no Claude calls
 python applyq.py --selftest     # apply-queue pure functions, offline
@@ -268,6 +333,13 @@ can't spend tokens producing wrong scores. Two of them exist specifically to sto
 mistakes coming back: one asserts that no title band changes a score (the cap engine stays
 dead) and one asserts the title gate still admits the Strategy & Operations wordings the
 market actually uses.
+
+`test_cv_render.py` is the odd one out: it needs LibreOffice, poppler and the Carlito font,
+which is two minutes of apt, so it is not in the 15-minute tick. It runs on push instead,
+in the **CV render smoke** workflow, on any change that can move the layout — and it leaves
+the rendered pages behind as a run artifact, because the last check on a CV is a person
+looking at one. It also renders a deliberately bad page, so the checks are known to fail on
+something rather than merely known to pass.
 
 ## Setup / secrets
 

@@ -1,0 +1,101 @@
+{
+  "_readme": [
+    "The CV skeleton: who Tom is, where he worked, when, and what the sections are.",
+    "Facts only. No bullet text lives here by default -- bullets come from the bullet bank,",
+    "which is the master library, and are chosen per role by the tailoring step.",
+    "",
+    "This copy is the seed. The live copy is cv-base.json in the private tom-bullet-bank",
+    "repo, and it wins whenever it exists: edit that one, not this one. The first CV build",
+    "copies this file across and sends Tom the link.",
+    "",
+    "Fields on an entry: left (bold, e.g. company), right (right-aligned, e.g. location),",
+    "sub_left (italic, e.g. job title), sub_right (right-aligned, e.g. dates), bullets []."
+  ],
+
+  "theme": {
+    "font": "Calibri",
+    "accent": "1F6F78"
+  },
+
+  "name": "Tom Norton",
+
+  "contact": [
+    { "text": "Barcelona, Spain" },
+    { "text": "tp.norton@pm.me" },
+    { "text": "linkedin.com/in/tom-p-norton",
+      "href": "https://www.linkedin.com/in/tom-p-norton/" }
+  ],
+
+  "education": [
+    {
+      "id": "edu-esade",
+      "left": "ESADE Business School",
+      "right": "Barcelona, Spain",
+      "sub_left": "Master of Business Administration",
+      "sub_right": "2025 - 2026",
+      "bullets": []
+    }
+  ],
+
+  "experience": [
+    {
+      "id": "navex",
+      "left": "NAVEX",
+      "right": "",
+      "sub_left": "Customer Success Manager",
+      "sub_right": "Dec 2021 - Aug 2025",
+      "bullets": []
+    },
+    {
+      "id": "lexisnexis-corp",
+      "left": "LexisNexis",
+      "right": "",
+      "sub_left": "Account Manager, Corporate Legal",
+      "sub_right": "Jun 2016 - Dec 2021",
+      "bullets": []
+    },
+    {
+      "id": "lexisnexis-print",
+      "left": "LexisNexis",
+      "right": "",
+      "sub_left": "Account Manager, Print & Digital",
+      "sub_right": "Jun 2014 - Jun 2016",
+      "bullets": []
+    }
+  ],
+
+  "projects": {
+    "factorial": {
+      "id": "factorial",
+      "left": "Factorial - GTM Funnel and Sales Capacity Model",
+      "right": "ESADE case competition",
+      "sub_left": "",
+      "sub_right": "",
+      "bullets": []
+    },
+    "debic": {
+      "id": "debic",
+      "left": "FrieslandCampina / Debic - Lead Scoring and CRM Foundation",
+      "right": "ESADE master project",
+      "sub_left": "",
+      "sub_right": "",
+      "bullets": []
+    },
+    "gtm-health": {
+      "id": "gtm-health",
+      "left": "GTM Health Diagnostic",
+      "right": "Personal project",
+      "sub_left": "",
+      "sub_right": "",
+      "bullets": []
+    },
+    "handoff": {
+      "id": "handoff",
+      "left": "Sales-to-CS Handoff Automation",
+      "right": "Personal project",
+      "sub_left": "",
+      "sub_right": "",
+      "bullets": []
+    }
+  }
+}

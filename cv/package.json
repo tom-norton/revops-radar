@@ -1,0 +1,10 @@
+{
+  "name": "revops-radar-cv",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Renders one CV spec into a .docx. Layout lives here; content comes in on stdin.",
+  "main": "build-cv.js",
+  "dependencies": {
+    "docx": "9.5.1"
+  }
+}

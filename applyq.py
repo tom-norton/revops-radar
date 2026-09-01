@@ -16,6 +16,12 @@ Flow, one role at a time:
                          every gap the answer bank can't already answer)
     -> packet           (salary research if he asked for it; new bullets drafted
                          strictly from his answers)
+    -> cv               (company brief, then the tailoring pass: title, summary
+                         variations, bullet revisions, skills line)
+    -> pick             (ONE message: A/B/C summary variations, but only on a role
+                         scoring VARIATION_REVIEW_MIN_SCORE or better; below that the
+                         strongest is picked here and the diff is sent for information)
+                        then render -> verify -> PDF to Telegram -> bank write-back
 
 Why a state machine and not a script: a gap interview has no timeout. Tom answers
 when he answers, which may be tomorrow. A GitHub Actions job cannot sit and wait
@@ -58,6 +64,8 @@ from datetime import datetime, timezone
 import requests
 
 import scan
+import bankwrite
+import cvbuild
 
 # ---------------------------------------------------------------- config
 
@@ -92,6 +100,17 @@ AUDIT_EFFORT = "medium"
 # model. It is never allowed to write anything -- see split_is_sane().
 SPLIT_MODEL = "claude-haiku-4-5"
 SPLIT_MAX_TOKENS = 2000
+# Phase 2. The brief and the tailoring pass are both judgement calls -- what a company is
+# actually trying to do next year, and which of Tom's bullets earns its line on the page --
+# so both stay on Opus. The bank write-back decision is the four-part promotion test, which
+# is likewise a judgement, but over a much smaller input.
+BRIEF_MODEL = "claude-opus-5"
+BRIEF_MAX_TOKENS = 4000
+BRIEF_MAX_SEARCHES = 6
+TAILOR_MODEL = "claude-opus-5"
+TAILOR_MAX_TOKENS = 12000
+BANKWRITE_MODEL = "claude-opus-5"
+BANKWRITE_MAX_TOKENS = 4000
 # Telegram allows getUpdates OR a webhook, never both: once a webhook is registered,
 # getUpdates returns 409 and polling is dead. So the message can arrive two ways.
 #
@@ -123,6 +142,19 @@ COMP_RISK_MARGIN = 0.10
 # A stage that keeps failing is dropped rather than retried into the ground. Three ticks
 # is 45 minutes of transient trouble tolerated; past that it is not transient.
 MAX_STAGE_RETRIES = 3
+# The variation review gate. At or above this radar score Tom picks the summary himself
+# from A/B/C; below it the highest-scoring variation is taken and he is shown what changed,
+# for information only. It is a named constant because it is a volume dial, not a rule:
+# every review is another round trip, and a round trip costs a cron firing. Move it up when
+# the queue is busy, down when he wants a say on more of them.
+VARIATION_REVIEW_MIN_SCORE = 7.5
+# Summary variations, per the skill's Step 4c: canonical-tight, role-forward,
+# company-forward.
+VARIATION_LABELS = ["A", "B", "C"]
+# The pick message carries three summaries, so each one gets a real share of the screen
+# rather than the one-line treatment a question gets.
+SUMMARY_CHARS = 460
+
 # At most this many gaps go to interview per role. The skill's own cap. More than three
 # questions and the phone stops being the right place to answer them.
 MAX_GAP_QUESTIONS = 3
@@ -143,7 +175,11 @@ NO_MATERIAL = re.compile(r"^\s*(no|none|nope|nothing|n/?a|skip|no meaningful exp
 # as a single reply. GitHub's cron is the bottleneck (it delivered 4 of an expected 60 runs
 # in the 15 hours after launch, with gaps up to 5h45m), and each extra turn costs another
 # one of those. Five turns at that rate is a day per application.
-STAGES = ["audit", "ask", "packet", "done"]
+STAGES = ["audit", "ask", "packet", "cv", "pick", "done"]
+
+# Stages where the run is waiting on Tom and there is no point advancing without him. The
+# hold-open loop in tick() watches these, and only these.
+WAITING_STAGES = ("ask", "pick")
 
 HELP = (
     "RevOps Radar apply queue\n\n"
@@ -257,6 +293,37 @@ class Telegram:
                 if html:
                     print("  formatted send rejected; retrying as plain text")
                 self._call("sendMessage", text=strip_tags(chunk), **kw)
+
+    def send_document(self, path, caption=""):
+        """Upload a file to the chat. This is how the finished CV reaches Tom: he reads
+        everything on a phone, and a link into a private repo is a login and two taps before
+        he can see whether the dates are in the right place.
+
+        Returns True when Telegram accepted it. A failure here is not fatal -- the PDF is
+        already committed to the bank -- but it is loud, because a CV he never received is
+        indistinguishable from one that was never built."""
+        if not self.enabled:
+            print(f"  [telegram document] {path}")
+            return False
+        if self.dry:
+            print(f"  [telegram document] {path}")
+            return True
+        try:
+            with open(path, "rb") as f:
+                r = requests.post(
+                    TELEGRAM_API.format(token=self.token, method="sendDocument"),
+                    data={"chat_id": self.chat_id, "caption": (caption or "")[:1000],
+                          "parse_mode": "HTML"},
+                    files={"document": (os.path.basename(path), f, "application/pdf")},
+                    timeout=120)
+            data = r.json()
+            if not data.get("ok"):
+                print(f"  telegram sendDocument not ok: {str(data)[:200]}")
+                return False
+            return True
+        except Exception as e:
+            print(f"  telegram sendDocument failed: {e}")
+            return False
 
     def webhook_active(self):
         """True when a webhook is registered on this bot.
@@ -388,6 +455,14 @@ class Bank:
         if cur and not cur.endswith("\n"):
             cur += "\n"
         self.write(rel, cur + text)
+
+    def write_bytes(self, rel, data):
+        """For the CV PDF. The bank is where the artifacts live, and a PDF is the one
+        artifact here that is not text."""
+        p = os.path.join(self.path, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(data)
 
     def load_state(self):
         try:
@@ -944,6 +1019,422 @@ def draft_bullets(api_key, job, track, answered):
     return scan._extract_json(text)
 
 
+# ---------------------------------------------------------------- company brief (Step 2)
+
+BRIEF_SYSTEM = """You are writing Step 2 of Tom Norton's job-application-workflow: a short \
+strategic brief on one company. Its only job is to make the CV summary sharper, so it is \
+about where the company is going, not what it does.
+
+Use web search, at most {max_searches} searches, then stop. Priority order: company blog, \
+press releases and announcements from the last six months; the careers page and the "why \
+we're hiring" language in the posting itself; leadership posts; funding or earnings news; \
+product launches, new markets, new pricing; culture signals from team pages.
+
+Rules that decide whether this is worth anything:
+- Every priority and every challenge carries the evidence it came from. A priority you \
+cannot point at is a guess, and a guess in a CV summary is a question Tom cannot answer in \
+the interview.
+- Cultural signals are specific or they are omitted. "They publish a customer-facing \
+postmortem after every outage" is a signal. "They value innovation" is filler.
+- If the search turns up little, say so. A thin brief is a fact about the company's \
+public footprint, and inventing a strategy to fill the space is worse than an empty field.
+
+When you have finished searching, answer with ONLY a JSON object and nothing else:
+{{"priorities": [{{"priority": "<one line>", "evidence": "<source and what it said>"}}],
+  "challenges": [{{"challenge": "<one line>", "evidence": "<source>"}}],
+  "why_hiring": "<2-3 sentences connecting the role to those priorities>",
+  "culture": ["<specific signal>"],
+  "visa_note": "<sponsorship track record, or 'unknown'>",
+  "thin": true | false}}
+
+At most three priorities, two challenges, three culture signals. `thin` is true when the \
+search did not find enough to say anything useful."""
+
+
+def research_brief(api_key, job):
+    user = (f"Company: {job.get('company') or 'not named in the posting'}\n"
+            f"Role: {job.get('title')}\n"
+            f"Location: {job.get('location')}  Market: {job.get('market')}\n\n"
+            f"Posting:\n{scan.sample_desc(job.get('description'), 4000)}")
+    tools = [{"type": "web_search_20260209", "name": "web_search",
+              "max_uses": BRIEF_MAX_SEARCHES}]
+    text = claude_server_tool_call(api_key, BRIEF_MODEL,
+                                   BRIEF_SYSTEM.format(max_searches=BRIEF_MAX_SEARCHES),
+                                   user, BRIEF_MAX_TOKENS, tools)
+    return scan._extract_json(text)
+
+
+def brief_block(brief):
+    """The brief as the tailoring call sees it. Empty when there is no brief, rather than a
+    heading over nothing -- a section header with nothing under it reads to a model as
+    something it should fill in."""
+    if not brief or brief.get("thin"):
+        return ""
+    L = []
+    for p in (brief.get("priorities") or [])[:3]:
+        L.append(f"- PRIORITY: {p.get('priority')} (evidence: {p.get('evidence')})")
+    for c in (brief.get("challenges") or [])[:2]:
+        L.append(f"- CHALLENGE: {c.get('challenge')} (evidence: {c.get('evidence')})")
+    if brief.get("why_hiring"):
+        L.append(f"- WHY THIS ROLE EXISTS: {brief['why_hiring']}")
+    for c in (brief.get("culture") or [])[:3]:
+        L.append(f"- CULTURE: {c}")
+    return "\n".join(L)
+
+
+# ---------------------------------------------------------------- tailoring (Step 4)
+
+TAILOR_SYSTEM = """You are running Steps 4b-4e of Tom Norton's job-application-workflow: \
+turning an already-completed bullet audit into the actual contents of one tailored CV.
+
+You choose the WORDS. You do not choose the layout: section order, project order, page \
+setup, fonts and the role-title fallback are all decided in code from the track, and \
+nothing you return can change them.
+
+WHAT YOU ARE GIVEN
+The audit's per-bullet decisions (KEEP / KEEP+KEY / REVISE / REVISE+KEY / CUT / PROMOTE), \
+the bullet bank those IDs refer to, the CV skeleton with its entry IDs, any bullets already \
+drafted from Tom's own interview answers, and a company brief if one was findable.
+
+BULLETS
+Place every surviving bullet against the skeleton entry it belongs to, using entry_id. \
+KEEP means the bank's text, unchanged. REVISE means keyword polish and re-angling of the \
+bank's text, never a new claim. CUT means it does not appear. New bullets from the \
+interview go on the role or project they actually happened at.
+
+THE HARD LIMIT ON REVISION: every fact, tool, scale and number in a bullet you return must \
+already be in the bank's text for that bullet, in the skeleton's own text, or in a drafted \
+bullet. The job posting is not evidence. It tells you what to look for; only Tom's history \
+says what he did. A revision that adds a number the source did not have is discarded in \
+code before it reaches the page, so writing one costs the bullet its place on the CV.
+
+Aim for 2-3 KEY bullets, first in their entry, closest to this role's core responsibility.
+
+SUMMARY -- three variations, scored
+Start from the bank's canonical summary for this track (SUM-ANALYTICS / SUM-BUILDER / \
+SUM-CS). Do not write from a blank page: those are tuned and rebuilding them loses the \
+tuning. Three variations, all 3-4 sentences and none longer than will fit four printed \
+lines:
+  A. Canonical-tight -- the bank summary with keyword swaps and light phrasing edits. The \
+floor, and often the right answer.
+  B. Role-forward -- resequenced to lead with this JD's core function.
+  C. Company-forward -- leads with alignment to a priority from the company brief. If \
+there is no brief, make C lead with the JD's stated mission instead and say so in `changed`.
+Score each out of 10 for recruiter impact, with a one-line reason and a one-line note on \
+what it changed from the canonical. SCORE HONESTLY AND MAKE THEM DIFFER. Three 8/10s is \
+not a review, it is a shrug.
+
+SKILLS
+5-7 skills, most relevant first, separated by " | ". Only skills Tom actually has.
+
+STYLE, non-negotiable
+No first person. Bullets start with a past-tense verb. No em dashes. No "leverage", \
+"spearheaded", "utilised", "robust", "seamless", "orchestrated". No negative parallelism \
+("not X, but Y"). No placeholder metrics, ever. Plain and short beats impressive: where an \
+answer has no number, write the bullet without one rather than reaching for a vague \
+quantifier.
+
+`role_title_usable` is false only when the posting's title would be embarrassing or \
+meaningless on a CV -- internal jargon, a made-up seniority ladder, or nothing at all. A \
+plain, ordinary title is usable even if it is not the exact wording Tom would have picked."""
+
+TAILOR_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "role_title_usable": {"type": "boolean"},
+        "entries": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "string"},
+                "bullets": {"type": "array", "items": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"},
+                                   "source": {"type": "string"},
+                                   "key": {"type": "boolean"}},
+                    "required": ["text", "source", "key"],
+                    "additionalProperties": False}},
+            },
+            "required": ["entry_id", "bullets"], "additionalProperties": False}},
+        "summaries": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"label": {"type": "string", "enum": ["A", "B", "C"]},
+                           "angle": {"type": "string"},
+                           "score": {"type": "number"},
+                           "why": {"type": "string"},
+                           "changed": {"type": "string"},
+                           "text": {"type": "string"}},
+            "required": ["label", "angle", "score", "why", "changed", "text"],
+            "additionalProperties": False}},
+        "skills": {"type": "string"},
+        "keywords": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"keyword": {"type": "string"},
+                           "status": {"type": "string",
+                                      "enum": ["Present", "Addressable",
+                                               "Not addressable"]}},
+            "required": ["keyword", "status"], "additionalProperties": False}},
+        "changes": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"section": {"type": "string"}, "original": {"type": "string"},
+                           "revised": {"type": "string"}, "keywords": {"type": "string"},
+                           "evidence": {"type": "string"}},
+            "required": ["section", "original", "revised", "keywords", "evidence"],
+            "additionalProperties": False}},
+    },
+    "required": ["role_title_usable", "entries", "summaries", "skills", "keywords",
+                 "changes"],
+    "additionalProperties": False,
+}
+
+
+def skeleton_block(base):
+    """The CV skeleton as the tailoring call sees it: entry IDs and what each one is, so a
+    bullet has somewhere to be placed. Bullet text already in the skeleton travels too --
+    it is part of what a revision is allowed to be made of."""
+    idx = cvbuild.entry_index(base)
+    L = []
+    for eid in cvbuild.entry_ids(base):
+        e = idx.get(eid) or {}
+        head = " ".join(x for x in [e.get("left"), e.get("sub_left"), e.get("sub_right")]
+                        if x)
+        L.append(f"- entry_id `{eid}`: {head}")
+        for b in (e.get("bullets") or []):
+            L.append(f"    (already on the base CV) {b}")
+    return "\n".join(L)
+
+
+def tailor_cv(api_key, job, audit, brief, base, bank_md, drafts):
+    drafted = [b.get("text") for b in ((drafts or {}).get("bullets") or [])
+               if (b.get("text") or "").strip()]
+    decisions = "\n".join(
+        f"- {b.get('bank_id') or '(new)'}: {b.get('decision')} -- {b.get('text_start')}"
+        for b in (audit.get("bullets") or []))
+    parts = [
+        f"=== POSTING ===\nTitle: {job.get('title')}\n"
+        f"Company: {job.get('company') or '?'}\nMarket: {job.get('market')}\n\n"
+        f"{scan.sample_desc(job.get('description'), 6000)}",
+        f"=== TRACK (decided already, do not revisit) ===\n{audit.get('track')} -- "
+        f"{audit.get('track_rationale', '')}",
+        f"=== AUDIT DECISIONS ===\n{decisions or '(none)'}",
+        f"=== BULLET BANK ===\n{bank_md or '(empty)'}",
+        f"=== CV SKELETON (place bullets against these entry IDs) ===\n"
+        f"{skeleton_block(base)}",
+    ]
+    if drafted:
+        parts.append("=== NEW BULLETS FROM TOM'S OWN INTERVIEW ANSWERS ===\n"
+                     + "\n".join(f"- {d}" for d in drafted))
+    block = brief_block(brief)
+    parts.append(f"=== COMPANY BRIEF ===\n{block}" if block
+                 else "=== COMPANY BRIEF ===\n(none found; variation C leads with the "
+                      "posting's own stated mission)")
+    text = scan._claude_call(
+        api_key, TAILOR_MODEL, TAILOR_SYSTEM, "\n\n".join(parts), TAILOR_MAX_TOKENS,
+        extra={"output_config": {"effort": AUDIT_EFFORT,
+                                 "format": {"type": "json_schema",
+                                            "schema": TAILOR_SCHEMA}}})
+    return scan._extract_json(text)
+
+
+def screened_entries(tailored, base, corpus):
+    """(bullets_by_entry, rejected). Every bullet the tailoring call produced goes through
+    cvbuild's honesty screen before it can reach the page, and an unknown entry_id is
+    dropped rather than guessed at."""
+    known = set(cvbuild.entry_ids(base))
+    by_entry, rejected = {}, []
+    for e in (tailored.get("entries") or []):
+        eid = (e.get("entry_id") or "").strip()
+        if eid not in known:
+            for b in (e.get("bullets") or []):
+                rejected.append((b.get("text", ""), f"unknown entry_id {eid!r}"))
+            continue
+        texts = [b.get("text", "") for b in (e.get("bullets") or [])]
+        kept, bad = cvbuild.screen_bullets(texts, corpus)
+        if kept:
+            by_entry.setdefault(eid, []).extend(kept)
+        rejected += bad
+    return by_entry, rejected
+
+
+def summaries_of(tailored):
+    """Variations in label order, highest score first among equals. Anything without text
+    is dropped: an empty variation on a phone is a letter Tom can pick that does nothing."""
+    out = [s for s in (tailored.get("summaries") or []) if (s.get("text") or "").strip()]
+    order = {l: i for i, l in enumerate(VARIATION_LABELS)}
+    out.sort(key=lambda s: order.get(s.get("label"), 9))
+    return out
+
+
+def best_summary(summaries):
+    """The one the agent picks when the score is below the review gate. Ties break towards
+    A, because A is the bank canonical with light edits and the canonical is the tuned
+    version -- a tie is not a reason to move away from it."""
+    if not summaries:
+        return None
+    order = {l: i for i, l in enumerate(VARIATION_LABELS)}
+    return sorted(summaries, key=lambda s: (-float(s.get("score") or 0),
+                                            order.get(s.get("label"), 9)))[0]
+
+
+def format_variations(summaries, job, audit):
+    """The one round trip Phase 2 gets. Three summaries is already a lot of text for a
+    phone, so everything except the summaries themselves is a single dim line."""
+    out = [job_line(job, audit), "", "<i>Pick a summary. Everything else is decided.</i>", ""]
+    for s in summaries:
+        score = float(s.get("score") or 0)
+        out.append(f"<b>{esc(s.get('label'))}</b>  {esc(clip(s.get('angle'), 34))} "
+                   f"· <b>{score:g}/10</b>")
+        out.append(esc(clip(s.get("text"), SUMMARY_CHARS)))
+        if s.get("changed"):
+            out.append(f"<i>{esc(clip(s.get('changed'), 90))}</i>")
+        out.append("")
+    out.append("<i>Reply with a letter.</i>")
+    return "\n".join(out)
+
+
+def format_auto_pick(chosen, summaries, job, audit):
+    """Below the gate, no question is asked. The message still has to say which one was
+    taken and what the alternatives scored, because a pick nobody sees is a pick nobody can
+    disagree with."""
+    others = " · ".join(f"{s.get('label')} {float(s.get('score') or 0):g}"
+                        for s in summaries if s.get("label") != chosen.get("label"))
+    out = [job_line(job, audit), "",
+           f"<b>Summary {esc(chosen.get('label'))}</b> "
+           f"· {float(chosen.get('score') or 0):g}/10 · "
+           f"{esc(clip(chosen.get('angle'), 30))}", "",
+           esc(clip(chosen.get("text"), SUMMARY_CHARS))]
+    if others:
+        out += ["", f"<i>Picked for you, below the {VARIATION_REVIEW_MIN_SCORE} review "
+                    f"line. Also scored: {esc(others)}.</i>"]
+    return "\n".join(out)
+
+
+def resolve_pick(text, summaries):
+    """A letter, a number, or the word. Anything unrecognised means the highest score,
+    because a role does not stall on an ambiguous reply."""
+    t = (text or "").strip().lower()
+    m = re.match(r"^\s*([abc])\b", t) or re.match(r"^\s*([123])\b", t)
+    if m:
+        tok = m.group(1)
+        label = VARIATION_LABELS[int(tok) - 1] if tok.isdigit() else tok.upper()
+        for s in summaries:
+            if s.get("label") == label:
+                return s, True
+    return best_summary(summaries), False
+
+
+# ---------------------------------------------------------------- bank write-back (Step 9)
+
+BANKWRITE_SYSTEM = """You are running Step 9a of Tom Norton's job-application-workflow: \
+deciding what, if anything, from this application belongs back in the permanent bullet bank.
+
+THE DEFAULT IS NO. Most tailored rewrites are job-specific and must not touch the bank. A \
+revision is promoted only if it would improve the bullet for MOST FUTURE ROLES.
+
+All four tests, and failing any one means it is not promoted:
+1. Portability. Strip every reference to this company, this posting's vocabulary and this \
+role's title. Is what remains still better than the current canonical? If the improvement \
+evaporates, it was tailoring.
+2. New substance. Does it add a real fact, metric, scope detail or outcome the canonical \
+lacks? A keyword swap, a synonym or a reorder is not substance.
+3. Cross-track. Would it still be the version to reach for on a role in a different track? \
+If it now reads worse on another track, it is a VARIANT, not a replacement.
+4. Defensibility. Same interview-defensibility bar as the canonical, against the CV, the \
+STAR bank or Tom's own confirmed words.
+
+What always goes back regardless: NEW bullets built from Tom's interview answers that were \
+used on this CV. Those are real experience that existed nowhere before this session.
+
+Anything that fails the test but is still worth having is a VARIANT logged on the existing \
+bullet. Anything that is merely a keyword reshuffle is DISCARDED, not logged -- the bank is \
+a library, not an archive.
+
+Return ONLY JSON:
+{"changes": [{"kind": "PROMOTE" | "ADD" | "VARIANT",
+              "bank_id": "<existing ID, or the ID prefix a new bullet should follow>",
+              "title": "<short title, ADD only>",
+              "text": "<the bullet text>",
+              "tracks": "ANALYTICS" | "BUILDER" | "CS" | "ALL",
+              "competencies": "<comma list>",
+              "why": "<one clause>"}],
+ "didnt_qualify": ["<one clause each for rewrites that read better here but failed>"]}
+
+An empty `changes` list is a normal and correct outcome. Say so rather than finding \
+something."""
+
+
+def decide_bank_changes(api_key, job, audit, used_bullets, drafts, bank_md):
+    drafted = [b.get("text") for b in ((drafts or {}).get("bullets") or [])
+               if (b.get("text") or "").strip()]
+    if not used_bullets and not drafted:
+        return {"changes": [], "didnt_qualify": []}
+    user = (f"Role just applied to: {job.get('title')} at {job.get('company') or '?'}\n"
+            f"Track: {audit.get('track')}\n\n"
+            f"=== BULLETS THAT WENT ON THIS CV ===\n"
+            + "\n".join(f"- {b}" for b in used_bullets)
+            + "\n\n=== NEW BULLETS BUILT FROM TOM'S INTERVIEW ANSWERS ===\n"
+            + ("\n".join(f"- {d}" for d in drafted) or "(none)")
+            + f"\n\n=== THE BANK AS IT STANDS ===\n{bank_md or '(empty)'}")
+    schema = {
+        "type": "object",
+        "properties": {
+            "changes": {"type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["PROMOTE", "ADD", "VARIANT"]},
+                    "bank_id": {"type": "string"}, "title": {"type": "string"},
+                    "text": {"type": "string"}, "tracks": {"type": "string"},
+                    "competencies": {"type": "string"}, "why": {"type": "string"}},
+                "required": ["kind", "bank_id", "title", "text", "tracks",
+                             "competencies", "why"],
+                "additionalProperties": False}},
+            "didnt_qualify": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["changes", "didnt_qualify"], "additionalProperties": False}
+    text = scan._claude_call(
+        api_key, BANKWRITE_MODEL, BANKWRITE_SYSTEM, user, BANKWRITE_MAX_TOKENS,
+        extra={"output_config": {"effort": AUDIT_EFFORT,
+                                 "format": {"type": "json_schema", "schema": schema}}})
+    return scan._extract_json(text)
+
+
+def write_back(bank, state, job, audit, proposed, corpus):
+    """Apply Step 9 to bullet-bank.md. Autonomous: no approval, one commit per role.
+
+    Every proposed change goes through the same honesty screen the CV bullets did. A
+    fabricated bullet on one CV is one bad application; the same bullet promoted into the
+    bank is every application after it."""
+    changes = list((proposed or {}).get("changes") or [])
+    screened, blocked = [], []
+    for ch in changes:
+        text = " ".join(str(ch.get("text") or "").split())
+        bad = cvbuild.invented_numbers(text, corpus)
+        if bad:
+            blocked.append((ch.get("bank_id"), f"numbers not in any source: "
+                                               f"{', '.join(bad)}"))
+        elif cvbuild.untraceable(text, corpus):
+            blocked.append((ch.get("bank_id"), "wording not traceable to a source"))
+        else:
+            screened.append(dict(ch, text=text))
+
+    # Repeated CUTs are a fact this system holds across roles, so the retirement rule is
+    # arithmetic here rather than something a model is asked to remember.
+    counts = state.setdefault("cut_counts", {})
+    for bid in bankwrite.bump_cut_counts(counts, audit):
+        screened.append({"kind": "RETIRE", "bank_id": bid,
+                         "why": "cut on three roles"})
+
+    md = bank.read(BANK_FILE, "")
+    if not md.strip() or not screened:
+        return [], blocked, (proposed or {}).get("didnt_qualify") or []
+    md, applied, skipped = bankwrite.apply_changes(
+        md, screened, today(), company=job.get("company") or "")
+    if applied:
+        bank.write(BANK_FILE, md)
+    for bid, why in skipped:
+        print(f"  bank change skipped [{bid}]: {why}")
+    return applied, blocked, (proposed or {}).get("didnt_qualify") or []
+
+
 # ---------------------------------------------------------------- artifacts
 
 def answer_entries(job, answered, start_n=1):
@@ -1030,9 +1521,252 @@ def packet_markdown(job, state, audit, drafts, salary):
 
     L += ["## Cost", "", "```", json.dumps(state.get("usage") or {}, indent=1), "```", "",
           "---", "",
-          "Phase 1 output. The CV itself is built in Phase 2; these bullets are not on a "
-          "CV yet and are not in the bank yet.", ""]
+          "Everything above is the input to the CV build. A `## CV` section is appended "
+          "below once that has run; until it appears, nothing here is on a CV or in the "
+          "bank.", ""]
     return "\n".join(L)
+
+
+# ---------------------------------------------------------------- the CV build
+
+# Where the render lands in the workspace. The workflow uploads the page images from here
+# as a run artifact, which is the only way to actually look at a CV that was built on a
+# machine nobody is sitting at.
+CV_OUT_DIR = os.environ.get("APPLYQ_CV_OUT", "cv-out")
+CV_DIR = "cv"          # inside the bullet bank
+# This repo is public and so is its Actions log. The CV's text comes out of the private
+# bullet bank, so it is NOT printed by default -- the log gets the measurements and the
+# page structure, which is what catches a layout break, and the pages themselves go to
+# Tom's phone with the PDF. Set on a single run from the workflow's cv_debug input when
+# something needs diagnosing and the text is worth the exposure.
+CV_LOG_TEXT = os.environ.get("APPLYQ_CV_LOG_TEXT", "") == "1"
+
+
+def cv_corpus(bank, base, cur):
+    """Everything a bullet on this CV is allowed to be made of.
+
+    The bank, the skeleton's own bullets, the bullets drafted from Tom's answers, and his
+    answers themselves. Not the posting. The posting says what to look for; it never says
+    what he did, and the moment it counts as evidence the whole honesty rule is gone."""
+    skeleton = " ".join(
+        " ".join(e.get("bullets") or [])
+        for e in ((base.get("education") or []) + (base.get("experience") or [])
+                  + list((base.get("projects") or {}).values())))
+    drafted = " ".join(b.get("text", "")
+                       for b in ((cur.get("drafts") or {}).get("bullets") or []))
+    answers = " ".join(a.get("answer", "") for a in (cur.get("answers") or []))
+    return cvbuild.source_corpus(bank.read(BANK_FILE, ""), skeleton, drafted, answers)
+
+
+def cv_name(job):
+    return (f"{today()}-{slugify(job.get('company') or 'unknown')}-"
+            f"{slugify(job.get('title'))}")
+
+
+def cv_section_markdown(job, cur, chosen, summaries, tailored, rejected, facts, warnings,
+                        bank_applied, blocked, didnt_qualify, pdf_rel, picked_by):
+    L = ["", "---", "", "## CV", "",
+         f"- Built: {now_iso()}",
+         f"- Role title on the CV: **{cur.get('cv_title')}**",
+         f"- PDF: `{pdf_rel}`",
+         f"- Summary: **{chosen.get('label')}** ({float(chosen.get('score') or 0):g}/10, "
+         f"{chosen.get('angle')}) - picked by {picked_by}", ""]
+
+    L += ["### Summary variations", ""]
+    for s in summaries:
+        mark = " **<- used**" if s.get("label") == chosen.get("label") else ""
+        L += [f"**{s.get('label')}. {s.get('angle')} "
+              f"({float(s.get('score') or 0):g}/10)**{mark} - {s.get('why', '')}",
+              f"> {s.get('text', '')}",
+              f"_Changed from canonical: {s.get('changed', '')}_", ""]
+
+    kws = tailored.get("keywords") or []
+    if kws:
+        L += ["### Keyword analysis", "", "| Keyword | Status |", "|---|---|"]
+        L += [f"| {k.get('keyword', '')} | {k.get('status', '')} |" for k in kws]
+        L.append("")
+
+    changes = tailored.get("changes") or []
+    if changes:
+        L += ["### Change log", "",
+              "| # | Section | Original | Revised | Keyword(s) | Evidence source |",
+              "|---|---|---|---|---|---|"]
+        for i, c in enumerate(changes, 1):
+            L.append(f"| {i} | {c.get('section', '')} | {c.get('original', '')} | "
+                     f"{c.get('revised', '')} | {c.get('keywords', '')} | "
+                     f"{c.get('evidence', '')} |")
+        L.append("")
+
+    if rejected:
+        L += ["### Bullets the honesty screen rejected", "",
+              "These did not go on the CV. Each one carried a claim that could not be "
+              "traced back to the bank, the base CV or Tom's own answers.", ""]
+        L += [f"- {why}\n  > {text}" for text, why in rejected]
+        L.append("")
+
+    L += ["### Render check", "", "```",
+          "\n".join(f"{k}: {v}" for k, v in (facts or {}).items()), "```", ""]
+    if warnings:
+        # Warnings ride along rather than blocking the send. An anti-ai.md word that came
+        # out of the bank's own text is worth knowing about and is not worth withholding a
+        # CV over.
+        L += ["Went out with these noted:", ""]
+        L += [f"- {w}" for w in warnings]
+        L.append("")
+
+    L += ["### Bullet bank write-back", ""]
+    if bank_applied:
+        L += [f"- **{kind}** `{bid}`" for bid, kind in bank_applied]
+    else:
+        L.append("Nothing qualified. A session with no bank changes is the normal outcome.")
+    if blocked:
+        L += ["", "Blocked by the honesty screen before they could reach the bank:", ""]
+        L += [f"- `{bid}`: {why}" for bid, why in blocked]
+    if didnt_qualify:
+        L += ["", "Read better here but failed the promotion test:", ""]
+        L += [f"- {x}" for x in didnt_qualify]
+    L.append("")
+    return "\n".join(L)
+
+
+def try_build(state, job, bank, tg, api_key, chosen, picked_by):
+    """build_and_ship, with the same bounded retry the audit gets.
+
+    Rendering shells out to apt, npm, LibreOffice and poppler, so it can fail for reasons
+    that have nothing to do with this role. A blip deserves another tick. A genuinely
+    broken toolchain does not deserve a LibreOffice install every firing forever, with
+    nobody watching, so the retries are counted and the role is dropped loudly."""
+    try:
+        return build_and_ship(state, job, bank, tg, api_key, chosen, picked_by)
+    except Exception as e:
+        cur = state.get("current") or {}
+        n = cur.get("render_failures", 0) + 1
+        cur["render_failures"] = n
+        if n < MAX_STAGE_RETRIES:
+            print(f"  CV build failed ({n}/{MAX_STAGE_RETRIES}): {e}")
+            return False
+        tg.send(f"Gave up building the CV for {job.get('title')}: it failed {n} times.\n"
+                f"Last error: {str(e)[:250]}\n"
+                f"The packet is still in the bank. /apply {cur.get('id')} to try again.")
+        state.setdefault("history", []).append(
+            {"id": cur.get("id"), "title": cur.get("title"),
+             "company": cur.get("company"), "outcome": "render-failed", "at": now_iso(),
+             "packet": cur.get("packet_file"), "error": str(e)[:200]})
+        state["current"] = None
+        return False
+
+
+def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
+    """Assemble, render, check, and only then send. Returns True when the role is finished.
+
+    The order matters and is the whole point of the phase: nothing reaches Tom's phone
+    before the PDF has been rendered to images and measured. A CV with a broken tab stop
+    looks perfect to the code that produced it."""
+    cur = state["current"]
+    tailored = cur.get("tailored") or {}
+    audit = cur.get("audit") or {}
+
+    base, from_bank = cvbuild.load_base(bank)
+    if not from_bank:
+        # First CV ever. Put the skeleton where Tom can edit it and tell him once.
+        cvbuild.seed_base(bank)
+    if cvbuild.is_unedited_seed(base) and not state.get("cv_base_nudged"):
+        state["cv_base_nudged"] = True
+        tg.send("<b>One thing to fill in</b>\n\n"
+                "The CV skeleton is running off the seed: no locations on your roles, and "
+                "no bullets of your own in it. It still builds, it is just thinner than it "
+                "needs to be.\n\n"
+                f'<a href="{cvbuild.BASE_EDIT_URL}">Edit cv-base.json</a> - add the '
+                "location on each role, your degree details, and any bullet from your "
+                "current CV you want kept as a starting point.")
+
+    corpus = cv_corpus(bank, base, cur)
+    by_entry, rejected = screened_entries(tailored, base, corpus)
+    for text, why in rejected:
+        print(f"  bullet rejected ({why}): {text[:70]!r}")
+
+    title = cvbuild.role_title(
+        job.get("title") if tailored.get("role_title_usable") else "",
+        audit.get("track"))
+    cur["cv_title"] = title
+    spec = cvbuild.assemble_spec(base, audit.get("track"), title,
+                                 chosen.get("text"), by_entry, tailored.get("skills"))
+
+    stem = cv_name(job)
+    cvbuild.ensure_toolchain()
+    paths = cvbuild.render(spec, CV_OUT_DIR, stem)
+    problems, warnings, facts = cvbuild.verify(paths, spec)
+    cvbuild.log_render(paths, problems, warnings, facts, spec=spec, verbose=CV_LOG_TEXT)
+
+    # The PDF is committed either way. A CV that failed its checks is still the fastest way
+    # to see what went wrong, and losing it would mean rebuilding to find out.
+    pdf_rel = f"{CV_DIR}/{stem}.pdf"
+    with open(paths["pdf"], "rb") as f:
+        bank.write_bytes(pdf_rel, f.read())
+
+    summaries = cur.get("summaries") or []
+    bank_applied, blocked, didnt_qualify = [], [], []
+    if not problems:
+        # Step 9 runs only on a CV that actually shipped. Promoting a bullet off a build
+        # that failed its checks would put it in the bank on the strength of a page nobody
+        # ever saw.
+        before = usage_snapshot()
+        used = cvbuild.spec_bullets(spec)
+        try:
+            proposed = decide_bank_changes(api_key, job, audit, used,
+                                           cur.get("drafts"), bank.read(BANK_FILE, ""))
+            bank_applied, blocked, didnt_qualify = write_back(
+                bank, state, job, audit, proposed, corpus)
+        except Exception as e:
+            print(f"  bank write-back failed: {e}")
+            blocked = [("(all)", f"write-back call failed: {str(e)[:150]}")]
+        record_usage(cur, "bankwrite", before)
+
+    packet = cur.get("packet_file")
+    if packet:
+        bank.append(f"{PACKET_DIR}/{packet}",
+                    cv_section_markdown(job, cur, chosen, summaries, tailored, rejected,
+                                        facts, warnings, bank_applied, blocked,
+                                        didnt_qualify, pdf_rel, picked_by))
+
+    state.setdefault("history", []).append(
+        {"id": cur["id"], "title": cur.get("title"), "company": cur.get("company"),
+         "outcome": "done" if not problems else "cv-failed", "at": now_iso(),
+         "packet": packet, "cv": pdf_rel, "usage": cur.get("usage") or {}})
+    state["current"] = None
+    state["last_tick"] = now_iso()
+    bank.save_state(state)
+    sha = bank.commit(f"CV: {job.get('title')} at {job.get('company') or '?'}")
+
+    if problems:
+        tg.send("\n".join(
+            [f"⚠ <b>{esc(clip(job.get('title'), 70))}</b>",
+             esc(f"{job.get('company') or '?'} · CV built but did not pass its checks, so "
+                 f"I have not sent it."), ""]
+            + [f"• {esc(clip(p, 150))}" for p in problems[:4]]
+            + ["", f"<i>The PDF and the page images are in the run log and at "
+                   f"<code>{esc(pdf_rel)}</code>.</i>"]))
+        return True
+
+    tally = [f"{len(cvbuild.spec_bullets(spec))} bullets"]
+    if rejected:
+        tally.append(f"{len(rejected)} rejected")
+    if bank_applied:
+        tally.append(f"bank +{len(bank_applied)}")
+    caption = "\n".join([
+        f"✓ <b>{esc(clip(title, 70))}</b>",
+        esc(" · ".join([job.get("company") or "?", audit.get("track") or "",
+                        f"{facts.get('pages', '?')} pages"] + tally).strip(" ·")),
+        f"<i>Summary {esc(chosen.get('label'))} · picked by {esc(picked_by)}</i>"])
+    if not tg.send_document(paths["pdf"], caption):
+        tg.send(caption + f"\n\n<i>Telegram would not take the file. It is at "
+                          f"<code>{esc(pdf_rel)}</code> in the bank.</i>")
+    for w in warnings:
+        print(f"  warn: {w}")
+    if sha:
+        tg.send(f'<a href="https://{BANK_REPO}/commit/{sha}">packet, CV and bank changes</a>')
+    return True
+
 
 
 # ---------------------------------------------------------------- usage accounting
@@ -1134,11 +1868,15 @@ def start_next(state, queue, tg):
     role, and a role that can't be found doesn't wedge the queue behind it."""
     while queue:
         job_id, queue = queue[0], queue[1:]
+        # Only a role that got all the way to a CV is finished. A role that stopped at a
+        # Phase 1 packet is re-runnable on purpose: the answer bank means the interview is
+        # not repeated, so a rerun is one audit call away from the CV it never got.
         done = next((h for h in state.get("history", [])
-                     if h.get("id") == job_id and h.get("outcome") == "done"), None)
+                     if h.get("id") == job_id and h.get("outcome") == "done"
+                     and h.get("cv")), None)
         if done:
-            tg.send(f"{done.get('title') or job_id} already has a packet "
-                    f"({done.get('packet')}). Skipped.")
+            tg.send(f"{done.get('title') or job_id} already has a CV "
+                    f"({done.get('cv')}). Skipped.")
             continue
         job = load_job(job_id)
         if not job:
@@ -1183,9 +1921,11 @@ def migrate_stage(cur, tg):
 def advance(state, job, bank, tg, api_key, answers_text):
     """Push `current` as far as it can go this tick. Returns True when the role finished.
 
-    Three stages, and only one of them ever waits on Tom. That is the point: every wait
+    Five stages, and only two of them ever wait on Tom -- the gap questions, and the
+    summary pick on roles above VARIATION_REVIEW_MIN_SCORE. That is the point: every wait
     costs a cron firing, and cron is delivering a few of those a day rather than the four
-    an hour it was asked for."""
+    an hour it was asked for. Everything else, the company brief and the tailoring pass
+    included, is arranged to run on the near side of a wait."""
     cur = state["current"]
     if migrate_stage(cur, tg):
         answers_text = ""
@@ -1347,40 +2087,113 @@ def advance(state, job, bank, tg, api_key, answers_text):
                            "covered twice.\n\n")
             bank.append(ANSWER_FILE, "\n" + "\n".join(entries))
 
-        name = f"{today()}-{slugify(job.get('company') or 'unknown')}-{slugify(job.get('title'))}.md"
+        name = cv_name(job) + ".md"
         bank.write(f"{PACKET_DIR}/{name}",
                    packet_markdown(job, cur, audit, drafts, cur.get("salary")))
+        cur["packet_file"] = name
+        # Kept for the CV stage: the honesty screen has to know which bullets came out of
+        # Tom's own answers, and a rerun of the drafting call to find out would be a second
+        # Opus call for something already on disk.
+        cur["drafts"] = drafts
 
-        # State moves to done before the commit, so the packet, the answers and the fact
-        # that this role is finished all land in one commit. A crash between two commits
-        # would otherwise leave a packet on disk that the state file says is unfinished.
-        state.setdefault("history", []).append(
-            {"id": cur["id"], "title": cur.get("title"), "company": cur.get("company"),
-             "outcome": "done", "at": now_iso(), "packet": name,
-             "usage": cur.get("usage") or {}})
-        state["current"] = None
+        # The packet lands in its own commit rather than waiting for the CV. It is finished
+        # work and it is the thing a failed CV build falls back to, so it should be in the
+        # bank before anything that can fail runs.
         state["last_tick"] = now_iso()
         bank.save_state(state)
-        sha = bank.commit(f"Apply packet: {job.get('title')} at {job.get('company') or '?'}")
+        bank.commit(f"Apply packet: {job.get('title')} at {job.get('company') or '?'}")
 
         n_new = len((drafts or {}).get("bullets") or [])
         n_drop = len((drafts or {}).get("dropped") or [])
         tally = [f"{n_new} new bullet" + ("" if n_new == 1 else "s")]
         if n_drop:
             tally.append(f"{n_drop} gap" + ("" if n_drop == 1 else "s") + " left open")
-        msg = [f"\u2713 <b>{esc(clip(job.get('title'), 70))}</b>",
-               esc(" · ".join([job.get("company") or "?", audit.get("track") or ""]
-                              + tally).strip(" ·")),
-               "", f"<code>{esc(name)}</code>"]
-        links = []
-        if sha:
-            links.append(f'<a href="https://{BANK_REPO}/commit/{sha}">packet</a>')
-        if job.get("url"):
-            links.append(f'<a href="{esc(job["url"])}">posting</a>')
-        if links:
-            msg.append(" · ".join(links))
-        tg.send("\n".join(msg))
-        return True
+        tg.send("\n".join(
+            [f"<b>{esc(clip(job.get('title'), 70))}</b>",
+             esc(" · ".join([job.get("company") or "?", audit.get("track") or ""]
+                            + tally).strip(" ·")),
+             "", "<i>Packet done. Building the CV.</i>"]))
+        cur["stage"] = "cv"
+        answers_text = ""
+
+    # ---- cv: the company brief, then the tailoring pass. Neither needs Tom, so both run
+    # before the one question this phase asks.
+    if cur["stage"] == "cv":
+        before = usage_snapshot()
+        audit = cur.get("audit") or {}
+        if "brief" not in cur:
+            # A brief that cannot be researched is a thin brief, not a stopped role. The
+            # summary's company-forward variation then leads with the posting's own
+            # mission, and says so.
+            try:
+                cur["brief"] = research_brief(api_key, job)
+            except Exception as e:
+                print(f"  company brief failed: {e}")
+                cur["brief"] = {"thin": True, "error": str(e)[:200]}
+            record_usage(cur, "brief", before)
+
+        before = usage_snapshot()
+        try:
+            cur["tailored"] = tailor_cv(api_key, job, audit, cur.get("brief"),
+                                        cvbuild.load_base(bank)[0],
+                                        bank.read(BANK_FILE, ""), cur.get("drafts"))
+        except Exception as e:
+            n = cur.get("cv_failures", 0) + 1
+            cur["cv_failures"] = n
+            record_usage(cur, "tailor", before)
+            if n < MAX_STAGE_RETRIES:
+                print(f"  tailoring failed ({n}/{MAX_STAGE_RETRIES}): {e}")
+                return False
+            tg.send(f"Gave up on the CV for {job.get('title')}: the tailoring call failed "
+                    f"{n} times.\nLast error: {str(e)[:200]}\n"
+                    f"The packet is still in the bank. /apply {cur['id']} to try again.")
+            state.setdefault("history", []).append(
+                {"id": cur["id"], "title": cur.get("title"),
+                 "company": cur.get("company"), "outcome": "tailor-failed",
+                 "at": now_iso(), "packet": cur.get("packet_file"), "error": str(e)[:200]})
+            state["current"] = None
+            return False
+        cur["cv_failures"] = 0
+        record_usage(cur, "tailor", before)
+
+        summaries = summaries_of(cur["tailored"])
+        cur["summaries"] = summaries
+        if not summaries:
+            tg.send("The tailoring pass returned no usable summary, so the CV would go out "
+                    "with none. Stopping here rather than shipping that.")
+            state.setdefault("history", []).append(
+                {"id": cur["id"], "title": cur.get("title"),
+                 "company": cur.get("company"), "outcome": "no-summary", "at": now_iso(),
+                 "packet": cur.get("packet_file")})
+            state["current"] = None
+            return False
+
+        # The gate. Above the line Tom picks; below it the strongest is taken and he is
+        # shown what was chosen. Either way it is at most one more round trip.
+        score = job.get("score")
+        gated = (score is not None and float(score) >= VARIATION_REVIEW_MIN_SCORE
+                 and len(summaries) > 1)
+        if gated:
+            tg.send(format_variations(summaries, job, audit))
+            cur["asked_at"] = now_iso()
+            cur["stage"] = "pick"
+            return False
+        chosen = best_summary(summaries)
+        tg.send(format_auto_pick(chosen, summaries, job, audit))
+        return try_build(state, job, bank, tg, api_key, chosen, "agent")
+
+    # ---- pick: the second and last round trip, and only on the roles worth one
+    if cur["stage"] == "pick":
+        summaries = cur.get("summaries") or []
+        reply = (answers_text or "").strip()
+        if not reply:
+            return False
+        chosen, recognised = resolve_pick(reply, summaries)
+        if not recognised:
+            tg.send(f"Didn't read that as a letter, so I've taken "
+                    f"<b>{esc(chosen.get('label'))}</b>, the highest scored.")
+        return try_build(state, job, bank, tg, api_key, chosen,
+                         "Tom" if recognised else "agent")
     return False
 
 
@@ -1516,7 +2329,7 @@ def tick(dry=False):
             # Pointless in push mode: his reply arrives as its own run within seconds, and
             # getUpdates would return 409 against a registered webhook anyway.
             while (not finished and not push_mode and state.get("current")
-                   and state["current"].get("stage") == "ask"
+                   and state["current"].get("stage") in WAITING_STAGES
                    and state["current"].get("asked_at")
                    and waited < HOLD_OPEN_SECONDS and not dry):
                 chunk = min(50, HOLD_OPEN_SECONDS - waited)
@@ -1604,6 +2417,21 @@ def cmd_selftest():
     ok("a real answer has material", has_material("Cleaned up 400 accounts") is True)
     ok("firebase object-form queue reads as a list",
        as_id_list({"0": "a", "1": "b"}) == ["a", "b"])
+    ok("the review gate is a named constant at 7.5",
+       VARIATION_REVIEW_MIN_SCORE == 7.5)
+    ok("a tie on the summary score breaks towards the bank canonical",
+       best_summary([{"label": "B", "score": 8, "text": "b"},
+                     {"label": "A", "score": 8, "text": "a"}])["label"] == "A")
+    ok("an invented number never reaches the page",
+       cvbuild.invented_numbers("lifted NRR 14 points", "beat NRR three years") == ["14"])
+    ok("a real number is left alone",
+       cvbuild.invented_numbers("managed 5.2M ARR", "managed a $5.2M ARR book") == [])
+    ok("the CS track moves projects below experience",
+       [x["heading"] for x in cvbuild.assemble_spec(
+           cvbuild.load_base()[0], "CS", "T", "S", {}, "s")["sections"]]
+       == ["EDUCATION", "PROFESSIONAL EXPERIENCE", "PROJECTS & OTHER EXPERIENCE"])
+    ok("an unusable JD title falls back to the track default",
+       cvbuild.role_title("", "BUILDER") == "REVENUE OPERATIONS & GTM SYSTEMS")
     ok("only Tom's chat is read",
        message_texts([{"update_id": 1, "message": {"text": "hi", "chat": {"id": 99}}},
                       {"update_id": 2, "message": {"text": "yes", "chat": {"id": 42}}}],

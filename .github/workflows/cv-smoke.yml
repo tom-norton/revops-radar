@@ -1,0 +1,54 @@
+name: CV render smoke
+
+# The CV render, end to end, on a machine nobody is sitting at.
+#
+# It is not part of the 15-minute apply tick because installing LibreOffice costs two
+# minutes and the tick runs ~96 times a day. It runs here instead, on any change that can
+# move the layout, and it leaves the rendered pages behind as an artifact -- because the
+# failure this guards against is silent. A broken tab stop produces a CV with the dates in
+# the wrong place, and it looks perfectly fine to the code that produced it.
+
+on:
+  push:
+    paths:
+      - "cv/**"
+      - "cvbuild.py"
+      - "cv-base.json"
+      - "tests/test_cv_render.py"
+      - ".github/workflows/cv-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Render and measure
+        # --install pulls LibreOffice, poppler and Carlito, which is Calibri's
+        # metric-compatible stand-in. Without that font the line breaks move and the
+        # two-page target stops meaning anything.
+        run: python tests/test_cv_render.py --install
+        env:
+          # Safe to be loud here: this renders invented content from the test file, not
+          # anything out of the private bank.
+          APPLYQ_CV_LOG_TEXT: "1"
+      - name: The pages themselves
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cv-smoke-pages
+          path: |
+            cv-out/*.jpg
+            cv-out/*.pdf
+          if-no-files-found: error
+          retention-days: 14
