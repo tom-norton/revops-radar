@@ -102,6 +102,9 @@ SPLIT_MAX_TOKENS = 2000
 # Push mode is the one that makes this usable: cron delivered 4 of an expected 60 runs in
 # the 15 hours after launch, and a relayed message starts a run in about a second.
 INBOUND_ENV = "APPLYQ_INBOUND"
+# The chat the relayed message came from. Checked against TELEGRAM_CHAT_ID before the text
+# is believed -- see the intake in tick().
+INBOUND_CHAT_ENV = "APPLYQ_INBOUND_CHAT"
 # After asking, hold the run open this long waiting for a reply. GitHub's cron is the
 # bottleneck, so an answer given while the runner is still alive saves hours. Telegram caps
 # one long poll at 50s, so this is several polls back to back.
@@ -1361,11 +1364,23 @@ def tick(dry=False):
     inbound = os.environ.get(INBOUND_ENV, "").strip()
     if inbound:
         # Push mode: the relay already has the message, so there is nothing to poll for and
-        # nothing to acknowledge. The chat it came from was checked at the relay, against
-        # the same chat id, before it was allowed to become a workflow input.
+        # nothing to acknowledge.
+        #
+        # The sender still has to be checked here. The relay authenticates Telegram, not
+        # Tom: a bot is findable by its username, so anyone can message it, and Telegram
+        # relays every one of those with the same valid secret. Poll mode has always
+        # filtered on chat id in message_texts(); push mode needs the same gate, and this
+        # is the only place that holds the real chat id. Without it a stranger's message
+        # becomes Tom's answer, and lands in a resume bullet with his name on it.
         push_mode = True
-        texts = [(0, inbound)]
-        print(f"  inbound (push): {inbound[:80]!r}")
+        want_chat = str(os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
+        from_chat = str(os.environ.get(INBOUND_CHAT_ENV, "")).strip()
+        if not want_chat or from_chat != want_chat:
+            print(f"  inbound from chat {from_chat or '(none)'} is not Tom's; ignoring")
+            texts = []
+        else:
+            texts = [(0, inbound)]
+            print(f"  inbound (push): {inbound[:80]!r}")
     elif tg.enabled and not dry and tg.webhook_active():
         # A webhook is registered, so this is a scheduled tick in push mode. There is
         # nothing to read: Telegram is delivering to the relay, and getUpdates would 409.

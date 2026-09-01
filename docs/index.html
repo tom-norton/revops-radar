@@ -137,7 +137,7 @@ const FIREBASE_STATE_URL = "https://revops-radar-2822a-default-rtdb.europe-west1
 // Apply just sits in the queue until GitHub's scheduler gets round to firing -- measured at
 // 4 of an expected 60 firings over 15 hours, with gaps up to 5h45m. Set this to the
 // Worker's URL once deployed; empty means the queue still works, just slowly.
-const RELAY_URL = "";
+const RELAY_URL = "https://revops-relay.tomnorton92.workers.dev";
 function pokeRelay(){
   if(!RELAY_URL) return;
   // Fire and forget. The queue write to Firebase is what actually matters; this only

@@ -71,4 +71,7 @@ jobs:
           # along. When it is set, applyq.py uses it instead of polling -- a webhook and
           # getUpdates cannot both be active on one bot.
           APPLYQ_INBOUND: ${{ inputs.message }}
+          # Checked against TELEGRAM_CHAT_ID before the message is believed. The relay
+          # authenticates Telegram, not Tom, and anyone can message a bot.
+          APPLYQ_INBOUND_CHAT: ${{ inputs.chat_id }}
         run: python applyq.py ${{ inputs.dry && '--dry' || '' }}

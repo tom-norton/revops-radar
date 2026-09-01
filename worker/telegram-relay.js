@@ -73,6 +73,12 @@ export default {
       // Telegram echoes the secret set via setWebhook. Without this check anyone who
       // learns the URL could start runs and put words in Tom's mouth, because the message
       // text is passed straight into the workflow as his answer.
+      //
+      // Note what this does and does not prove. It authenticates TELEGRAM, not Tom. A bot
+      // is findable by its username, so anyone can message it, and Telegram relays every
+      // one of those here with this same valid secret. The chat id is forwarded below and
+      // checked against Tom's in applyq.py, which is the only place that holds it. Do not
+      // treat arriving here as evidence the sender is Tom.
       if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.TELEGRAM_SECRET) {
         return new Response("no", { status: 403 });
       }

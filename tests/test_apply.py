@@ -446,6 +446,52 @@ def test_push_mode_takes_the_message_without_polling():
                 os.environ[k] = v
 
 
+def test_a_relayed_message_from_another_chat_is_ignored():
+    """The relay authenticates Telegram, not Tom. A bot is findable by username, so anyone
+    can message it and Telegram relays every one of those with a valid secret. Poll mode
+    has always filtered on chat id; push mode has to as well, or a stranger's words become
+    Tom's answer and end up in a bullet with his name on it."""
+    import io as _io, contextlib
+    keep = {k: os.environ.get(k) for k in
+            ("TELEGRAM_CHAT_ID", applyq.INBOUND_ENV, applyq.INBOUND_CHAT_ENV,
+             "BULLET_BANK_PAT", "TELEGRAM_BOT_TOKEN")}
+    try:
+        os.environ["TELEGRAM_CHAT_ID"] = "42"
+        os.environ["TELEGRAM_BOT_TOKEN"] = "x"
+        os.environ["BULLET_BANK_PAT"] = "x"
+        os.environ[applyq.INBOUND_ENV] = "I did all the pipeline work"
+
+        seen = {}
+        # Saved and restored below: these are module globals, and a stub left behind here
+        # silently rewrites how every later test in the file behaves.
+        real = (applyq.Bank, applyq.firebase_state, applyq.handle_commands)
+        applyq.Bank = type("B", (), {
+            "__init__": lambda self, pat, dry=False: None,
+            "clone": lambda self: None,
+            "load_state": lambda self: {"current": None, "history": []},
+            "save_state": lambda self, st: None,
+            "commit": lambda self, m: None,
+        })
+        applyq.firebase_state = lambda *a, **k: {}
+        applyq.handle_commands = lambda texts, state, queue, tg: (
+            seen.update(texts=list(texts)) or (queue, [t for _, t in texts]))
+
+        for chat, expected in (("999", []), ("42", ["I did all the pipeline work"])):
+            os.environ[applyq.INBOUND_CHAT_ENV] = chat
+            seen.clear()
+            buf = _io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                applyq.tick()
+            got = [t for _, t in seen.get("texts", [])]
+            assert got == expected, (chat, got)
+    finally:
+        applyq.Bank, applyq.firebase_state, applyq.handle_commands = real
+        for k, v in keep.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+
 def test_answer_bank_ids_do_not_collide_within_a_day():
     existing = "### [A-%s-01] - x\n" % applyq.datetime.now(
         applyq.timezone.utc).strftime("%Y%m%d")
