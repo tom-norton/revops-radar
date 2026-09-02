@@ -688,10 +688,31 @@ def form_pdf(page, path):
 # page -- is the same for every board and lives above.
 
 
+# A board-hosted Greenhouse posting, and the same application as an embeddable form.
+#
+# Not every employer serves the form at the board URL. Okta's board link 302s to
+# okta.com/company/careers/..., which renders the application in an embed, so a browser
+# sent to the board URL lands on a page with no fields on it at all. The embed endpoint is
+# the same application, is not redirected, and is what the company's own careers page is
+# showing inside itself. So the board URL is tried first and this is the fallback.
+GREENHOUSE_JOB_URL = re.compile(
+    r"^https?://(?:job-)?boards\.greenhouse\.io/(?!embed\b)([\w-]+)/jobs/(\d+)", re.I)
+GREENHOUSE_EMBED = ("https://job-boards.greenhouse.io/embed/job_app?for={slug}"
+                    "&token={job_id}")
+
+
+def greenhouse_embed(url):
+    """The embed form for a board posting, or "" when the URL is not one."""
+    m = GREENHOUSE_JOB_URL.match((url or "").strip())
+    return GREENHOUSE_EMBED.format(slug=m.group(1), job_id=m.group(2)) if m else ""
+
+
 class Greenhouse:
     """Greenhouse's hosted boards (job-boards.greenhouse.io).
 
-    The application form is on the posting's own page, so there is nothing to navigate to.
+    The application form is usually on the posting's own page, so there is usually nothing
+    to navigate to -- and where there is, see greenhouse_embed() above.
+
     The dropdowns are react-select, which means the visible control is a text input with
     `role="combobox"` and the choices exist only while the menu is open; react-select gives
     each option the id `react-select-<field>-option-<n>`, which is what the two methods
@@ -707,16 +728,29 @@ class Greenhouse:
                               r"submitted|we(?:'| ha)ve received your application|"
                               r"thanks for applying)", re.I)
 
+    FORM_READY = "#first_name, input[type=file]"
+
     def open(self, page, url):
-        page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
-        # The form is hydrated after the posting renders, so the wait is on the first field
-        # existing rather than on a network idle that a board with live chat never reaches.
-        try:
-            page.wait_for_selector("#first_name, input[type=file]",
-                                   timeout=BROWSER_TIMEOUT_MS)
-        except Exception:
-            pass
+        if not self._land(page, url):
+            # No fields on the page. Either the employer redirected the board URL to a
+            # careers page that embeds the form, or the posting is gone; the embed
+            # endpoint answers both, because a dead posting has no embed either.
+            embed = greenhouse_embed(url)
+            if embed and embed != url:
+                print(f"  no form at the board URL; trying the embed")
+                self._land(page, embed)
         page.wait_for_timeout(SETTLE_MS)
+
+    def _land(self, page, url):
+        """Navigate, and say whether a form actually turned up. The wait is on the first
+        field existing rather than on a network idle, which a board with a live chat widget
+        on it never reaches."""
+        page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
+        try:
+            page.wait_for_selector(self.FORM_READY, timeout=BROWSER_TIMEOUT_MS)
+            return True
+        except Exception:
+            return False
 
     def _menu_options(self, page, fid):
         return page.eval_on_selector_all(

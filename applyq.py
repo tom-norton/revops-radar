@@ -67,6 +67,7 @@ import scan
 import bankwrite
 import coverletter
 import cvbuild
+import findform
 import submit
 
 # ---------------------------------------------------------------- config
@@ -2730,24 +2731,115 @@ def try_fill(state, job, bank, tg, api_key):
         return True
 
 
+def board_link(found):
+    """The board itself, so a lookup that came back empty can be checked by eye."""
+    ats, slug = found.get("ats"), found.get("slug")
+    if not slug:
+        return ""
+    return {"greenhouse": f"https://job-boards.greenhouse.io/{slug}",
+            "ashby": f"https://jobs.ashbyhq.com/{slug}",
+            "lever": f"https://jobs.lever.co/{slug}"}.get(ats, "")
+
+
+def resolve_form(state, job, tg, url):
+    """(url, ats) for a posting whose own link is not a form, ("" , "") when there is none.
+
+    Every outcome other than a match ends the role here and says why, because each of them
+    means something different to Tom: a board with the role missing is a role that has
+    probably closed, and four cities sharing one title is a choice only he can make."""
+    cur = state["current"]
+    posting = f'<a href="{esc(url)}">the posting</a>' if url else "the posting"
+    try:
+        found = findform.find_form(job)
+    except Exception as e:
+        print(f"  form lookup failed: {e}")
+        found = {"outcome": "no-board", "candidates": []}
+    company = esc(job.get("company") or "?")
+
+    if found.get("outcome") == "found":
+        ats = submit.detect_ats(found["url"])
+        where = esc(f"{found.get('title')} \u00b7 "
+                    + (found.get("location") or "no location given"))
+        if ats:
+            tg.send("\n".join(
+                [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+                 esc(f"{job.get('company') or '?'} \u00b7 the link on the dashboard is not "
+                     f"a form, so I went to their {found.get('ats')} board."), "",
+                 f"<i>Filling this one: {where}</i>"]))
+            return found["url"], ats
+        # Their board is one without a driver. Still a win: a direct link to the real
+        # application beats a LinkedIn page he has to search from.
+        tg.send("\n".join(
+            [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+             esc(f"{job.get('company') or '?'} \u00b7 found the real application, but it "
+                 f"is on {found.get('ats')}, which I cannot fill yet."), "",
+             f'<a href="{esc(found["url"])}">Apply here</a>  <i>({where})</i>', "",
+             "<i>The CV and the letter are in the bank, and the letter's text is in the "
+             "packet for pasting into a box.</i>"]))
+        finish_submission(state, cur, "submit-unsupported",
+                          {"url": found["url"], "ats": found.get("ats")})
+        return "", ""
+
+    if found.get("outcome") == "ambiguous":
+        # Several roles with the same title and nothing to separate them. A form filled
+        # for the wrong city is a wrong application, not a near miss.
+        lines = [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+                 esc(f"{job.get('company') or '?'} \u00b7 their board has "
+                     f"{len(found.get('candidates') or [])} roles with this title, and "
+                     f"nothing to tell me which one is yours."),
+                 ""]
+        lines += [f'\u2022 <a href="{esc(c["url"])}">{esc(clip(c["title"], 50))}</a>  '
+                  f'<i>{esc(c.get("location") or "")}</i>'
+                  for c in (found.get("candidates") or [])[:4]]
+        lines += ["", "<i>Pick one and apply there. Everything is in the bank.</i>"]
+        tg.send("\n".join(lines))
+        finish_submission(state, cur, "submit-ambiguous",
+                          {"candidates": len(found.get("candidates") or [])})
+        return "", ""
+
+    if found.get("outcome") == "gone":
+        # Said carefully. A slug guessed from a company name can land on somebody else's
+        # board, and a role that has merely been retitled looks identical from here to one
+        # that has closed. What is certain is only what is stated: this title is not on
+        # that board.
+        board = board_link(found)
+        tg.send("\n".join(
+            [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+             esc(f"{job.get('company') or '?'} \u00b7 I found a {found.get('ats')} board "
+                 f"under their name with {found.get('board_size')} roles on it, and this "
+                 f"title is not one of them."), "",
+             "<i>Either the role has come down or it is listed under a different name "
+             "there. Nothing was sent.</i>",
+             f'<a href="{esc(board)}">Their board</a>' if board else "",
+             f"{posting} <i>may still be live.</i>" if url else ""]))
+        finish_submission(state, cur, "submit-role-gone", {"url": url})
+        return "", ""
+
+    tg.send("\n".join(
+        [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+         esc(f"{job.get('company') or '?'} \u00b7 the link is not a form and I could not "
+             f"find a board of theirs to look on."), "",
+         f'<a href="{esc(url)}">The posting is here</a>' if url else "",
+         "<i>The CV and the letter are in the bank, and the letter's text is in the packet "
+         "for pasting into a box. I can fill "
+         + esc(", ".join(submit.supported_boards())) + " forms.</i>"]))
+    finish_submission(state, cur, "submit-unsupported", {"url": url})
+    return "", ""
+
+
 def fill_form_stage(state, job, bank, tg, api_key):
     """Read the form, plan every answer, screen the written ones, fill it, print it."""
     cur = state["current"]
     url = job.get("url") or ""
     ats = submit.detect_ats(url)
     if not ats:
-        # Not a failure and not a retry: this board is one nothing here can drive, and
-        # saying so once with the link is more use than three ticks of trying.
-        tg.send("\n".join(
-            [f"<b>{esc(clip(job.get('title'), 60))}</b>",
-             esc(f"{job.get('company') or '?'} \u00b7 this one is not on a board I can "
-                 f"fill."), "",
-             f'<a href="{esc(url)}">The form is here</a>' if url else "",
-             "<i>The CV and the letter are in the bank, and the letter's text is in the "
-             "packet for pasting into a box. I can fill "
-             + esc(", ".join(submit.supported_boards())) + " forms.</i>"]))
-        finish_submission(state, cur, "submit-unsupported", {"url": url})
-        return True
+        # Half the roles on the radar arrive as a LinkedIn or aggregator link, and none of
+        # those is a form. Before giving up, go to the company's own board and look for the
+        # same role on it.
+        url, ats = resolve_form(state, job, tg, url)
+        if not ats:
+            return True
+    cur["form_url"] = url
 
     submit.ensure_browser()
     fields, _name = submit.read_form(url, ats)
@@ -2779,6 +2871,7 @@ def fill_form_stage(state, job, bank, tg, api_key):
     answers = dict(known)
     answers.update(written)
     plan = submit.build_plan(url, ats, fields, answers, files, notes_code)
+    plan["posting_url"] = job.get("url") or ""
     cur["form_rejected"] = rejected
     cur["form_skipped"] = skipped
     cur["form_notes"] = notes

@@ -302,11 +302,40 @@ back: if it does not confirm, you are told it was sent but not confirmed, never 
 have applied. **The one thing you are never told is that an application went in when the
 page did not say so.**
 
-Boards it can fill: **Greenhouse**. Everything else — Workday, LinkedIn Easy Apply, Ashby,
-Lever — is said once, with the link, and left to you: both of the first two want an account
-and a logged-in session, which is a credential in a runner and a different conversation.
-The CV and the letter are already in the bank and the letter's text is already in the
-packet for pasting into a box.
+**A LinkedIn link is not a form, so it goes looking for the real one.** Half the roles on
+the radar arrive through LinkedIn or an aggregator, and LinkedIn will not give up the
+"apply on company website" URL to anyone who is not logged in. So it does not chase the
+link: it goes to the company instead, finds their own job board through the public APIs
+Greenhouse, Ashby and Lever publish, and looks for the same role on it. Nine of the first
+ten companies tried this way were found from the company name alone.
+
+The matching is deliberately strict, because the downside is not a near miss. Three real
+cases from the current scan:
+
+| Company | What happened |
+|---|---|
+| Okta | One exact title on their board, in Dublin. Filled it. |
+| Braze | Four identical titles across US cities, posting was London. Refused, and sent you the four links. |
+| Vanta | 109 roles on the board, nothing above 0.33. You are told the title is not on their board, with a link to it, rather than told the role is dead: a slug guessed from a company name can land on somebody else's board, and a retitled role looks the same from here as a closed one. |
+
+A title has to match nearly exactly rather than merely closely, and where several roles
+share one title the market has to pick exactly one of them. Anything else comes back to you
+as links to choose between.
+
+**What it actually resolves**, measured over 30 distinct LinkedIn-sourced companies in the
+current scan: 12 found, of which 8 are Greenhouse and fill automatically and 4 are Ashby
+and come back as a direct apply link. 4 more have a board with no matching title on it. The
+remaining 14 are companies running their own careers stack (Google, Salesforce, Canva, Box,
+Deel) where there is nothing public to find. So roughly a quarter of LinkedIn roles become
+one-tap, and another eighth become a direct link instead of a LinkedIn page.
+
+Boards it can fill: **Greenhouse**, including the employers whose board URL redirects to
+their own careers site with the form embedded in it. Ashby and Lever are found and handed
+to you as a direct link, which still beats a LinkedIn page you have to search from.
+Workday and LinkedIn Easy Apply are left alone entirely: both want an account and a
+logged-in session, which is a credential sitting in a runner and a different conversation.
+Either way the CV and the letter are already in the bank and the letter's text is already
+in the packet for pasting into a box.
 
 **Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/redo`,
 `/cover`, `/submit`, `/send`, `/help`.

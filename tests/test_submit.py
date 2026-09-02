@@ -31,10 +31,12 @@ import json
 import os
 import sys
 import tempfile
+import types
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import applyq  # noqa: E402
 import cvbuild  # noqa: E402
+import findform  # noqa: E402
 import submit  # noqa: E402
 from test_apply import FakeBank, FakeTelegram, JOB  # noqa: E402
 
@@ -390,6 +392,145 @@ def test_answering_clears_it_off_the_blanks_list():
     assert len(applyq.numbered_blanks(plan)) == before - 1
 
 
+# ---------------------------------------------------------------- finding the board
+#
+# Every case here is a real one from the current scan, which is why the numbers are what
+# they are: the threshold has to admit Okta and refuse Braze, and both of those are
+# decided by a tenth of a point.
+
+class FakeResponse:
+    def __init__(self, payload, status=200):
+        self.status_code = status
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+def board(payload, status=200, seen=None):
+    """A stand-in for the three public board APIs. Records what was asked for, because
+    the order the slugs are tried in is part of the behaviour."""
+    def fetch(url, **kw):
+        if seen is not None:
+            seen.append(url)
+        for key, body in payload.items():
+            if key in url:
+                return FakeResponse(body)
+        return FakeResponse({}, 404)
+    return fetch
+
+
+def gh_board(*jobs):
+    return {"boards-api.greenhouse.io/v1/boards/acme":
+            {"jobs": [{"id": 100 + i, "title": t, "location": {"name": loc},
+                       "absolute_url": f"https://acme.com/careers/{100 + i}"}
+                      for i, (t, loc) in enumerate(jobs)]}}
+
+
+def test_a_slug_is_guessed_from_the_company_name():
+    assert findform.board_slugs("Kong Inc.") == ["kong"]
+    assert findform.board_slugs("commercetools") == ["commercetools"]
+    assert findform.board_slugs("Northwind Tax") == ["northwindtax", "northwind-tax",
+                                                     "northwind"]
+
+
+def test_a_verified_slug_beats_a_guessed_one():
+    seen = []
+    fetch = board(gh_board(("Revenue Operations Manager", "Dublin, Ireland")), seen=seen)
+    ats, slug, jobs = findform.find_board(
+        "Acme Ltd", [{"name": "Acme Ltd", "ats": "greenhouse", "slug": "acme"}], fetch)
+    assert (ats, slug) == ("greenhouse", "acme") and len(jobs) == 1
+    assert len(seen) == 1, "guessed at slugs when a verified one was on file"
+
+
+def test_the_url_it_returns_is_the_form_not_the_careers_page():
+    """Greenhouse's absolute_url is wherever the employer chose to link the job, which is
+    often their own site with the board embedded. The board-hosted URL is the same
+    application and is the one with a driver behind it."""
+    _a, _s, jobs = findform.find_board("Acme", [], board(gh_board(("RevOps", "Dublin"))))
+    assert jobs[0]["url"] == "https://job-boards.greenhouse.io/acme/jobs/100"
+
+
+def test_an_embedded_board_falls_back_to_the_embed_form():
+    """Okta, in the real scan: the board URL 302s to okta.com and the form is in an embed.
+    Same application, different endpoint."""
+    assert submit.greenhouse_embed("https://job-boards.greenhouse.io/okta/jobs/8048254") \
+        == "https://job-boards.greenhouse.io/embed/job_app?for=okta&token=8048254"
+    assert submit.greenhouse_embed("https://jobs.ashbyhq.com/x/y") == ""
+    # And an embed URL is still a form this can fill, or the fallback would be pointless.
+    assert submit.detect_ats(
+        "https://job-boards.greenhouse.io/embed/job_app?for=okta&token=1") == "greenhouse"
+
+
+def test_a_title_that_merely_reads_similar_is_not_a_match():
+    """Okta's board carries both "Customer Success Operations Manager, EMEA" (Dublin) and
+    "Customer Success Operations Manager" (Toronto). They score 0.80 against each other and
+    they are different jobs in different hemispheres."""
+    assert findform.title_score("Customer Success Operations Manager, EMEA",
+                                "Customer Success Operations Manager") < \
+        findform.TITLE_MATCH_MIN
+
+
+def test_the_market_separates_two_roles_with_the_same_title():
+    """Intercom, in the real scan: "Senior Customer Success Manager" in London and in
+    Dublin, both exact."""
+    job = {"company": "Acme", "title": "Senior Customer Success Manager",
+           "market": "IE-Dublin"}
+    out = findform.find_form(job, [], board(gh_board(
+        ("Senior Customer Success Manager", "London, England"),
+        ("Senior Customer Success Manager", "Dublin, Ireland"))))
+    assert out["outcome"] == "found"
+    assert out["location"] == "Dublin, Ireland"
+
+
+def test_four_cities_and_none_of_them_yours_is_refused():
+    """Braze, in the real scan: four exact titles across US cities, posting was London."""
+    job = {"company": "Acme", "title": "Senior CSM, Industry", "market": "UK-London"}
+    out = findform.find_form(job, [], board(gh_board(
+        ("Senior CSM, Industry", "San Francisco"), ("Senior CSM, Industry", "Austin"),
+        ("Senior CSM, Industry", "Chicago"), ("Senior CSM, Industry", "New York City"))))
+    assert out["outcome"] == "ambiguous" and len(out["candidates"]) == 4
+
+
+def test_a_role_that_has_come_off_the_board_is_gone_not_the_nearest_thing():
+    """Vanta, in the real scan: 109 roles on the board and the closest to the posting was
+    "Strategic Channel Manager - EMEA" at 0.33."""
+    job = {"company": "Acme", "title": "Revenue Operations Manager, Post Sales (EMEA)",
+           "market": "IE-Dublin"}
+    out = findform.find_form(job, [], board(gh_board(
+        ("Strategic Channel Manager - EMEA", "London, UK"),
+        ("Solutions Engineer (Upmarket, Pre-Sales) - EMEA", "Dublin, Ireland"))))
+    assert out["outcome"] == "gone" and not out["candidates"]
+
+
+def test_no_board_anywhere_is_its_own_answer():
+    """Atlassian, in the real scan: they run their own careers site and nothing is found
+    under any spelling."""
+    out = findform.find_form({"company": "Acme", "title": "RevOps", "market": "NL"}, [],
+                             board({}))
+    assert out["outcome"] == "no-board"
+
+
+def test_a_board_with_no_locations_on_it_still_resolves():
+    """A single close match is a match. The market filter is a tie-break, not a gate."""
+    job = {"company": "Acme", "title": "Revenue Operations Manager", "market": "NL"}
+    out = findform.find_form(job, [], board(gh_board(("Revenue Operations Manager", ""))))
+    assert out["outcome"] == "found"
+
+
+def test_ashby_and_lever_boards_are_read_too():
+    ashby = {"api.ashbyhq.com/posting-api/job-board/acme":
+             {"jobs": [{"title": "RevOps Manager", "location": "Dublin, Ireland",
+                        "jobUrl": "https://jobs.ashbyhq.com/acme/1"}]}}
+    lever = {"api.lever.co/v0/postings/acme":
+             [{"text": "RevOps Manager", "categories": {"location": "Dublin, Ireland"},
+               "hostedUrl": "https://jobs.lever.co/acme/1"}]}
+    for payload, host in ((ashby, "ashbyhq"), (lever, "lever")):
+        out = findform.find_form({"company": "Acme", "title": "RevOps Manager",
+                                  "market": "IE-Dublin"}, [], board(payload))
+        assert out["outcome"] == "found" and host in out["url"], (host, out)
+
+
 # ---------------------------------------------------------------- the state machine
 
 LETTER_TEXT = "Dear Acme Hiring Team, I have run renewal forecasting for four years."
@@ -407,7 +548,8 @@ def finished_role():
             "answers": [], "job_snapshot": dict(GH_JOB)}
 
 
-def machine(fields=None, sent=True, reason="", state=None, model_answers=None, job=None):
+def machine(fields=None, sent=True, reason="", state=None, model_answers=None, job=None,
+            found=None):
     """The form stages wired to stubs. Returns (step, state, tg, bank, calls).
 
     The browser is replaced wholesale: these tests are about what the state machine does
@@ -415,7 +557,7 @@ def machine(fields=None, sent=True, reason="", state=None, model_answers=None, j
     tg = FakeTelegram()
     bank = FakeBank({applyq.BANK_FILE: "### NAVEX-01 - Book\nText: " + CORPUS})
     bank.path = tempfile.mkdtemp(prefix="applyq-bank-")
-    calls = {"read": 0, "preview": 0, "submit": 0, "browser": 0, "model": 0,
+    calls = {"read": 0, "preview": 0, "submit": 0, "browser": 0, "model": 0, "find": 0,
              "plan": None, "questions": None}
     the_fields = fields if fields is not None else form()
 
@@ -458,6 +600,15 @@ def machine(fields=None, sent=True, reason="", state=None, model_answers=None, j
                 [{"id": "question_8", "why": "no salary expectation on file"}],
                 "Left the salary box for you.")
 
+    def fake_find_form(job_, companies=None, fetch=None):
+        calls["find"] += 1
+        return found if found is not None else {"outcome": "no-board", "candidates": []}
+
+    # The module reference is swapped rather than the function inside it: assigning to
+    # applyq.findform.find_form would write through to the real module and leave every
+    # findform test above running against this stub, which is a failure that depends on
+    # the order the tests happen to run in.
+    applyq.findform = types.SimpleNamespace(find_form=fake_find_form)
     applyq.submit.read_form = fake_read_form
     applyq.submit.preview = fake_preview
     applyq.submit.submit_form = fake_submit_form
@@ -526,7 +677,89 @@ def test_an_unsupported_board_is_said_once_with_the_link():
     assert calls["browser"] == 0 and calls["read"] == 0
     assert state["current"] is None
     assert state["history"][-1]["outcome"] == "submit-unsupported"
-    assert any("not on a board I can fill" in m for m in tg.sent), tg.sent
+    assert any("could not find a board" in m for m in tg.sent), tg.sent
+
+
+# ---------------------------------------------------------------- finding the real form
+
+GH = "https://job-boards.greenhouse.io/acme/jobs/99"
+
+
+def test_a_linkedin_link_is_traded_for_the_form_on_the_companys_own_board():
+    """Half the roles on the radar arrive as a LinkedIn link, and none of those is a
+    form."""
+    step, state, tg, _b, calls = machine(
+        job=dict(GH_JOB, url="https://www.linkedin.com/jobs/view/4451213852"),
+        found={"outcome": "found", "url": GH, "ats": "greenhouse",
+               "title": "Revenue Operations Manager", "location": "Dublin, Ireland",
+               "candidates": []})
+    step("/submit")
+    assert calls["find"] == 1 and calls["preview"] == 1
+    assert state["current"]["plan"]["url"] == GH
+    assert state["current"]["plan"]["posting_url"].startswith("https://www.linkedin.com")
+    # He is told which role it landed on, because that is the thing that could be wrong.
+    assert any("Dublin, Ireland" in m for m in tg.sent), tg.sent
+
+
+def test_a_role_on_a_board_with_no_driver_is_handed_over_as_a_direct_link():
+    """Still a win: a link straight to the real application beats a LinkedIn page he has
+    to search from."""
+    step, state, tg, _b, calls = machine(
+        job=dict(GH_JOB, url="https://www.linkedin.com/jobs/view/1"),
+        found={"outcome": "found", "url": "https://jobs.ashbyhq.com/acme/abc",
+               "ats": "ashby", "title": "Revenue Operations Manager",
+               "location": "Dublin, Ireland", "candidates": []})
+    assert step("/submit") is True
+    assert calls["preview"] == 0
+    assert state["history"][-1]["outcome"] == "submit-unsupported"
+    assert any("jobs.ashbyhq.com/acme/abc" in m for m in tg.sent), tg.sent
+
+
+def test_four_cities_sharing_one_title_are_never_guessed_between():
+    """Braze, in the real scan: four identical titles across US cities, and the posting was
+    London. A form filled for the wrong city is a wrong application, not a near miss."""
+    cands = [{"title": "Senior CSM, Industry", "location": c,
+              "url": f"https://job-boards.greenhouse.io/acme/jobs/{i}", "score": 1.0}
+             for i, c in enumerate(["San Francisco", "New York City", "Chicago", "Austin"])]
+    step, state, tg, _b, calls = machine(
+        job=dict(GH_JOB, url="https://www.linkedin.com/jobs/view/1"),
+        found={"outcome": "ambiguous", "ats": "greenhouse", "candidates": cands})
+    assert step("/submit") is True
+    assert calls["preview"] == 0
+    assert state["history"][-1]["outcome"] == "submit-ambiguous"
+    assert any("Chicago" in m and "Austin" in m for m in tg.sent), tg.sent
+
+
+def test_a_role_missing_from_a_live_board_is_reported_as_probably_closed():
+    """Vanta, in the real scan: 109 roles on the board and nothing above 0.33. The role was
+    taken down, and saying so is worth more than filling the nearest thing to it."""
+    step, state, tg, _b, calls = machine(
+        job=dict(GH_JOB, url="https://www.linkedin.com/jobs/view/1"),
+        found={"outcome": "gone", "ats": "greenhouse", "slug": "acme", "board_size": 109,
+               "candidates": []})
+    assert step("/submit") is True
+    assert calls["preview"] == 0
+    assert state["history"][-1]["outcome"] == "submit-role-gone"
+    assert any("not one of them" in m for m in tg.sent), tg.sent
+    # Said carefully: a slug guessed from a company name can land on somebody else's
+    # board, so the board itself is linked for him to check by eye.
+    assert any("job-boards.greenhouse.io/acme" in m for m in tg.sent), tg.sent
+
+
+def test_a_link_that_is_already_a_form_is_not_looked_up_at_all():
+    step, _state, _tg, _b, calls = machine()
+    step("/submit")
+    assert calls["find"] == 0, "went looking for a board it did not need"
+
+
+def test_a_lookup_that_blows_up_does_not_take_the_role_with_it():
+    step, state, tg, _b, _c = machine(
+        job=dict(GH_JOB, url="https://www.linkedin.com/jobs/view/1"))
+    def boom(*a, **k):
+        raise RuntimeError("the board API is down")
+    applyq.findform = types.SimpleNamespace(find_form=boom)
+    assert step("/submit") is True
+    assert state["history"][-1]["outcome"] == "submit-unsupported"
 
 
 def test_send_is_refused_while_a_required_question_is_unanswered():
