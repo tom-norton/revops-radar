@@ -3057,24 +3057,30 @@ def handle_commands(texts, state, queue, tg, bank=None):
             # whole pipeline that cannot be undone.
             last = state.get("last_cv")
             recoverable = last or (bank is not None and recoverable_cv(state))
-            job = load_job((last or {}).get("id")) or (last or {}).get("job_snapshot") or {}
+            # The id is taken off whichever of the two exists, because a CV recovered from
+            # the bank carries no copy of the posting and its link has to come off the
+            # dashboard.
+            role_id = (last or recoverable or {}).get("id")
             if state.get("current"):
                 tg.send(f"Working on {esc(clip(state['current'].get('title'), 50))} right "
                         f"now. /submit once that one's finished.")
             elif not recoverable:
                 tg.send("No CV to apply with yet. /apply a role and I'll build one, then "
                         "/submit it.")
-            elif already_submitted(state, (last or {}).get("id")):
+            elif already_submitted(state, role_id):
                 tg.send("You've already applied to that one. A second application is a "
                         "second application, so I won't send it twice.")
-            elif not (job.get("url") or ""):
-                tg.send("I don't have a link to that role's form any more, so there's "
-                        "nothing to fill. /apply it again and I'll pick the link back up.")
             else:
                 base_role = last or recover_last_cv(bank, state)
                 if not base_role:
                     tg.send("There's a CV in the bank but I can't read it back. "
                             "/apply the role again and I'll rebuild it from scratch.")
+                    continue
+                job = (load_job(role_id) or base_role.get("job_snapshot") or {})
+                if not (job.get("url") or ""):
+                    tg.send("I don't have a link to that role's form any more, so there's "
+                            "nothing to fill. /apply it again and I'll pick the link back "
+                            "up.")
                     continue
                 run = json.loads(json.dumps(base_role))
                 run.update({"stage": "fill", "started_at": now_iso()})
