@@ -443,6 +443,49 @@ def test_a_splitter_outage_falls_back_instead_of_blocking():
     assert calls["drafted_from"] == [("pipeline hygiene", "did the cleanup for two quarters")]
 
 
+def test_a_reply_of_letters_answers_every_question_not_just_the_first():
+    """The bug Tom hit on the first real run. The split prompt asks for an option's TEXT
+    when he picks a letter, and the guard then checked that text against his reply, which
+    was "1a 2b 3b" -- sharing no words with any of it. Everything after the one answer he
+    happened to write out in full was silently discarded."""
+    qs = [{"options": ["Yes, data cleanup", "Yes, forecast accuracy", "Nothing here"]},
+          {"options": ["Built them", "Specified them", "Nothing here"]},
+          {"options": ["Yes, research it", "No, skip it"]}]
+    assert applyq.parse_answer_key("1a 2b 3b", qs) == [
+        "Yes, data cleanup", "Specified them", "No, skip it"]
+    # However he types it. The middle one is his real reply from the Outpost run.
+    assert applyq.parse_answer_key("a b a", qs)[1] == "Specified them"
+    assert applyq.parse_answer_key("C, c, b", qs) == [
+        "Nothing here", "Nothing here", "No, skip it"]
+    assert applyq.parse_answer_key("1. a  2. c  3. b", qs)[2] == "No, skip it"
+
+
+def test_prose_still_goes_to_the_splitter_and_a_word_is_never_read_as_letters():
+    qs = [{"options": ["Yes, data cleanup", "Nothing here"]}, {"options": ["a", "b"]}]
+    for prose in ("yeah did the cleanup for two quarters", "no", "bad",
+                  "1a and for the second I built dashboards"):
+        assert applyq.parse_answer_key(prose, qs) is None, prose
+
+
+def test_an_option_he_was_offered_is_never_discarded_as_invented():
+    qs = [{"options": ["Yes, data cleanup", "Nothing here"]},
+          {"options": ["Built them", "Specified them"]}]
+    kept = applyq.split_is_sane(["Yes, data cleanup", "Specified them"], "1a 2b", qs)
+    assert kept == ["Yes, data cleanup", "Specified them"]
+    # Without the questions there is nothing to check against, and the old behaviour --
+    # throwing both away -- is what this asserts has been fixed.
+    assert applyq.split_is_sane(["Yes, data cleanup", "Specified them"], "1a 2b") == ["", ""]
+    # And the guard still stops the splitter writing something new.
+    assert applyq.split_is_sane(["Built dashboards for the whole company"], "1a", qs) == [""]
+
+
+def test_a_letter_reply_costs_no_model_call_at_all():
+    step, _state, _tg, _bank, calls = machine()
+    step()
+    assert step("1a 2a") is True
+    assert calls["split"] == 0, "an answer key does not need a model to read it"
+
+
 def test_the_split_guard_discards_text_tom_never_wrote():
     """The splitter is a model, so it could paraphrase Tom into something more useful.
     Anything it returns that is not traceable to his own reply is dropped, and a dropped
@@ -561,7 +604,7 @@ def test_a_relayed_message_from_another_chat_is_ignored():
             "commit": lambda self, m: None,
         })
         applyq.firebase_state = lambda *a, **k: {}
-        applyq.handle_commands = lambda texts, state, queue, tg: (
+        applyq.handle_commands = lambda texts, state, queue, tg, bank=None: (
             seen.update(texts=list(texts)) or (queue, [t for _, t in texts]))
 
         for chat, expected in (("999", []), ("42", ["I did all the pipeline work"])):

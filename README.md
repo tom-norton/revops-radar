@@ -175,8 +175,13 @@ answered "no meaningful experience" to, produces no bullet. The drafting call is
 shown it. Nothing gets filled in by inference, and the posting's own language is never
 treated as evidence you did something. `tests/test_apply.py` asserts this directly.
 
-**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/help`. Answer questions
-however you like; numbers and letters both pick options.
+**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/help`.
+
+**Answer questions however you like.** A reply that is nothing but letters is read in
+code, exactly, with no model involved: `1a 2b 3c`, `a b c`, `C, c, b`, `1. a  2. c` all
+work. Prose goes to a cheap model to be split per question, and anything that model
+returns which is neither traceable to your own words nor one of the options you were
+offered gets thrown away.
 
 **Known limit: GitHub's cron is unreliable.** `*/15` is a request, not a promise, and in
 practice it lands every few hours. One round trip per role keeps that to a single wait, but
@@ -259,9 +264,17 @@ reproduces `Tom_Norton_CV.docx` to the pixel, which is the test.
 **Your phone number is not in this repo.** The seed's contact line has Barcelona, your
 email, LinkedIn and nationality, and no number: this repo is public, and a phone number in
 a public repo gets scraped in a way the same number on a CV sent to a named recruiter does
-not. It belongs in the bank's private copy of `cv-base.json`, as one more entry after
-Barcelona. The poller says so once, on the first build, with a link straight to the file.
-The CV renders fine without it.
+not. It lives in the bank's private copy of `cv-base.json` instead, and nobody edits JSON
+to put it there:
+
+```
+/phone +34 700 000 000     put it on the CV
+/phone off                 take it off
+/phone                     what's on there now
+```
+
+The bot rewrites the bank's copy and commits. The CV renders fine without a number, so
+this is a nudge on the first build and never a blocker.
 
 Those base bullets are the floor. A role the tailoring pass says nothing about keeps them
 rather than going blank, and they count as a source the honesty screen will trace a

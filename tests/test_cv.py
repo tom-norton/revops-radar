@@ -23,6 +23,7 @@ proves nothing. That runs for real in tests/test_cv_render.py.
 import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import applyq  # noqa: E402
@@ -32,6 +33,9 @@ from test_apply import FakeBank, FakeTelegram, JOB, machine  # noqa: E402
 
 
 BASE = cvbuild.load_base()[0]
+# Captured before anything stubs it: machine() in test_apply.py replaces cvbuild.render
+# module-wide, and the render-invocation test below needs the real one.
+REAL_RENDER = cvbuild.render
 
 
 # ---------------------------------------------------------------- the role title
@@ -253,6 +257,24 @@ def test_a_letter_a_number_or_nothing_all_resolve():
     assert applyq.resolve_pick("2", SUMMARIES)[0]["label"] == "B"
     chosen, recognised = applyq.resolve_pick("hmm not sure", SUMMARIES)
     assert recognised is False and chosen["label"] == "B"
+
+
+def test_a_summary_is_never_truncated_in_the_message_that_asks_him_to_pick_one():
+    """It was, at 460 characters, and he was left choosing between three things he could
+    not finish reading. This is the one message in the run where he decides something."""
+    real = ("Revenue operations professional drawn to the company's expansion across "
+            "indirect tax coverage, where GTM systems have to keep pace with new markets. "
+            "11 years in B2B SaaS, most recently managing a $5.2M ARR enterprise book to "
+            "108-110% NRR three years running, with an ESADE MBA finishing in 2026. "
+            "Strongest where post-sale data meets forecasting: renewal risk, customer "
+            "health, and the handoffs between sales and CS that decide both. Built the "
+            "funnel model, team sizing and CAC payback scenarios behind a live "
+            "market-entry case, presented to the client's VP of CX.")
+    assert len(real) > 460, "this sample has to be long enough to have been truncated"
+    msg = applyq.format_variations(
+        [dict(SUMMARIES[0], text=real)], JOB, {"track": "BUILDER"})
+    assert "\u2026" not in msg
+    assert real[-40:] in applyq.strip_tags(msg)
 
 
 def test_a_variation_with_no_text_is_not_offered():
@@ -604,6 +626,41 @@ def test_a_broken_skeleton_in_the_bank_fails_loudly_rather_than_silently_reverti
         raise AssertionError("a corrupt skeleton was accepted")
 
 
+# ---------------------------------------------------------------- the render invocation
+
+def test_libreoffice_gets_an_absolute_profile_uri_even_from_a_relative_outdir():
+    """The bug that cost a ten-minute CI timeout and every real CV build.
+
+    LibreOffice's UserInstallation takes a file:// URI. A RELATIVE one does not fail, it
+    HANGS: "file://cv-out/.lo-profile" parses as host "cv-out" with path "/.lo-profile",
+    and soffice sits there until something kills it. The workflow passes a relative
+    "cv-out"; every local run of the render test happened to pass an absolute path, which
+    is exactly why nothing caught it. So this asserts on the argv, not on the output."""
+    seen = []
+
+    def fake_run(cmd, cwd=None, timeout=600):
+        seen.append(cmd)
+        if cmd[0] == "soffice":                      # stand in for the conversion
+            stem = os.path.splitext(cmd[-1])[0]
+            open(stem + ".pdf", "wb").write(b"%PDF-1.4")
+        return ""
+
+    real_run = cvbuild._run
+    cwd = os.getcwd()
+    tmp = tempfile.mkdtemp(prefix="cv-relative-")
+    try:
+        cvbuild._run = fake_run
+        os.chdir(tmp)
+        REAL_RENDER({"sections": []}, "cv-out", "x")   # relative, as the workflow does
+        soffice = next(c for c in seen if c[0] == "soffice")
+        env = next(a for a in soffice if a.startswith("-env:UserInstallation="))
+        assert env.startswith("-env:UserInstallation=file:///"), env
+        assert cvbuild.SOFFICE_TIMEOUT <= 180, "a wedged conversion should fail fast"
+    finally:
+        cvbuild._run = real_run
+        os.chdir(cwd)
+
+
 def test_the_seed_is_the_real_cv_not_a_placeholder():
     """The seed carries Tom's actual base CV, so a first build is a real CV rather than a
     scaffold."""
@@ -614,6 +671,47 @@ def test_the_seed_is_the_real_cv_not_a_placeholder():
             role["bullets"] = []
     emptied["projects"] = {}
     assert any("no bullets" in g for g in cvbuild.skeleton_gaps(emptied))
+
+
+def test_the_phone_number_goes_on_from_a_chat_message():
+    """Tom is not a developer and said so. Asking him to hand-edit JSON in a private repo
+    to get his own phone number onto his own CV was the wrong shape of answer, and it is
+    where the first real run stopped."""
+    bank = FakeBank()
+    tg = FakeTelegram()
+    applyq.handle_commands([(0, "/phone +34 722 719 046")], {"current": None}, [], tg, bank)
+    base = json.loads(bank.files[cvbuild.BASE_FILE])
+    texts = [c["text"] for c in base["contact"]]
+    assert texts[1] == "+34 722 719 046", texts       # second, right after the location
+    assert "Barcelona" in texts[0]
+    assert not cvbuild.skeleton_gaps(base)
+    assert "Phone set" in tg.last()
+
+    # Changing it replaces rather than stacks, and it can be taken off again.
+    applyq.handle_commands([(0, "/phone +31 6 1234 5678")], {"current": None}, [], tg, bank)
+    base = json.loads(bank.files[cvbuild.BASE_FILE])
+    assert sum(1 for c in base["contact"]
+               if cvbuild.PHONE_RE.match(c["text"])) == 1
+    applyq.handle_commands([(0, "/phone off")], {"current": None}, [], tg, bank)
+    base = json.loads(bank.files[cvbuild.BASE_FILE])
+    assert not any(cvbuild.PHONE_RE.match(c["text"]) for c in base["contact"])
+
+
+def test_a_phone_number_that_is_not_one_is_refused_rather_than_written():
+    bank, tg = FakeBank(), FakeTelegram()
+    applyq.handle_commands([(0, "/phone call me maybe")], {"current": None}, [], tg, bank)
+    assert cvbuild.BASE_FILE not in bank.files
+    assert "doesn't look like a phone number" in tg.last()
+
+
+def test_the_phone_reaches_the_rendered_contact_line():
+    bank = FakeBank()
+    applyq.handle_commands([(0, "/phone +34 722 719 046")], {"current": None}, [],
+                           FakeTelegram(), bank)
+    base, from_bank = cvbuild.load_base(bank)
+    assert from_bank is True
+    spec = cvbuild.assemble_spec(base, "ANALYTICS", "T", "S", {}, "sk")
+    assert [c["text"] for c in spec["contact"]][1] == "+34 722 719 046"
 
 
 def test_the_public_seed_carries_no_phone_number_and_says_so():
