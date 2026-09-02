@@ -5,15 +5,25 @@
  *   node cv/build-cv.js <spec.json> <out.docx>
  *
  * The split this file exists to enforce: a model chooses the WORDS, this chooses the
- * LAYOUT. Every measurement below is fixed and comes from the skill's Step 8a. Nothing
- * in the spec can move a margin, a font size or a tab stop, because the failure mode
- * that matters here is silent -- a CV with the dates in the wrong place looks fine to
- * the code that produced it and wrong to every recruiter who opens it.
+ * LAYOUT. Every measurement below is read off Tom's real base CVs (Tom_Norton_CV.docx and
+ * its Builder and CS siblings), not invented, and nothing in the spec can move a margin, a
+ * font size or a tab stop. The failure mode that matters here is silent: a CV with the
+ * dates in the wrong place looks fine to the code that produced it and wrong to every
+ * recruiter who opens it.
  *
- * Spec shape (see cv-base.json for a filled-in example):
- *   { theme: {font, accent}, name, contact: [{text, href?}], role_title, summary,
- *     sections: [{heading, entries: [{left, right, sub_left, sub_right, bullets: []}]}],
+ * Spec shape (cv-base.json is the filled-in example):
+ *   { theme: {font, accent}, name, contact: [{text, href?}], contact_separator,
+ *     role_title, summary,
+ *     sections: [
+ *       { heading, kind: "entries",
+ *         entries: [{ left, right, roles: [{sub_left, sub_right, bullets}] }] },
+ *       { heading, kind: "bullets", bullets: [...] } ],
  *     skills }
+ *
+ * A bullet is a string, or {lead, text} when it has a bold lead-in. The projects section
+ * is the second kind: on the real CV a project is one bullet reading
+ * "Factorial (ESADE MBA case study): Built the GTM funnel model..." with the lead-in bold,
+ * not an entry with its own header line.
  */
 
 const fs = require("fs");
@@ -29,7 +39,8 @@ const PAGE_W = 12240;
 const PAGE_H = 15840;
 const MARGIN = 1080;
 // Right-aligned tab stop at the content width: 12240 - 2*1080. This is the one number
-// that has to be exactly right, because everything dated hangs off it.
+// that has to be exactly right, because everything dated hangs off it. The base CVs use
+// this exact value.
 const RIGHT_TAB = PAGE_W - 2 * MARGIN; // 10080
 
 // Half-points, because that is what docx wants.
@@ -41,9 +52,21 @@ const CONTACT_PT = 20;   // 10pt
 // 240 twips is single spacing, so 1.15 is 276.
 const LINE = 276;
 
-const BULLET_INDENT = 288;   // 0.2"
-const ENTRY_GAP = 120;       // 6pt between one entry and the next
-const CONTACT_SEP = "  ·  ";
+// Vertical rhythm, straight off the base CV.
+const AFTER_NAME = 40;
+const AFTER_CONTACT = 160;
+const BEFORE_HEADING = 200;
+const AFTER_HEADING = 100;
+const AFTER_SUMMARY = 80;
+const BEFORE_ENTRY = 100;
+const AFTER_ENTRY_HEAD = 0;
+const AFTER_ROLE_LINE = 60;
+const AFTER_BULLET = 60;
+const BEFORE_SKILLS = 60;
+
+// The base CV's bullet: indented 0.2", hanging 0.125".
+const BULLET_INDENT = 288;
+const BULLET_HANGING = 180;
 
 // ---------------------------------------------------------------- helpers
 
@@ -64,9 +87,11 @@ const spec = (() => {
 })();
 
 const FONT = (spec.theme && spec.theme.font) || "Calibri";
-const ACCENT = ((spec.theme && spec.theme.accent) || "1F6F78").replace(/^#/, "");
+const ACCENT = ((spec.theme && spec.theme.accent) || "117A82").replace(/^#/, "");
+const SEP = spec.contact_separator || "  |  ";
 
 const txt = (v) => String(v === undefined || v === null ? "" : v);
+const has = (v) => txt(v).trim().length > 0;
 
 /** A paragraph with the house line spacing, unless told otherwise. */
 function para(opts) {
@@ -77,8 +102,8 @@ function run(text, opts = {}) {
   return new TextRun({ text: txt(text), font: FONT, size: BODY_PT, ...opts });
 }
 
-/** The teal rule under a section heading. Also used by the role-title header, which the
- *  skill says takes the same style. */
+/** The teal rule under a section heading. The role-title header takes the same style,
+ *  which is what the skill means by "matching the style of section headers". */
 const accentRule = {
   bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT, space: 2 },
 };
@@ -88,7 +113,7 @@ const accentRule = {
 function nameHeader() {
   return para({
     alignment: AlignmentType.CENTER,
-    spacing: { line: LINE, lineRule: "auto", after: 20 },
+    spacing: { line: LINE, lineRule: "auto", after: AFTER_NAME },
     children: [run(spec.name, { size: NAME_PT, bold: true, color: ACCENT })],
   });
 }
@@ -96,10 +121,10 @@ function nameHeader() {
 /** One centered 10pt line. Anything carrying an href becomes a real ExternalHyperlink,
  *  not blue text that does nothing when clicked. */
 function contactLine() {
-  const items = (spec.contact || []).filter((c) => txt(c && c.text).trim());
+  const items = (spec.contact || []).filter((c) => has(c && c.text));
   const children = [];
   items.forEach((item, i) => {
-    if (i) children.push(run(CONTACT_SEP, { size: CONTACT_PT }));
+    if (i) children.push(run(SEP, { size: CONTACT_PT }));
     if (item.href) {
       children.push(new ExternalHyperlink({
         link: item.href,
@@ -111,18 +136,17 @@ function contactLine() {
   });
   return para({
     alignment: AlignmentType.CENTER,
-    spacing: { line: LINE, lineRule: "auto", after: 160 },
+    spacing: { line: LINE, lineRule: "auto", after: AFTER_CONTACT },
     children,
   });
 }
 
-/** 13pt bold ALL CAPS, left, teal, bottom border. Section headings and the role-title
- *  header are the same object on purpose -- the skill defines the latter as "the same
- *  style as other section headers". */
-function heading(text, extra = {}) {
+/** 13pt bold ALL CAPS, left, teal, bottom border. */
+function heading(text, before = BEFORE_HEADING) {
   return para({
     border: accentRule,
-    spacing: { line: LINE, lineRule: "auto", before: 200, after: 80, ...extra },
+    alignment: AlignmentType.LEFT,
+    spacing: { line: LINE, lineRule: "auto", before, after: AFTER_HEADING },
     children: [run(txt(text).toUpperCase(), {
       size: HEADING_PT, bold: true, color: ACCENT,
     })],
@@ -130,49 +154,66 @@ function heading(text, extra = {}) {
 }
 
 /** left [right-tab] right. The tab stop is what puts dates and locations on the right
- *  margin; without it they sit wherever the text happens to end. */
-function tabbedLine(left, right, leftOpts = {}, rightOpts = {}, after = 0) {
-  const children = [run(left, leftOpts)];
-  if (txt(right).trim()) children.push(run(`\t${txt(right)}`, rightOpts));
+ *  margin; without it they sit wherever the text happens to end. Both runs carry the same
+ *  emphasis, matching the base CV: the company line is bold throughout, the role line
+ *  italic throughout. */
+function tabbedLine(left, right, emphasis, before, after) {
+  const children = [run(left, emphasis)];
+  if (has(right)) children.push(run(`\t${txt(right)}`, emphasis));
   return para({
     tabStops: [{ type: TabStopType.RIGHT, position: RIGHT_TAB }],
-    spacing: { line: LINE, lineRule: "auto", after },
+    spacing: { line: LINE, lineRule: "auto", before, after },
     children,
   });
 }
 
-function bullet(text, after) {
+/** A bullet. `item` is a string, or {lead, text} where the lead-in is bold -- which is how
+ *  every project reads on the base CV. */
+function bullet(item) {
+  const children = [];
+  if (item && typeof item === "object") {
+    if (has(item.lead)) children.push(run(`${txt(item.lead).trim()} `, { bold: true }));
+    if (has(item.text)) children.push(run(txt(item.text).trim()));
+  } else {
+    children.push(run(item));
+  }
   return para({
     numbering: { reference: "cv-bullets", level: 0 },
-    indent: { left: BULLET_INDENT, hanging: BULLET_INDENT },
-    spacing: { line: LINE, lineRule: "auto", after },
-    children: [run(text)],
+    spacing: { line: LINE, lineRule: "auto", after: AFTER_BULLET },
+    children,
   });
 }
 
-/** One employer, degree or project: the tabbed header lines, then its bullets.
- *
- *  The 6pt gap that separates one entry from the next is passed into whichever paragraph
- *  ends up last, not patched on afterwards -- docx builds its XML at construction, so
- *  assigning to a finished Paragraph does nothing at all and does it silently. It is a
- *  gap rather than an empty paragraph because an empty paragraph is a whole line of
- *  height, and three of those are what push a two-page CV onto a third. */
+function bulletText(item) {
+  if (item && typeof item === "object") {
+    return `${txt(item.lead).trim()} ${txt(item.text).trim()}`.trim();
+  }
+  return txt(item).trim();
+}
+
+/** One employer, school or other dated thing. An entry has one header line and one or
+ *  more roles under it: LexisNexis is a single company with two titles, and rendering it
+ *  as two companies would read as two employers. */
 function entryBlock(entry) {
   const out = [];
-  const bullets = (entry.bullets || []).filter((b) => txt(b).trim());
-  const hasHead = txt(entry.left).trim() || txt(entry.right).trim();
-  const hasSub = txt(entry.sub_left).trim() || txt(entry.sub_right).trim();
-  const tailAfter = ENTRY_GAP;
+  const roles = (entry.roles || []).filter(
+    (r) => has(r.sub_left) || has(r.sub_right) || (r.bullets || []).some(bulletText));
+  if (!has(entry.left) && !has(entry.right) && !roles.length) return out;
 
-  if (hasHead) {
-    out.push(tabbedLine(entry.left, entry.right, { bold: true }, {},
-                        (hasSub || bullets.length) ? 0 : tailAfter));
+  if (has(entry.left) || has(entry.right)) {
+    out.push(tabbedLine(entry.left, entry.right, { bold: true },
+                        BEFORE_ENTRY, AFTER_ENTRY_HEAD));
   }
-  if (hasSub) {
-    out.push(tabbedLine(entry.sub_left, entry.sub_right, { italics: true },
-                        { italics: true }, bullets.length ? 0 : tailAfter));
-  }
-  bullets.forEach((b, i) => out.push(bullet(b, i === bullets.length - 1 ? tailAfter : 0)));
+  roles.forEach((role) => {
+    if (has(role.sub_left) || has(role.sub_right)) {
+      // No leading gap, on the first role or any later one. The base CV runs a second
+      // title straight on from the previous role's last bullet, and a gap there reads as
+      // a new employer rather than a promotion inside the same one.
+      out.push(tabbedLine(role.sub_left, role.sub_right, { italics: true },
+                          0, AFTER_ROLE_LINE));
+    }
+    (role.bullets || []).filter(bulletText).forEach((b) => out.push(bullet(b)));
+  });
   return out;
 }
 
@@ -180,26 +221,31 @@ function entryBlock(entry) {
 
 const body = [nameHeader(), contactLine()];
 
-if (txt(spec.role_title).trim()) body.push(heading(spec.role_title, { before: 0 }));
-if (txt(spec.summary).trim()) {
+if (has(spec.role_title)) body.push(heading(spec.role_title, 0));
+if (has(spec.summary)) {
   body.push(para({
-    spacing: { line: LINE, lineRule: "auto", after: 80 },
+    spacing: { line: LINE, lineRule: "auto", after: AFTER_SUMMARY },
     children: [run(spec.summary)],
   }));
 }
 
 (spec.sections || []).forEach((section) => {
-  const entries = (section.entries || []).filter(
-    (e) => txt(e.left).trim() || txt(e.sub_left).trim() || (e.bullets || []).length);
-  if (!entries.length) return;
+  const blocks = [];
+  if (section.kind === "bullets") {
+    (section.bullets || []).filter(bulletText).forEach((b) => blocks.push(bullet(b)));
+  } else {
+    (section.entries || []).forEach((e) => entryBlock(e).forEach((p) => blocks.push(p)));
+  }
+  if (!blocks.length) return;
   body.push(heading(section.heading));
-  entries.forEach((e) => entryBlock(e).forEach((p) => body.push(p)));
+  blocks.forEach((p) => body.push(p));
 });
 
-if (txt(spec.skills).trim()) {
+if (has(spec.skills)) {
   body.push(heading("Skills"));
   body.push(para({
     alignment: AlignmentType.CENTER,
+    spacing: { line: LINE, lineRule: "auto", before: BEFORE_SKILLS },
     children: [run(spec.skills)],
   }));
 }
@@ -225,7 +271,7 @@ const doc = new Document({
         alignment: AlignmentType.LEFT,
         style: {
           run: { font: FONT, size: BODY_PT },
-          paragraph: { indent: { left: BULLET_INDENT, hanging: BULLET_INDENT } },
+          paragraph: { indent: { left: BULLET_INDENT, hanging: BULLET_HANGING } },
         },
       }],
     }],

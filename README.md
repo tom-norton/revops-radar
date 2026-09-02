@@ -214,6 +214,11 @@ and the right-aligned tab stop at 10080 twips all live in `cv/build-cv.js` and `
 where nothing a model returns can move them. `docx` builds the file, LibreOffice headless
 converts it, and `pdftoppm` renders the pages.
 
+**One employer, one entry.** LexisNexis is a single company Tom worked at twice, rendered
+as one header line with two titles under it. Rendering it as two employers turns an
+11-year career into a job-hopping one. A project is not an entry either: it is one bullet
+with a bold lead-in, and a tailored rewrite replaces the body while the name stays put.
+
 **Nothing ships unlooked-at.** Every build renders the PDF to JPEG at 90dpi and measures
 the result: page count, embedded fonts, and — the one that matters — the actual glyph
 position of every date and location, straight out of the PDF, checked against the right
@@ -245,10 +250,30 @@ logged as a job-specific variant if it doesn't. A bullet cut on three separate r
 retired automatically — that count is arithmetic this system keeps, not something a model
 has to remember. Every pass bumps `Last updated:` and writes one CHANGE LOG row per change.
 
-**The CV skeleton** (who, where, when, and the section structure) is `cv-base.json`. The
-copy in the private bank wins; the one in this repo is the seed it is created from on the
-first build. Edit the bank's copy in the GitHub web UI to add locations on roles, degree
-details, or any bullet from your current CV you want kept as a starting point.
+**The CV skeleton** is `cv-base.json`: who, where, when, the section structure, and the
+base CV's own bullets. It is taken verbatim from the 2026-08-05 base CVs, so the dates,
+locations, the two degrees, the euro sign in the Debic line and the fact that LexisNexis is
+one employer with two titles are all exact. A rendered CV with no tailoring at all
+reproduces `Tom_Norton_CV.docx` to the pixel, which is the test.
+
+**Your phone number is not in this repo.** The seed's contact line has Barcelona, your
+email, LinkedIn and nationality, and no number: this repo is public, and a phone number in
+a public repo gets scraped in a way the same number on a CV sent to a named recruiter does
+not. It belongs in the bank's private copy of `cv-base.json`, as one more entry after
+Barcelona. The poller says so once, on the first build, with a link straight to the file.
+The CV renders fine without it.
+
+Those base bullets are the floor. A role the tailoring pass says nothing about keeps them
+rather than going blank, and they count as a source the honesty screen will trace a
+revision back to. The bank is still the master library and its CANONICAL text wins wherever
+the two disagree. The copy in the private bank wins over the one in this repo, which is
+only the seed.
+
+**The bank's guards are binding.** `bullet-bank.md` carries SCOPE GUARDs and METRIC GUARDs
+written after real gap interviews: what Tom did and did not do, and which numbers do not
+exist. "Contributed his accounts to the renewal risk forum, did not run it" is the
+difference between a defensible bullet and one that falls apart in the first interview
+question. They go into the tailoring prompt as rules, not context.
 
 **Not in this phase.** Cover letters are Phase 3, on request via `/cover <id>`, and
 autonomous submission is Phase 4. The hiring-manager outreach email the skill describes is

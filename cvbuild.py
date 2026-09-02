@@ -93,6 +93,11 @@ BANNED_WORDS = ["leverage", "leveraged", "leveraging", "spearheaded", "utilised"
 # A placeholder metric that reached the PDF is the worst outcome this build has, so the
 # shapes they arrive in are matched directly.
 PLACEHOLDER_RE = re.compile(r"\[[^\]]{0,40}\]|\bX+%|\bTBD\b|\bN/A\b", re.I)
+# No first person in a CV bullet or summary. This is not theoretical: the bank's own
+# SUM-BUILDER carries "the RevOps tooling I spent a decade working around" with a NEEDS
+# REWRITE flag on it, and variation A starts from the canonical, so it can reach the page.
+# A warning rather than a block, because the fix is a rewrite and blocking would mean no CV.
+FIRST_PERSON_RE = re.compile(r"(?<![\w'])(I|I'm|I've|my|me|myself)(?![\w'])")
 
 
 # ---------------------------------------------------------------- the skeleton
@@ -120,30 +125,75 @@ def seed_base(bank):
         bank.write(BASE_FILE, f.read())
 
 
+def all_roles(base):
+    """[(entry, role)] over education then experience, in CV order.
+
+    A role, not an entry, is what a bullet attaches to: LexisNexis is one employer with two
+    titles, and a bullet from the Corporate Legal years does not belong under Print &
+    Digital."""
+    out = []
+    for entry in (base.get("education") or []) + (base.get("experience") or []):
+        for role in entry.get("roles") or []:
+            out.append((entry, role))
+    return out
+
+
 def entry_ids(base):
-    """Every slot a bullet can be attached to, in a stable order."""
-    out = [e["id"] for e in base.get("education") or []]
-    out += [e["id"] for e in base.get("experience") or []]
-    out += list((base.get("projects") or {}).keys())
+    """Every slot a bullet can be attached to, in a stable order: each role, then each
+    project."""
+    out = [role.get("id") for _e, role in all_roles(base) if role.get("id")]
+    out += [v.get("id") or k for k, v in (base.get("projects") or {}).items()]
     return out
 
 
 def entry_index(base):
+    """id -> the role or project dict it names, plus enough of its parent to describe it."""
     idx = {}
-    for e in (base.get("education") or []) + (base.get("experience") or []):
-        idx[e["id"]] = e
+    for entry, role in all_roles(base):
+        if role.get("id"):
+            idx[role["id"]] = {"kind": "role", "entry": entry, "role": role}
     for k, v in (base.get("projects") or {}).items():
-        idx[v.get("id") or k] = v
+        idx[v.get("id") or k] = {"kind": "project", "project": v}
     return idx
 
 
-def is_unedited_seed(base):
-    """True when nothing has been filled in yet. Drives a one-off nudge, not a failure --
-    a CV with no location on a role is thin, not wrong, and blocking on it would mean the
-    first role never produces anything."""
-    roles = base.get("experience") or []
-    return (not any((r.get("right") or "").strip() for r in roles)
-            and not any(r.get("bullets") for r in roles))
+def base_bullets(base):
+    """Every bullet already on the base CV, as plain text. Part of what a tailored
+    revision is allowed to be made of, and the floor a role falls back to."""
+    out = []
+    for _entry, role in all_roles(base):
+        out += [bullet_text(b) for b in (role.get("bullets") or [])]
+    for v in (base.get("projects") or {}).values():
+        out.append(bullet_text(v))
+    return [b for b in out if b]
+
+
+def bullet_text(item):
+    """A bullet is a string, or {lead, text} when it has a bold lead-in. This flattens
+    either into the sentence a reader actually sees."""
+    if isinstance(item, dict):
+        return " ".join(x for x in [str(item.get("lead") or "").strip(),
+                                    str(item.get("text") or "").strip()] if x)
+    return " ".join(str(item or "").split())
+
+
+# A phone number, loosely. Enough to tell whether the contact line has one.
+PHONE_RE = re.compile(r"^\+?[\d][\d\s().-]{6,}$")
+
+
+def skeleton_gaps(base):
+    """What the skeleton is still missing, in plain words. Drives a one-off nudge, never a
+    failure -- blocking would mean the first role produces nothing at all."""
+    gaps = []
+    if not base_bullets(base):
+        gaps.append("no bullets on any role, so the CV is built from the bank alone")
+    if not any(PHONE_RE.match((c.get("text") or "").strip())
+               for c in (base.get("contact") or [])):
+        # The seed in the public repo deliberately ships without one: a phone number in a
+        # public repo gets scraped, the same number on a CV sent to a named recruiter does
+        # not. So the bank's private copy is where it goes, and this is what says so.
+        gaps.append("no phone number on the contact line")
+    return gaps
 
 
 # ---------------------------------------------------------------- assembly
@@ -172,11 +222,43 @@ def clean_copy(text):
     return " ".join(out.split())
 
 
-def _entry_spec(entry, bullets):
+def _clean_bullet(item):
+    """Normalise one bullet, keeping a bold lead-in if it has one."""
+    if isinstance(item, dict):
+        return {"lead": clean_copy(item.get("lead")), "text": clean_copy(item.get("text"))}
+    return clean_copy(item)
+
+
+def _entry_spec(entry, chosen):
+    """One employer or school, with each of its roles carrying the bullets picked for it.
+
+    `chosen` is {role_id: [bullets]}. A role missing from it falls back to the base CV's
+    own bullets, which is the honest default: the base CV is an assembled instance of the
+    bank and is better than an empty section."""
+    roles = []
+    for role in entry.get("roles") or []:
+        rid = role.get("id")
+        picked = chosen.get(rid) if rid in chosen else (role.get("bullets") or [])
+        roles.append({
+            "sub_left": clean_copy(role.get("sub_left")),
+            "sub_right": clean_copy(role.get("sub_right")),
+            "bullets": [_clean_bullet(b) for b in (picked or []) if bullet_text(b)],
+        })
     return {"left": clean_copy(entry.get("left")), "right": clean_copy(entry.get("right")),
-            "sub_left": clean_copy(entry.get("sub_left")),
-            "sub_right": clean_copy(entry.get("sub_right")),
-            "bullets": [clean_copy(b) for b in (bullets or []) if str(b).strip()]}
+            "roles": roles}
+
+
+def _project_bullet(project, chosen):
+    """A project on the CV is one bullet with a bold lead-in, not an entry with a header.
+
+    A tailored rewrite replaces the body and keeps the lead-in: the lead-in is the project's
+    name and what it was, which is a fact about Tom's life rather than something to tailor."""
+    pid = project.get("id")
+    if pid in chosen and chosen[pid]:
+        picked = chosen[pid][0]
+        body = picked.get("text") if isinstance(picked, dict) else picked
+        return {"lead": clean_copy(project.get("lead")), "text": clean_copy(body)}
+    return _clean_bullet(project)
 
 
 def assemble_spec(base, track, title, summary, bullets_by_entry, skills):
@@ -188,38 +270,49 @@ def assemble_spec(base, track, title, summary, bullets_by_entry, skills):
     track = (track or "ANALYTICS").upper()
     if track not in PROJECT_ORDER:
         track = "ANALYTICS"
-    idx = entry_index(base)
-    got = {k: v for k, v in (bullets_by_entry or {}).items()}
+    chosen = dict(bullets_by_entry or {})
+    projects = base.get("projects") or {}
 
-    education = {"heading": EDUCATION_TITLE,
-                 "entries": [_entry_spec(e, got.get(e["id"]))
-                             for e in (base.get("education") or [])]}
-    experience = {"heading": EXPERIENCE_TITLE,
-                  "entries": [_entry_spec(e, got.get(e["id"]))
+    education = {"heading": EDUCATION_TITLE, "kind": "entries",
+                 "entries": [_entry_spec(e, chosen) for e in (base.get("education") or [])]}
+    experience = {"heading": EXPERIENCE_TITLE, "kind": "entries",
+                  "entries": [_entry_spec(e, chosen)
                               for e in (base.get("experience") or [])]}
-    projects = {"heading": PROJECTS_TITLE[track],
-                "entries": [_entry_spec(idx[pid], got.get(pid))
-                            for pid in PROJECT_ORDER[track] if pid in idx]}
+    project_section = {
+        "heading": PROJECTS_TITLE[track], "kind": "bullets",
+        "bullets": [_project_bullet(projects[pid], chosen)
+                    for pid in PROJECT_ORDER[track] if pid in projects]}
 
-    sections = ([education, experience, projects] if track == "CS"
-                else [education, projects, experience])
+    sections = ([education, experience, project_section] if track == "CS"
+                else [education, project_section, experience])
     return {
-        "theme": base.get("theme") or {"font": "Calibri", "accent": "1F6F78"},
+        "theme": base.get("theme") or {"font": "Calibri", "accent": "117A82"},
         "name": base.get("name") or "",
         "contact": base.get("contact") or [],
+        "contact_separator": base.get("contact_separator") or "  |  ",
         "role_title": clean_copy(title),
         "summary": clean_copy(summary),
         "sections": sections,
-        "skills": clean_copy(skills),
+        "skills": clean_copy(skills or standing_skills(base, track)),
     }
 
 
+def standing_skills(base, track):
+    """The bank's standing skills line for the track. Used when the tailoring pass returns
+    nothing, so a CV never ships with an empty skills section."""
+    return ((base.get("skills") or {}).get((track or "").upper()) or "")
+
+
 def spec_bullets(spec):
+    """Every bullet on the assembled page, flattened to the sentence a reader sees."""
     out = []
-    for s in spec.get("sections") or []:
-        for e in s.get("entries") or []:
-            out += [b for b in (e.get("bullets") or []) if str(b).strip()]
-    return out
+    for section in spec.get("sections") or []:
+        for b in section.get("bullets") or []:
+            out.append(bullet_text(b))
+        for e in section.get("entries") or []:
+            for role in e.get("roles") or []:
+                out += [bullet_text(b) for b in (role.get("bullets") or [])]
+    return [b for b in out if b]
 
 
 # ---------------------------------------------------------------- the honesty guards
@@ -495,7 +588,11 @@ def verify(paths, spec):
     wanted = []
     for section in spec.get("sections") or []:
         for e in section.get("entries") or []:
-            wanted += [v for v in (e.get("right"), e.get("sub_right")) if (v or "").strip()]
+            if (e.get("right") or "").strip():
+                wanted.append(e["right"])
+            for role in e.get("roles") or []:
+                if (role.get("sub_right") or "").strip():
+                    wanted.append(role["sub_right"])
     drifted, unfound = [], []
     for value, xmax in right_edges(pdf, wanted):
         if xmax is None:
@@ -526,6 +623,12 @@ def verify(paths, spec):
     hits = [w for w in BANNED_WORDS if re.search(rf"\b{re.escape(w)}\b", lower)]
     if hits:
         warnings.append("anti-ai.md words on the page: " + ", ".join(hits))
+    # Checked against the summary and the bullets, not the whole page: "Major in Marketing"
+    # and the like are section text, and the rule is about how Tom's own claims read.
+    person = sorted(set(m.group(0) for b in [spec.get("summary") or ""] + spec_bullets(spec)
+                        for m in FIRST_PERSON_RE.finditer(b)))
+    if person:
+        warnings.append("first person in the summary or a bullet: " + ", ".join(person))
     ph = PLACEHOLDER_RE.findall(text)
     if ph:
         problems.append("placeholder text on the page: " + ", ".join(sorted(set(ph))[:4]))
@@ -555,13 +658,16 @@ def outline(spec):
              f"skills: {len((spec.get('skills') or '').split('|'))} items"]
     for section in spec.get("sections") or []:
         lines.append(f"[{section.get('heading')}]")
+        for b in section.get("bullets") or []:
+            lines.append(f"  * {len(bullet_text(b))} chars")
         for e in section.get("entries") or []:
-            head = " / ".join(x for x in [e.get("left"), e.get("sub_left")] if x)
-            right = " / ".join(x for x in [e.get("right"), e.get("sub_right")] if x)
-            bullets = [b for b in (e.get("bullets") or []) if str(b).strip()]
-            lines.append(f"  {head}  ->  {right}"
-                         f"  [{len(bullets)} bullets, "
-                         f"{sum(len(b) for b in bullets)} chars]")
+            lines.append(f"  {e.get('left')}  ->  {e.get('right')}")
+            for role in e.get("roles") or []:
+                bullets = [bullet_text(b) for b in (role.get("bullets") or [])]
+                bullets = [b for b in bullets if b]
+                lines.append(f"    {role.get('sub_left')}  ->  {role.get('sub_right')}"
+                             f"  [{len(bullets)} bullets, "
+                             f"{sum(len(b) for b in bullets)} chars]")
     return "\n".join(lines)
 
 

@@ -1097,10 +1097,26 @@ the bullet bank those IDs refer to, the CV skeleton with its entry IDs, any bull
 drafted from Tom's own interview answers, and a company brief if one was findable.
 
 BULLETS
-Place every surviving bullet against the skeleton entry it belongs to, using entry_id. \
-KEEP means the bank's text, unchanged. REVISE means keyword polish and re-angling of the \
-bank's text, never a new claim. CUT means it does not appear. New bullets from the \
-interview go on the role or project they actually happened at.
+Place every surviving bullet against the skeleton entry it belongs to, using entry_id. An \
+entry_id is one JOB, not one employer: LexisNexis has two of them, and a bullet from the \
+Corporate Legal years does not belong under Print & Digital. KEEP means the bank's text, \
+unchanged. REVISE means keyword polish and re-angling of the bank's text, never a new \
+claim. CUT means it does not appear. New bullets from the interview go on the role or \
+project they actually happened at.
+
+A PROJECT entry_id takes exactly one bullet and it is the body only. Its lead-in (the \
+project's name and what it was) is fixed and is added in code. Return no bullet for a \
+project and its base text is kept, which is usually the right answer -- the projects are \
+already tuned and there is rarely anything a posting can teach them.
+
+An entry_id you return NOTHING for keeps the base CV's own bullets. That is a real choice \
+and often the correct one. Return an entry only when this posting changes what should be \
+on it.
+
+The bank's Notes carry SCOPE GUARDs and METRIC GUARDs written after real interviews: what \
+Tom did and did not do, and which numbers do not exist. They are binding. A guard saying \
+never write "led" or "ran" on a bullet means exactly that, and a METRIC GUARD saying no \
+number attaches means you do not attach one.
 
 THE HARD LIMIT ON REVISION: every fact, tool, scale and number in a bullet you return must \
 already be in the bank's text for that bullet, in the skeleton's own text, or in a drafted \
@@ -1125,7 +1141,9 @@ what it changed from the canonical. SCORE HONESTLY AND MAKE THEM DIFFER. Three 8
 not a review, it is a shrug.
 
 SKILLS
-5-7 skills, most relevant first, separated by " | ". Only skills Tom actually has.
+5-7 skills, most relevant first, separated by " | ". Only skills Tom actually has, and only \
+from the bank's SKILLS POOL, which also records what is ruled out and why. Start from the \
+standing line for this track and change it only where the posting gives a reason.
 
 STYLE, non-negotiable
 No first person. Bullets start with a past-tense verb. No em dashes. No "leverage", \
@@ -1188,18 +1206,28 @@ TAILOR_SCHEMA = {
 
 
 def skeleton_block(base):
-    """The CV skeleton as the tailoring call sees it: entry IDs and what each one is, so a
-    bullet has somewhere to be placed. Bullet text already in the skeleton travels too --
-    it is part of what a revision is allowed to be made of."""
+    """The CV skeleton as the tailoring call sees it: every entry_id, what it is, and the
+    base CV's own bullets sitting on it.
+
+    The base bullets travel because they are part of what a revision is allowed to be made
+    of, and because they are the floor -- a role the tailoring pass says nothing about
+    keeps them rather than going blank."""
     idx = cvbuild.entry_index(base)
     L = []
     for eid in cvbuild.entry_ids(base):
-        e = idx.get(eid) or {}
-        head = " ".join(x for x in [e.get("left"), e.get("sub_left"), e.get("sub_right")]
-                        if x)
-        L.append(f"- entry_id `{eid}`: {head}")
-        for b in (e.get("bullets") or []):
-            L.append(f"    (already on the base CV) {b}")
+        slot = idx.get(eid) or {}
+        if slot.get("kind") == "project":
+            p = slot["project"]
+            L.append(f"- entry_id `{eid}` (PROJECT, one bullet): lead-in "
+                     f"\"{p.get('lead')}\" is fixed and must not change; return only the "
+                     f"body that follows it")
+            L.append(f"    (already on the base CV) {p.get('text')}")
+            continue
+        entry, role = slot.get("entry") or {}, slot.get("role") or {}
+        L.append(f"- entry_id `{eid}`: {entry.get('left')} - {role.get('sub_left')} "
+                 f"({role.get('sub_right')})")
+        for b in (role.get("bullets") or []):
+            L.append(f"    (already on the base CV) {cvbuild.bullet_text(b)}")
     return "\n".join(L)
 
 
@@ -1548,10 +1576,7 @@ def cv_corpus(bank, base, cur):
     The bank, the skeleton's own bullets, the bullets drafted from Tom's answers, and his
     answers themselves. Not the posting. The posting says what to look for; it never says
     what he did, and the moment it counts as evidence the whole honesty rule is gone."""
-    skeleton = " ".join(
-        " ".join(e.get("bullets") or [])
-        for e in ((base.get("education") or []) + (base.get("experience") or [])
-                  + list((base.get("projects") or {}).values())))
+    skeleton = " ".join(cvbuild.base_bullets(base))
     drafted = " ".join(b.get("text", "")
                        for b in ((cur.get("drafts") or {}).get("bullets") or []))
     answers = " ".join(a.get("answer", "") for a in (cur.get("answers") or []))
@@ -1670,15 +1695,17 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
     if not from_bank:
         # First CV ever. Put the skeleton where Tom can edit it and tell him once.
         cvbuild.seed_base(bank)
-    if cvbuild.is_unedited_seed(base) and not state.get("cv_base_nudged"):
+    gaps = cvbuild.skeleton_gaps(base)
+    if gaps and not state.get("cv_base_nudged"):
+        # Said once, not every role. None of these stop a CV being built, they just make it
+        # slightly worse than it needs to be, and a nag on every application is how a
+        # message stops being read.
         state["cv_base_nudged"] = True
-        tg.send("<b>One thing to fill in</b>\n\n"
-                "The CV skeleton is running off the seed: no locations on your roles, and "
-                "no bullets of your own in it. It still builds, it is just thinner than it "
-                "needs to be.\n\n"
-                f'<a href="{cvbuild.BASE_EDIT_URL}">Edit cv-base.json</a> - add the '
-                "location on each role, your degree details, and any bullet from your "
-                "current CV you want kept as a starting point.")
+        tg.send("<b>Two minutes on the CV skeleton</b>\n\n"
+                + "\n".join(f"\u2022 {esc(g)}" for g in gaps)
+                + f'\n\n<a href="{cvbuild.BASE_EDIT_URL}">Open cv-base.json</a>'
+                + "\n\n<i>The CV builds either way. The phone number is left out of the "
+                  "public repo on purpose, so the private copy is where it goes.</i>")
 
     corpus = cv_corpus(bank, base, cur)
     by_entry, rejected = screened_entries(tailored, base, corpus)

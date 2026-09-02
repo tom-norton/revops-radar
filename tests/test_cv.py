@@ -67,10 +67,13 @@ def headings(spec):
     return [s["heading"] for s in spec["sections"]]
 
 
-def project_lefts(spec, track):
+def project_leads(spec, track):
+    """A project on the CV is one bullet with a bold lead-in, not an entry with a header
+    line. That is how the base CV reads, so that is what the renderer produces."""
     title = cvbuild.PROJECTS_TITLE[track]
     section = next(s for s in spec["sections"] if s["heading"] == title)
-    return [e["left"] for e in section["entries"]]
+    assert section["kind"] == "bullets", section["kind"]
+    return [b["lead"] for b in section["bullets"]]
 
 
 def test_revops_tracks_keep_projects_above_experience():
@@ -89,7 +92,7 @@ def test_the_cs_track_moves_projects_below_experience_and_renames_them():
 
 
 def test_project_order_follows_the_track_table():
-    orders = {t: project_lefts(cvbuild.assemble_spec(BASE, t, "T", "S", {}, "sk"), t)
+    orders = {t: project_leads(cvbuild.assemble_spec(BASE, t, "T", "S", {}, "sk"), t)
               for t in ("ANALYTICS", "BUILDER", "CS")}
     assert orders["ANALYTICS"][0].startswith("Factorial")
     assert orders["BUILDER"][0].startswith("GTM Health Diagnostic")
@@ -118,12 +121,56 @@ def test_the_linkedin_line_carries_a_real_link():
     assert link["href"] == "https://www.linkedin.com/in/tom-p-norton/"
 
 
-def test_bullets_land_on_the_entry_they_were_assigned_to():
+def experience_roles(spec):
+    exp = next(s for s in spec["sections"] if s["heading"] == "PROFESSIONAL EXPERIENCE")
+    return {(e["left"], r["sub_left"]): r for e in exp["entries"] for r in e["roles"]}
+
+
+def test_bullets_land_on_the_role_they_were_assigned_to():
     spec = cvbuild.assemble_spec(BASE, "BUILDER", "T", "S",
                                  {"navex": ["Did the thing."]}, "sk")
-    exp = next(s for s in spec["sections"] if s["heading"] == "PROFESSIONAL EXPERIENCE")
-    navex = next(e for e in exp["entries"] if e["left"] == "NAVEX")
+    roles = experience_roles(spec)
+    navex = roles[("NAVEX", "Customer Success Manager")]
     assert navex["bullets"] == ["Did the thing."]
+
+
+def test_one_employer_with_two_titles_stays_one_employer():
+    """LexisNexis is one company Tom worked at twice. Rendering it as two companies reads
+    as two employers and makes an 11-year career look like a job-hopping one."""
+    spec = cvbuild.assemble_spec(BASE, "ANALYTICS", "T", "S", {}, "sk")
+    exp = next(s for s in spec["sections"] if s["heading"] == "PROFESSIONAL EXPERIENCE")
+    lex = [e for e in exp["entries"] if e["left"] == "LexisNexis"]
+    assert len(lex) == 1
+    assert [r["sub_left"] for r in lex[0]["roles"]] == [
+        "Account Manager (Corporate Legal)", "Account Manager (Print & Digital Solutions)"]
+
+
+def test_a_role_the_tailoring_pass_ignores_keeps_its_base_bullets():
+    """Saying nothing about a role is a real choice and often the right one. It must not
+    mean an empty section."""
+    spec = cvbuild.assemble_spec(BASE, "ANALYTICS", "T", "S",
+                                 {"navex": ["Did the thing."]}, "sk")
+    roles = experience_roles(spec)
+    assert roles[("NAVEX", "Customer Success Manager")]["bullets"] == ["Did the thing."]
+    kept = roles[("LexisNexis", "Account Manager (Corporate Legal)")]["bullets"]
+    assert len(kept) == 3 and "renewal process" in cvbuild.bullet_text(kept[0])
+
+
+def test_a_project_rewrite_replaces_the_body_and_keeps_the_name():
+    """The lead-in is the project's name and what it was. That is a fact about Tom's life,
+    not something a posting gets to tailor."""
+    spec = cvbuild.assemble_spec(BASE, "ANALYTICS", "T", "S",
+                                 {"factorial": ["A tighter body."]}, "sk")
+    projects = next(s for s in spec["sections"]
+                    if s["heading"] == "REVOPS & GTM PROJECTS")["bullets"]
+    factorial = next(b for b in projects if "Factorial" in b["lead"])
+    assert factorial["lead"] == "Factorial (ESADE MBA case study):"
+    assert factorial["text"] == "A tighter body."
+
+
+def test_an_empty_skills_line_falls_back_to_the_tracks_standing_one():
+    spec = cvbuild.assemble_spec(BASE, "BUILDER", "T", "S", {}, "")
+    assert spec["skills"].startswith("Python | HubSpot | Zapier")
 
 
 # ---------------------------------------------------------------- the honesty screen
@@ -366,27 +413,59 @@ def test_the_brief_is_researched_once_not_once_per_retry():
 
 # ---------------------------------------------------------------- bank write-back
 
-BANK_MD = """# Bullet bank
+# Shaped exactly like the live bank: no brackets round the ID, an em dash after it, blank
+# lines between fields, entries grouped under an employer heading. The format is the
+# contract -- an entry written a little differently is a bullet that quietly stops being
+# found, and nothing fails when that happens.
+BANK_MD = """# CV BULLET BANK \u2014 Tom Norton
 
 Last updated: 2026-01-01
 
-### [NAVEX-01] - ARR portfolio
+# NAVEX \u2014 Customer Success Manager (12/21 \u2013 08/25)
+
+### NAVEX-01 \u2014 ARR portfolio
 Status: CANONICAL | Tracks: ALL | Competencies: retention
+
 Text: Managed a $5.2M ARR portfolio across 22 enterprise accounts.
+
 Evidence: Base CV
+
 Notes: none
 
-### [NAVEX-02] - QBR format
+### NAVEX-02 \u2014 QBR format
 Status: CANONICAL | Tracks: CS | Competencies: QBR
+
 Text: Designed a QBR format later adopted across CS and AE teams.
+
 Evidence: Base CV
+
 Notes: none
 
-## CHANGE LOG
+# PROJECTS
 
-| Date | Bullet | What changed | Why |
+### PRJ-GTMHD \u2014 GTM Health Diagnostic
+Status: CANONICAL | Tracks: BUILDER | Competencies: funnel analytics
+
+Text: Built a Python and Streamlit diagnostic for the RevOps analyst.
+
+Evidence: GitHub
+
+Notes: none
+
+# CHANGE LOG
+
+| Date | Bullet ID | Change | Reason |
 |---|---|---|---|
 """
+
+
+def test_the_live_banks_entry_shape_parses():
+    """The format check that matters. The skill's own illustration writes `### [ID]`; the
+    real file writes `### ID \u2014 title`, and a parser matching the illustration finds
+    nothing at all and reports a clean run."""
+    spans = bankwrite.entry_spans(BANK_MD)
+    assert sorted(spans) == ["NAVEX-01", "NAVEX-02", "PRJ-GTMHD"]
+    assert bankwrite.entry_text(BANK_MD, "NAVEX-01").startswith("Managed a $5.2M")
 
 
 def test_a_promotion_replaces_the_text_and_leaves_the_rest_of_the_entry_alone():
@@ -409,7 +488,7 @@ def test_every_pass_bumps_the_date_and_writes_a_change_log_row():
     assert "Last updated: 2026-09-01" in md
     assert "2026-01-01" not in md
     assert "| 2026-09-01 | NAVEX-02 |" in md
-    assert "Job-specific variant (Fonoa): A Fonoa-shaped angle." in md
+    assert "Job-specific variant (NAVEX-02-VAR, Fonoa 2026-09-01): A Fonoa-shaped angle." in md
 
 
 def test_an_added_bullet_gets_the_next_free_id_in_its_family():
@@ -419,10 +498,12 @@ def test_an_added_bullet_gets_the_next_free_id_in_its_family():
          "tracks": "BUILDER", "competencies": "CRM hygiene", "why": "from the interview"}],
         "2026-09-01")
     assert applied == [("NAVEX-03", "ADD")]
-    assert "### [NAVEX-03] - Pipeline cleanup" in md
+    assert "### NAVEX-03 \u2014 Pipeline cleanup" in md
     assert "Tracks: BUILDER" in md
-    # It goes with the other entries, not after the change log.
-    assert md.index("### [NAVEX-03]") < md.index("## CHANGE LOG")
+    # It joins its own family rather than landing at the end of the file. A NAVEX bullet
+    # filed under PROJECTS is a bullet the next run reads in the wrong context.
+    assert md.index("### NAVEX-03") < md.index("# PROJECTS")
+    assert md.index("### NAVEX-03") > md.index("### NAVEX-02")
 
 
 def test_retiring_changes_the_status_and_nothing_else_on_the_line():
@@ -523,16 +604,57 @@ def test_a_broken_skeleton_in_the_bank_fails_loudly_rather_than_silently_reverti
         raise AssertionError("a corrupt skeleton was accepted")
 
 
-def test_an_unedited_seed_is_noticed_once_and_does_not_block_the_build():
-    assert cvbuild.is_unedited_seed(BASE) is True
-    filled = json.loads(json.dumps(BASE))
-    filled["experience"][0]["right"] = "Remote, United States"
-    assert cvbuild.is_unedited_seed(filled) is False
+def test_the_seed_is_the_real_cv_not_a_placeholder():
+    """The seed carries Tom's actual base CV, so a first build is a real CV rather than a
+    scaffold."""
+    assert "no bullets" not in " ".join(cvbuild.skeleton_gaps(BASE))
+    emptied = json.loads(json.dumps(BASE))
+    for entry in emptied["experience"] + emptied["education"]:
+        for role in entry["roles"]:
+            role["bullets"] = []
+    emptied["projects"] = {}
+    assert any("no bullets" in g for g in cvbuild.skeleton_gaps(emptied))
 
+
+def test_the_public_seed_carries_no_phone_number_and_says_so():
+    """This repo is public. A phone number in a public repo gets scraped; the same number
+    on a CV sent to a named recruiter does not. It lives in the bank's private copy, and
+    the gap is reported rather than left to be noticed on a finished PDF."""
+    assert not any(cvbuild.PHONE_RE.match((c.get("text") or "").strip())
+                   for c in BASE["contact"])
+    assert any("phone" in g for g in cvbuild.skeleton_gaps(BASE))
+    withphone = json.loads(json.dumps(BASE))
+    withphone["contact"].insert(1, {"text": "+34 722 719 046"})
+    assert not any("phone" in g for g in cvbuild.skeleton_gaps(withphone))
+
+
+def test_the_skeleton_is_nudged_about_once_not_every_role():
     step, state, tg, _bank, _calls = machine(score=6.9)
     step()
     assert step("Cleaned 400 stale opps | Yes, in Salesforce") is True
-    assert sum("One thing to fill in" in m for m in tg.sent) == 1
+    assert sum("CV skeleton" in m for m in tg.sent) == 1
+    assert state["cv_base_nudged"] is True
+
+
+def test_first_person_in_a_summary_is_flagged_not_silently_shipped():
+    """Not theoretical: the bank's own SUM-BUILDER canonical says "the RevOps tooling I
+    spent a decade working around" and carries a NEEDS REWRITE flag. Variation A starts
+    from the canonical, so it can reach the page."""
+    hits = [m.group(0) for m in cvbuild.FIRST_PERSON_RE.finditer(
+        "MBA candidate now building the RevOps tooling I spent a decade working around.")]
+    assert hits == ["I"]
+    # And does not fire on ordinary CV wording.
+    assert not cvbuild.FIRST_PERSON_RE.search(
+        "Major in Marketing, Minor in International Business")
+    assert not cvbuild.FIRST_PERSON_RE.search("Implemented a minimum viable process")
+
+
+def test_the_base_cv_is_part_of_what_a_revision_can_be_made_of():
+    corpus = " ".join(cvbuild.base_bullets(BASE))
+    assert "108-110%" in corpus and "$735K" in corpus
+    # And so the base CV's own numbers never read as invented.
+    assert cvbuild.invented_numbers(
+        "Exceeded NRR targets three straight years (108-110%).", corpus) == []
 
 
 def _run():

@@ -131,13 +131,13 @@ show("CV failed its checks", "\n".join(
                        "at 412pt, margin is 558pt"),
      "", "<i>The PDF and the page images are in the run log and at "
          "<code>cv/2026-09-01-fonoa-revenue-operations-lead-emea.pdf</code>.</i>"]))
-show("first CV: the skeleton needs filling in",
-     "<b>One thing to fill in</b>\n\n"
-     "The CV skeleton is running off the seed: no locations on your roles, and no bullets "
-     "of your own in it. It still builds, it is just thinner than it needs to be.\n\n"
-     f'<a href="{applyq.cvbuild.BASE_EDIT_URL}">Edit cv-base.json</a> - add the location on '
-     "each role, your degree details, and any bullet from your current CV you want kept as "
-     "a starting point.")
+show("the skeleton is missing something (said once, not per role)",
+     "<b>Two minutes on the CV skeleton</b>\n\n"
+     + "\n".join(f"\u2022 {applyq.esc(g)}"
+                 for g in applyq.cvbuild.skeleton_gaps(applyq.cvbuild.load_base()[0]))
+     + f'\n\n<a href="{applyq.cvbuild.BASE_EDIT_URL}">Open cv-base.json</a>'
+     + "\n\n<i>The CV builds either way. The phone number is left out of the public repo "
+       "on purpose, so the private copy is where it goes.</i>")
 
 show("still open (nudge)", "<b>Still open</b>\n\n"
      + f"<b>1</b>  {applyq.esc(applyq.clip(QS[2]['question'], 160))}\n\n"

@@ -25,72 +25,31 @@ import cvbuild  # noqa: E402
 
 OUT = os.environ.get("APPLYQ_CV_OUT", "cv-out")
 
-# A representative role: filled-in skeleton, four employers' worth of bullets, projects.
-# Deliberately near the two-page boundary, because that is where the layout bugs live.
-BULLETS = {
-    "edu-esade": ["Concentration in strategy and analytics. Graduating July 2026."],
-    "navex": [
-        "Managed a $5.2M ARR portfolio across 22 enterprise accounts, beating net revenue "
-        "retention targets three straight years at 108 to 110 percent.",
-        "Built account-level renewal risk assessments that fed the regional forecast, "
-        "giving sales leadership visibility a quarter ahead of renewal dates.",
-        "Designed a QBR format pairing product usage data with recommendations, later "
-        "adopted across the CS and AE teams.",
-        "Operationalized a three-stage review, comment and publish workflow with Product "
-        "and Support that retained $70K ARR.",
-    ],
-    "lexisnexis-corp": [
-        "Owned a $2M ARR portfolio across the full customer journey, from onboarding "
-        "through renewal and expansion.",
-        "Ran QBRs mapping product usage to customer time savings, surfacing roughly $150K "
-        "in annual expansion.",
-        "Trained new account managers and cut ramp time 25 percent in a quarter.",
-    ],
-    "lexisnexis-print": [
-        "Held a $1.2M ARR book across retention and cross-sell in print and digital legal "
-        "research.",
-    ],
-    "gtm-health": [
-        "Built a Python and Streamlit dashboard analysing funnel conversion and velocity "
-        "across the customer lifecycle, with a Claude API advisor layer.",
-    ],
-    "handoff": [
-        "Built a HubSpot and Zapier workflow triggering structured onboarding tasks on "
-        "deal close.",
-    ],
-    "debic": [
-        "Designed lead scoring and routing logic plus the CRM data foundation behind a EUR "
-        "1.5M demand generation roadmap.",
-    ],
-    "factorial": [
-        "Built a GTM funnel model, sized the sales team and ran CAC payback scenarios. "
-        "Only team selected to present to Factorial's VP of CX.",
-    ],
-}
-SUMMARY = ("Revenue operations and customer success operator with 11 years in B2B SaaS, "
-           "most recently managing $5.2M ARR at NAVEX. ESADE MBA finishing 2026, with GTM "
-           "funnel modelling, CRM architecture and lead routing work behind it. Strongest "
-           "where post-sale data meets forecasting: renewal risk, customer health and the "
-           "handoffs between sales and CS.")
-SKILLS = ("Salesforce | HubSpot | Gainsight | SQL | Revenue Operations | GTM Strategy | "
-          "Sales Forecasting")
+# The base CV's own content, rendered as-is. Not invented sample text: the point of this
+# test is that the renderer reproduces Tom's real page, so any drift shows up as a
+# difference from a document he already has on disk.
+BASE = cvbuild.load_base()[0]
+SUMMARY = ("MBA candidate moving into revenue operations after 11 years in enterprise B2B "
+           "SaaS. Built the funnel model, team sizing, CAC, and payback scenarios behind a "
+           "live market-entry case for a $100M ARR HR-tech company, presented to their VP "
+           "of CX. Ran a monthly six-month renewal risk forecast across $5.2M ARR, briefing "
+           "CS and sales leadership on exposure.")
 
 
-def filled_base():
-    base, _ = cvbuild.load_base()
-    # Stand in for the edits Tom makes in the bank's copy, so the render is measured
-    # against a realistic page rather than a half-empty one.
-    for role, where in zip(base["experience"],
-                           ["Remote, United States", "New York, NY", "New York, NY"]):
-        role["right"] = where
-    return base
+def all_base_bullets():
+    """{entry_id: [bullets]} straight off the skeleton, as the tailoring pass would hand
+    them over. Used to build the oversized cases below."""
+    out = {}
+    for _entry, role in cvbuild.all_roles(BASE):
+        if role.get("id"):
+            out[role["id"]] = list(role.get("bullets") or [])
+    return out
 
 
 def build(track="BUILDER", title="Revenue Operations Manager (m/f/d)", summary=SUMMARY,
-          bullets=None, stem="cv-smoke"):
-    base = filled_base()
-    spec = cvbuild.assemble_spec(base, track, cvbuild.role_title(title, track), summary,
-                                 BULLETS if bullets is None else bullets, SKILLS)
+          bullets=None, stem="cv-smoke", skills=None):
+    spec = cvbuild.assemble_spec(BASE, track, cvbuild.role_title(title, track), summary,
+                                 bullets or {}, skills)
     paths = cvbuild.render(spec, OUT, stem)
     problems, warnings, facts = cvbuild.verify(paths, spec)
     # Verbose here, and only here: this renders invented content from this file, not
@@ -138,8 +97,17 @@ def main():
     ok("the role title came off the posting", "REVENUE OPERATIONS MANAGER" in text)
     ok("projects sit above experience on a RevOps track",
        text.index("REVOPS & GTM PROJECTS") < text.index("PROFESSIONAL EXPERIENCE"))
-    ok("the skills line is one line",
-       sum(1 for line in text.split("\n") if "Salesforce | HubSpot" in line) == 1)
+    ok("the skills line is the track's standing one, on one line",
+       sum(1 for line in text.split("\n") if "Python | HubSpot | Zapier" in line) == 1)
+    ok("LexisNexis appears once, with both titles under it",
+       text.count("LexisNexis") == 1
+       and "Account Manager (Corporate Legal)" in text
+       and "Account Manager (Print & Digital Solutions)" in text)
+    ok("the second degree is on the page", "University of Dayton" in text)
+    ok("the contact line keeps its nationality note",
+       "Nationality: United States" in text)
+    ok("and the seed ships without a phone number, which the poller reports",
+       any("phone" in g for g in cvbuild.skeleton_gaps(BASE)))
 
     print("\n=== the CS track moves the projects section ===")
     _spec, cs_paths, cs_problems, _w, _f = build(track="CS", title="Senior Customer "
@@ -156,8 +124,8 @@ def main():
     # most likely to survive a prompt and reach paper are an em dash and a placeholder
     # metric, so both are pushed through on purpose. The em dash should be normalised away
     # before it renders; the placeholder should block the send.
-    bad = dict(BULLETS, navex=["Managed a $5.2M ARR portfolio \u2014 across 22 accounts, "
-                               "lifting NRR by [X]%."])
+    bad = {"navex": ["Managed a $5.2M ARR portfolio \u2014 across 22 accounts, "
+                     "lifting NRR by [X]%."]}
     _spec, bad_paths, bad_problems, _w, _f = build(bullets=bad, stem="cv-smoke-bad")
     ok("a placeholder metric on the page is caught",
        any("placeholder" in p for p in bad_problems), "; ".join(bad_problems))
@@ -169,7 +137,7 @@ def main():
     # The skill's rule: a slight third-page spillover is fixed by trimming a line of bullet
     # text, not by inserting a page break, so it must not block the send. Four pages is a
     # broken build and must.
-    fat = {k: v * 3 for k, v in BULLETS.items()}
+    fat = {k: v * 3 for k, v in all_base_bullets().items()}
     _spec, _p, fat_problems, fat_warnings, fat_facts = build(bullets=fat,
                                                              stem="cv-smoke-long")
     ok("a spillover page warns rather than refusing to send",
@@ -178,7 +146,7 @@ def main():
     ok("and says what to do about it", any("trim" in w for w in fat_warnings),
        "; ".join(fat_warnings))
 
-    fatter = {k: v * 8 for k, v in BULLETS.items()}
+    fatter = {k: v * 9 for k, v in all_base_bullets().items()}
     _spec, _p, fatter_problems, _w, fatter_facts = build(bullets=fatter,
                                                          stem="cv-smoke-longer")
     ok("a genuinely oversized CV is blocked",
