@@ -188,6 +188,11 @@ trip: you spent it by sending the feedback. The revision edits **the page you ac
 read**, not the tailoring output behind it, and the posting travels with the finished role
 so "the CV you sent me yesterday" is still revisable after the role ages off the dashboard.
 
+It works on a CV built before `/redo` existed, too. The run state is a cache; the packet
+and the PDF in the bank are the record, so a `/redo` with nothing in state recovers the
+role from those and revises the page you actually read. Saying "no CV to revise yet" with
+the PDF sitting in the same repo is not an answer.
+
 Your feedback is an instruction about the page, not a new source of fact. Ask for a number
 that exists nowhere and it will not write it: it says so, in the message, and hands you the
 page without it. The same honesty screen runs on a revision as on a first build. The bullet

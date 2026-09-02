@@ -62,6 +62,9 @@ class FakeBank:
     def write_bytes(self, rel, data):
         self.files[rel] = data
 
+    def read_bytes(self, rel, default=b""):
+        return self.files.get(rel, default)
+
     def commit(self, message):
         self.commits.append(message)
         return "abc1234"
@@ -103,7 +106,7 @@ def machine(audit=None, comp=None, drafts=None, score=6.8, tailored=None,
     tg, bank = FakeTelegram(), FakeBank({applyq.BANK_FILE: "### [NAVEX-01]\nText: ..."})
     calls = {"audit": 0, "draft": 0, "salary": 0, "split": 0, "drafted_from": None,
              "brief": 0, "tailor": 0, "bankwrite": 0, "render": 0, "shipped": None,
-             "revise": 0, "feedback": None}
+             "revise": 0, "feedback": None, "as_built": None}
     job = dict(JOB, comp=comp if comp is not None else JOB["comp"], score=score)
 
     def fake_audit(api_key, j, profile, bank_md, answers_md):
@@ -164,11 +167,12 @@ def machine(audit=None, comp=None, drafts=None, score=6.8, tailored=None,
                          "keywords": "SQL", "evidence": "bank"}],
         }
 
-    def fake_revise(api_key, j, aud, spec, feedback, base, bank_md, drafted):
+    def fake_revise(api_key, j, aud, as_built, feedback, base, bank_md, drafted):
         """Stands in for the revision pass. Echoes the feedback into the summary so a test
         can see it reached the page, and hands back one bullet per entry."""
         calls["revise"] += 1
         calls["feedback"] = feedback
+        calls["as_built"] = as_built
         return {"summary": f"Revised: {feedback}",
                 "entries": [{"entry_id": "navex",
                              "bullets": [{"text": "Managed 5.2M ARR across 22 accounts",

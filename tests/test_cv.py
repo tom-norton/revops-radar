@@ -563,6 +563,61 @@ def test_redo_says_what_it_needs_rather_than_guessing():
     assert "right now" in tg.last()
 
 
+def test_a_cv_built_before_redo_existed_is_still_revisable():
+    """Exactly what Tom hit: the Vanta CV shipped at 10:16 and /redo merged at 10:40, so
+    the run state had no last_cv and the bot said "No CV to revise yet" with the PDF
+    sitting in the same repo. The state is a cache; the packet and the PDF are the record.
+    """
+    step, state, tg, bank, calls = shipped()
+    pdf_rel = state["history"][-1]["cv"]
+    assert bank.files[pdf_rel], "the PDF is in the bank"
+    del state["last_cv"]                       # a CV from before the feature existed
+
+    applyq.cvbuild.ensure_toolchain = lambda *a, **k: None
+    applyq.cvbuild.pdf_text = lambda path: ("GTM STRATEGY & OPERATIONS ANALYST\n"
+                                            "Revenue operations candidate.\n"
+                                            "PROFESSIONAL EXPERIENCE\n"
+                                            " • Owned renewal risk forecasting.\n")
+    applyq.handle_commands([(0, "/redo drop the weakest NAVEX bullet")],
+                           state, [], tg, bank)
+    assert "Rebuilding" in tg.last(), tg.last()
+    assert state["current"]["stage"] == "revise"
+    assert state["current"]["recovered"] is True
+    assert step() is True
+    # The revision was shown the page he actually read, off the PDF.
+    assert "Owned renewal risk forecasting" in calls["as_built"]
+
+
+def test_recovery_keeps_the_title_that_came_off_the_posting():
+    """A recovered role has no tailoring output, and `role_title_usable` defaulting to
+    false would quietly swap the JD's title for the track's standing default."""
+    bank = FakeBank({"cv/x.pdf": b"%PDF",
+                     f"{applyq.PACKET_DIR}/p.md":
+                         "- Track: **BUILDER** - because systems\n"
+                         "- Role title on the CV: **REVENUE OPERATIONS MANAGER**\n"})
+    state = {"history": [{"id": "j1", "title": "RevOps Manager", "company": "Acme",
+                          "cv": "cv/x.pdf", "packet": "p.md"}]}
+    applyq.cvbuild.ensure_toolchain = lambda *a, **k: None
+    applyq.cvbuild.pdf_text = lambda path: "the page"
+    rec = applyq.recover_last_cv(bank, state)
+    assert rec["tailored"]["role_title_usable"] is True
+    assert rec["cv_title"] == "REVENUE OPERATIONS MANAGER"
+    assert rec["audit"]["track"] == "BUILDER"
+    assert rec["as_built"] == "the page"
+
+
+def test_a_revision_may_keep_what_the_previous_page_already_carried():
+    """The page that went out already passed the honesty screen. Refusing to let a
+    revision reuse it would silently delete good bullets every time he asked for one small
+    edit."""
+    bank = FakeBank({applyq.BANK_FILE: ""})
+    cur = {"as_built": "Grew the Dublin book 14 percent over two quarters."}
+    corpus = applyq.cv_corpus(bank, BASE, cur)
+    assert cvbuild.invented_numbers("Grew the Dublin book 14 percent", corpus) == []
+    # And a number that was never on any page is still caught.
+    assert cvbuild.invented_numbers("Grew the book 63 percent", corpus) == ["63"]
+
+
 def test_a_revision_survives_the_role_dropping_off_the_dashboard():
     """A role ages off the dashboard in a week. "The CV you sent me yesterday" should
     still be revisable today."""
