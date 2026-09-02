@@ -525,12 +525,17 @@ def _font_present(name):
 
 # ---------------------------------------------------------------- render
 
-def render(spec, outdir, stem):
+def render(spec, outdir, stem, build_js=BUILD_JS):
     """spec -> .docx -> .pdf -> page JPEGs. Returns dict of paths.
 
     LibreOffice headless does the PDF because it is the only converter on a runner that
     honours docx tab stops, and pdftoppm does the JPEGs because the only reliable way to
-    know a CV looks right is to look at it."""
+    know a CV looks right is to look at it.
+
+    `build_js` is the only thing that differs between a CV and a cover letter: each has its
+    own renderer holding its own layout, and everything after the .docx -- the private
+    LibreOffice profile, the timeout, the page images -- is the same problem twice and is
+    solved here once."""
     # Absolute from here on. LibreOffice's UserInstallation takes a file:// URI, and a
     # RELATIVE one hangs it forever rather than failing: "file://cv-out/.lo-profile" parses
     # as host "cv-out" with path "/.lo-profile", and soffice sits there until something
@@ -543,7 +548,7 @@ def render(spec, outdir, stem):
     with open(spec_path, "w", encoding="utf-8") as f:
         json.dump(spec, f, indent=1)
 
-    print(_run(["node", BUILD_JS, spec_path, docx_path]).strip())
+    print(_run(["node", build_js, spec_path, docx_path]).strip())
 
     # LibreOffice writes into -outdir keeping the basename, and needs a private profile:
     # the default one is shared and a second concurrent run silently does nothing.
@@ -772,14 +777,15 @@ def outline(spec):
     return "\n".join(lines)
 
 
-def log_render(paths, problems, warnings, facts, spec=None, verbose=False):
+def log_render(paths, problems, warnings, facts, spec=None, verbose=False, label="CV",
+               outline_fn=None):
     """What gets printed into the Actions log.
 
     `verbose` prints the rendered page text, which is how you diagnose a layout problem and
     also how you publish Tom's CV to a public Actions log. So it is off unless a run is
     started with it on deliberately. The page images are the real eyeball, and they go to
     his phone with the PDF."""
-    print("\n--- CV render " + "-" * 50)
+    print(f"\n--- {label} render " + "-" * (56 - len(label)))
     for k, v in facts.items():
         print(f"  {k}: {v}")
     print(f"  images: {', '.join(os.path.basename(j) for j in paths.get('jpegs') or []) or 'none'}")
@@ -789,7 +795,7 @@ def log_render(paths, problems, warnings, facts, spec=None, verbose=False):
         print(f"  FAIL:  {p}")
     if spec is not None:
         print("--- structure " + "-" * 51)
-        print(outline(spec))
+        print((outline_fn or outline)(spec))
     if verbose:
         print("--- page text " + "-" * 51)
         try:

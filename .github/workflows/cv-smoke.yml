@@ -6,15 +6,19 @@ name: CV render smoke
 # minutes and the tick runs ~96 times a day. It runs here instead, on any change that can
 # move the layout, and it leaves the rendered pages behind as an artifact -- because the
 # failure this guards against is silent. A broken tab stop produces a CV with the dates in
-# the wrong place, and it looks perfectly fine to the code that produced it.
+# the wrong place, and it looks perfectly fine to the code that produced it. The cover
+# letter has the same shape of failure and one rule of its own: it is one page, measured
+# off the rendered page count, which a stub can only ever pretend to check.
 
 on:
   push:
     paths:
       - "cv/**"
       - "cvbuild.py"
+      - "coverletter.py"
       - "cv-base.json"
       - "tests/test_cv_render.py"
+      - "tests/test_letter_render.py"
       - ".github/workflows/cv-smoke.yml"
   workflow_dispatch:
 
@@ -41,6 +45,11 @@ jobs:
         env:
           # Safe to be loud here: this renders invented content from the test file, not
           # anything out of the private bank.
+          APPLYQ_CV_LOG_TEXT: "1"
+      - name: Render and measure the cover letter
+        # The toolchain is already installed by the step above, so this costs seconds.
+        run: python tests/test_letter_render.py
+        env:
           APPLYQ_CV_LOG_TEXT: "1"
       - name: The pages themselves
         if: always()
