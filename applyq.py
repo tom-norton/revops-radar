@@ -67,6 +67,8 @@ import scan
 import bankwrite
 import coverletter
 import cvbuild
+import findform
+import submit
 
 # ---------------------------------------------------------------- config
 
@@ -79,6 +81,9 @@ BANK_FILE = "bullet-bank.md"
 ANSWER_FILE = "answer-bank.md"
 STATE_FILE = "state/apply-state.json"
 PACKET_DIR = "packets"
+# Where a submitted form and the plan behind it are filed, next to the CV and the letter
+# that went up with them.
+APPLY_DIR = "applications"
 # Commits to the bank are made as Tom, matching the skill's convention -- the bank is his
 # document, and a bot identity in its history makes `git log` useless for spotting what he
 # wrote himself.
@@ -116,6 +121,14 @@ BANKWRITE_MAX_TOKENS = 4000
 # entirely Tom's voice -- there is no bank canonical underneath it to fall back on.
 COVER_MODEL = "claude-opus-5"
 COVER_MAX_TOKENS = 4000
+# Phase 4. The one model call in a submission answers the questions a form asks that
+# nothing on file already answers -- "what excites you most about this opportunity" -- and
+# that is the same judgement call the letter is, so it is on the same model behind the same
+# honesty screen. Everything else on the form is filled by code, because a name, an email
+# address and a work-authorisation answer are facts, and a model that gets to guess at a
+# fact on an application form is a model that can put the wrong one on his record.
+SUBMIT_MODEL = "claude-opus-5"
+SUBMIT_MAX_TOKENS = 4000
 # Telegram allows getUpdates OR a webhook, never both: once a webhook is registered,
 # getUpdates returns 409 and polling is dead. So the message can arrive two ways.
 #
@@ -189,11 +202,12 @@ NO_MATERIAL = re.compile(r"^\s*(no|none|nope|nothing|n/?a|skip|no meaningful exp
 # as a single reply. GitHub's cron is the bottleneck (it delivered 4 of an expected 60 runs
 # in the 15 hours after launch, with gaps up to 5h45m), and each extra turn costs another
 # one of those. Five turns at that rate is a day per application.
-STAGES = ["audit", "ask", "packet", "cv", "pick", "revise", "cover", "done"]
+STAGES = ["audit", "ask", "packet", "cv", "pick", "revise", "cover",
+          "fill", "approve", "send", "done"]
 
 # Stages where the run is waiting on Tom and there is no point advancing without him. The
 # hold-open loop in tick() watches these, and only these.
-WAITING_STAGES = ("ask", "pick")
+WAITING_STAGES = ("ask", "pick", "approve")
 
 HELP = (
     "RevOps Radar apply queue\n\n"
@@ -204,6 +218,8 @@ HELP = (
     "/phone &lt;number&gt; - put your number on the CV (or /phone off)\n"
     "/redo &lt;what to change&gt; - rebuild the last CV with your feedback\n"
     "/cover &lt;anything to steer it&gt; - write the cover letter for the last CV\n"
+    "/submit - fill the application form for the last CV and show it to you\n"
+    "/send - send the form you just approved. Nothing goes without this.\n"
     "/help - this\n\n"
     "When I ask a question, just reply to it. Numbered options accept the number."
 )
@@ -1703,6 +1719,123 @@ def write_cover(api_key, job, audit, brief, as_built, answers, steer=""):
     return scan._extract_json(text)
 
 
+# ---------------------------------------------------------------- the form (Step 10)
+
+SUBMIT_SYSTEM = """You are answering the open questions on a job application form for Tom \
+Norton. His CV and his cover letter for this role are already written, already screened and \
+already attached to this form. You are not writing either of them again.
+
+WHAT YOU ARE ANSWERING. Only the questions listed. Every other field on the form -- his \
+name, his email, his phone number, his location, his LinkedIn, his work authorisation, the \
+files -- has already been filled by code from what is on file, and is not yours to touch. \
+The questions you have been given are the ones a person would have to think about: why this \
+company, what draws him to the role, how he heard about it, notice period, and whatever else \
+this particular form asks.
+
+LENGTH. A form question is not a cover letter. Two or three sentences where the form gives a \
+text box, a phrase where it gives a line. Nobody has ever been hired for the length of an \
+answer to "what excites you about this role", and a box filled with 400 words reads as \
+something a machine wrote.
+
+VOICE. First person, warm, direct, specific. The same register as the letter: somebody who \
+expects to be taken seriously and is easy to talk to. No em dashes. No "I am writing to \
+express", no "passionate about", no "synergy", "leverage", "spearheaded". No hedging \
+adverbs. Do not open two answers the same way.
+
+A DROPDOWN IS NOT A TEXT BOX. When a question lists options, `value` must be one of those \
+options, copied exactly, character for character. Anything else is discarded and the field \
+is left blank.
+
+WHAT YOU MAY SAY HE HAS DONE. Only what is in the CV as it went out, in his own interview \
+answers, or in the bullet bank behind them. THE POSTING IS NOT EVIDENCE: it says what they \
+are looking for, never what he did. A number that is not in his sources does not exist.
+
+`claims` is how that is checked. For every answer, list each assertion it makes about Tom's \
+own experience, restated as a standalone sentence. Each is screened in code against his \
+sources, and an answer with a claim that fails is dropped and its field left blank. An \
+answer that asserts nothing about his experience -- a notice period, how he heard about the \
+job -- has an empty `claims` list, and that is the normal case.
+
+WHAT YOU MUST LEAVE ALONE. If you cannot source an answer, do not write one: put the field \
+in `skipped` with a one-line reason and Tom will answer it himself. That is a working \
+outcome, not a failure. In particular:
+  - salary or rate expectations: never a number he has not given. Skip it.
+  - anything about visa status, sponsorship, notice period, start date or right to work \
+that is not already answered in his own words in the sources: skip it. These are facts \
+about a person, and a plausible guess at one is worse than a blank.
+  - any question you would have to invent an employer, a tool, a metric or a date to \
+answer: skip it.
+
+`notes` is one or two sentences for Tom: what you left for him, and anything you answered \
+that he might want to change. Written to be read on a phone."""
+
+SUBMIT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answers": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "value": {"type": "string"},
+                "claims": {"type": "array", "items": {"type": "string"}},
+                "why": {"type": "string"},
+            },
+            "required": ["id", "value", "claims", "why"],
+            "additionalProperties": False}},
+        "skipped": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}, "why": {"type": "string"}},
+            "required": ["id", "why"], "additionalProperties": False}},
+        "notes": {"type": "string"},
+    },
+    "required": ["answers", "skipped", "notes"],
+    "additionalProperties": False,
+}
+
+
+def questions_block(fields):
+    """The open questions as the model sees them: the id it must answer by, the question as
+    Tom would read it, and the exact options where there are any."""
+    out = []
+    for f in fields:
+        line = [f"[{f['id']}] {f['label']}"
+                + ("  (required)" if f.get("required") else "")]
+        if f.get("options"):
+            line.append("    Options, to be copied exactly: "
+                        + " | ".join(f["options"][:25]))
+        elif f["kind"] == submit.TEXTAREA:
+            line.append("    (a text box: two or three sentences)")
+        out.append("\n".join(line))
+    return "\n\n".join(out)
+
+
+def answer_questions(api_key, job, brief, as_built, letter_text, answers, fields):
+    """One call: the open questions on this form, answered from what is already on file."""
+    parts = [f"=== THE POSTING ===\n{job.get('title')} at {job.get('company') or '?'}\n"
+             f"Location: {job.get('location')}  Market: {job.get('market')}\n\n"
+             f"{scan.sample_desc(job.get('description'), 3000)}"]
+    block = brief_block(brief)
+    if block:
+        parts.append("=== COMPANY BRIEF ===\n" + block)
+    parts.append(f"=== THE CV AS IT WENT OUT ===\n{as_built}")
+    if (letter_text or "").strip():
+        parts.append(f"=== THE COVER LETTER GOING UP WITH IT ===\n{letter_text.strip()}")
+    said = cover_answers_block(answers)
+    if said:
+        parts.append(f"=== TOM'S OWN WORDS, FROM THE GAP INTERVIEW ===\n{said}")
+    parts.append("=== THE QUESTIONS ===\n" + questions_block(fields))
+    text = scan._claude_call(
+        api_key, SUBMIT_MODEL, SUBMIT_SYSTEM, "\n\n".join(parts), SUBMIT_MAX_TOKENS,
+        extra={"output_config": {"effort": AUDIT_EFFORT,
+                                 "format": {"type": "json_schema",
+                                            "schema": SUBMIT_SCHEMA}}})
+    out = scan._extract_json(text)
+    return ({a["id"]: {"value": a.get("value"), "claims": a.get("claims"),
+                       "why": a.get("why")}
+             for a in (out.get("answers") or []) if a.get("id")},
+            out.get("skipped") or [], out.get("notes") or "")
+
+
 # ---------------------------------------------------------------- bank write-back (Step 9)
 
 BANKWRITE_SYSTEM = """You are running Step 9a of Tom Norton's job-application-workflow: \
@@ -2368,6 +2501,9 @@ def build_and_ship_cover(state, job, bank, tg, letter):
                                            dropped_sentences, trimmed, facts, warnings,
                                            pdf_rel))
     cur["cover_file"] = pdf_rel
+    # Kept for the application form: a form that asks "why this company" should not be
+    # answered in different words from the letter arriving with it.
+    cur["letter_text"] = coverletter.letter_text(spec)
     finish_cover(state, cur, "cover" if not problems else "cover-failed", pdf_rel)
     bank.save_state(state)
     sha = bank.commit(f"Cover letter: {job.get('title')} at {job.get('company') or '?'}")
@@ -2403,6 +2539,448 @@ def build_and_ship_cover(state, job, bank, tg, letter):
         print(f"  warn: {w}")
     if sha:
         tg.send(f'<a href="https://{BANK_REPO}/commit/{sha}">cover letter in the bank</a>')
+    return True
+
+
+# ---------------------------------------------------------------- the application form
+
+def form_stem(cur, job):
+    """The submission is filed under the CV's name, so the form, the CV and the letter sit
+    together in the bank whenever the form was actually filled."""
+    return cur.get("cv_stem") or cv_name(job)
+
+
+def application_files(cur, job):
+    """What gets attached: the CV that shipped, and the letter if one was ever written."""
+    files = {"resume": f"{CV_DIR}/{form_stem(cur, job)}.pdf"}
+    cover = cur.get("cover_file")
+    if cover:
+        files["cover_letter"] = cover
+    return files
+
+
+def already_submitted(state, job_id):
+    """True when this role has an application on the record. Two applications to one
+    posting is not a retry, it is a second application, and it lands on a real desk."""
+    return any(h.get("id") == job_id and h.get("outcome") in ("submitted",
+                                                              "submitted-unconfirmed")
+               for h in (state.get("history") or []))
+
+
+def finish_submission(state, cur, outcome, extra=None):
+    """Record the run and put the role back where /redo and /cover can still find it.
+
+    Like the cover letter's row, this one carries no `cv` key: an application must never
+    make the CV behind it unrevisable, and a form that failed is a form Tom may well want
+    to /redo the CV for and try again."""
+    row = {"id": cur.get("id"), "title": cur.get("title"), "company": cur.get("company"),
+           "outcome": outcome, "at": now_iso(), "packet": cur.get("packet_file"),
+           "usage": cur.get("usage") or {}}
+    row.update(extra or {})
+    state.setdefault("history", []).append(row)
+    cur["stage"] = "done"
+    for k in ("plan", "fill_failures", "form_pdf", "form_rejected", "form_skipped",
+              "form_notes"):
+        cur.pop(k, None)
+    state["last_cv"] = cur
+    state["current"] = None
+    state["last_tick"] = now_iso()
+
+
+def numbered_blanks(plan):
+    """The required questions nothing could answer, numbered as Tom will see them. The
+    numbering is the contract: his reply comes back keyed to it."""
+    return [b for b in (plan.get("blanks") or []) if b.get("required")]
+
+
+def blank_line(i, b):
+    """One unanswered question, numbered, with the options where it has them. A dropdown
+    Tom answers in his own words is a round trip wasted, so the words it takes are in front
+    of him when he answers."""
+    line = f"{i}. {esc(clip(b['label'], 90))}"
+    if b.get("options"):
+        line += f"  <i>({esc(' / '.join(b['options'][:6]))})</i>"
+    return line
+
+
+def preview_caption(job, plan, notes, rejected, skipped, failed):
+    """What the filled form says in words, for the message the PDF travels with.
+
+    Written to be read before the PDF is opened, because the PDF is the long version and
+    this is the part that says what he has to do next."""
+    answers = plan.get("answers") or {}
+    by_model = sum(1 for a in answers.values() if a.get("by") == submit.BY_MODEL)
+    by_tom = sum(1 for a in answers.values() if a.get("by") == submit.BY_TOM)
+    tally = [f"{len(answers)} fields filled"]
+    if by_model:
+        tally.append(f"{by_model} written")
+    if by_tom:
+        tally.append(f"{by_tom} yours")
+    lines = [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+             esc(" \u00b7 ".join([job.get("company") or "?", plan.get("ats", "")] + tally))]
+
+    open_qs = numbered_blanks(plan)
+    if open_qs:
+        lines += ["", f"<b>{len(open_qs)} required question"
+                      f"{'' if len(open_qs) == 1 else 's'} I have not answered.</b> "
+                      f"Reply with the answers, numbered:"]
+        lines += [blank_line(i, b) for i, b in enumerate(open_qs, 1)]
+    if rejected:
+        lines += ["", f"<i>{len(rejected)} answer"
+                      f"{'' if len(rejected) == 1 else 's'} cut by the honesty screen "
+                      f"before it reached the form. The packet says which.</i>"]
+    if skipped:
+        lines += ["", "<i>Left blank on purpose: "
+                      + esc(clip(", ".join(s.get("why", "") for s in skipped[:3]), 200))
+                      + "</i>"]
+    if failed:
+        lines += ["", f"<i>{len(failed)} field"
+                      f"{'' if len(failed) == 1 else 's'} would not take what I put in "
+                      f"them. They are blank on the form as printed.</i>"]
+    if notes:
+        lines += ["", esc(clip(notes, 300))]
+    if plan.get("consents"):
+        lines += ["", f"<i>{len(plan['consents'])} acknowledgement"
+                      f"{'' if len(plan['consents']) == 1 else 's'} ticked. They are on "
+                      f"the last page.</i>"]
+    if plan.get("anti_bot"):
+        # Said before he types /send rather than after it bounces. Nothing here tries to
+        # get past the check; a job application is exactly the kind of submission an
+        # employer is entitled to want a person behind.
+        lines += ["", f"<i>This board runs {esc(plan['anti_bot'])} on submission, which "
+                      f"can refuse an automated send. If it does I'll tell you, and the "
+                      f"answers above are all in the packet to paste in by hand.</i>"]
+    lines += ["", "<b>Nothing has been sent.</b> Read it, then /send to submit it, "
+                  "/cancel to drop it."]
+    if open_qs:
+        lines += ["<i>/send will not go through until those questions are answered.</i>"]
+    return "\n".join(lines)
+
+
+def application_section_markdown(cur, job, plan, rejected, skipped, notes, outcome,
+                                 pdf_rel, page_said=""):
+    L = ["", "---", "", "## Application form", "",
+         f"- **Board:** {plan.get('ats')}",
+         f"- **Automated-submission check:** {plan.get('anti_bot') or 'none seen'}",
+         f"- **Form:** {plan.get('url')}",
+         f"- **Outcome:** {outcome}",
+         f"- **Filled form:** `{pdf_rel}`" if pdf_rel else "- **Filled form:** not printed",
+         ""]
+    L += ["### What went in", ""]
+    by_id = {f["id"]: f for f in plan.get("fields", [])}
+    for fid, a in (plan.get("answers") or {}).items():
+        label = (by_id.get(fid) or {}).get("label") or fid
+        L.append(f"- **{label[:80]}** ({a.get('by')}): {str(a.get('value'))[:300]}")
+    if rejected:
+        L += ["", "### Cut by the honesty screen", ""]
+        L += [f"- **{label[:70]}**: {why}" for _fid, label, why in rejected]
+    if skipped:
+        L += ["", "### Left for Tom", ""]
+        L += [f"- `{s.get('id')}`: {s.get('why')}" for s in skipped]
+    blanks = plan.get("blanks") or []
+    if blanks:
+        L += ["", "### Still blank", ""]
+        L += [f"- {b['label'][:80]}" + (" **(required)**" if b["required"] else "")
+              for b in blanks]
+    if notes:
+        L += ["", "### Notes", "", notes]
+    if page_said:
+        L += ["", "### What the page said afterwards", "", "```", page_said[:400], "```"]
+    return "\n".join(L) + "\n"
+
+
+def ship_preview(state, job, bank, tg, plan, notes, rejected, skipped):
+    """Fill the form in a browser, print it, and put it in front of Tom.
+
+    Returns False, always: a preview is the start of a wait, never the end of a role. The
+    only thing that ends it is /send or /cancel."""
+    cur = state["current"]
+    stem = form_stem(cur, job)
+    out_pdf = os.path.join(CV_OUT_DIR, f"{stem}-form.pdf")
+    os.makedirs(CV_OUT_DIR, exist_ok=True)
+    _pdf, failed, _fields, checks = submit.preview(plan, out_pdf, bank.path)
+    plan["anti_bot"] = checks
+
+    pdf_rel = f"{APPLY_DIR}/{stem}-form.pdf"
+    with open(out_pdf, "rb") as f:
+        bank.write_bytes(pdf_rel, f.read())
+    cur["plan"] = plan
+    cur["form_pdf"] = pdf_rel
+    cur["stage"] = "approve"
+    cur["asked_at"] = now_iso()
+    state["last_tick"] = now_iso()
+    bank.save_state(state)
+    bank.commit(f"Application form: {job.get('title')} at {job.get('company') or '?'}")
+
+    caption = preview_caption(job, plan, notes, rejected, skipped, failed)
+    if not tg.send_document(out_pdf, caption):
+        tg.send(caption + f"\n\n<i>Telegram would not take the file. It is at "
+                          f"<code>{esc(pdf_rel)}</code> in the bank.</i>")
+    return False
+
+
+def try_fill(state, job, bank, tg, api_key):
+    """build the plan and preview it, with the same bounded retry the renders get. A
+    browser drives a page over a network it does not control, so a blip deserves another
+    tick and a wall does not deserve one forever."""
+    try:
+        return fill_form_stage(state, job, bank, tg, api_key)
+    except Exception as e:
+        cur = state.get("current") or {}
+        n = cur.get("fill_failures", 0) + 1
+        cur["fill_failures"] = n
+        if n < MAX_STAGE_RETRIES:
+            print(f"  form fill failed ({n}/{MAX_STAGE_RETRIES}): {e}")
+            return False
+        tg.send(f"Gave up filling the form for {esc(job.get('title'))}: it failed {n} "
+                f"times.\nLast error: {esc(str(e)[:250])}\n"
+                f"Nothing was sent. The CV and the letter are still in the bank, so this "
+                f"one is a manual application: {esc(job.get('url') or '')}")
+        finish_submission(state, cur, "fill-failed", {"error": str(e)[:200]})
+        return True
+
+
+def board_link(found):
+    """The board itself, so a lookup that came back empty can be checked by eye."""
+    ats, slug = found.get("ats"), found.get("slug")
+    if not slug:
+        return ""
+    return {"greenhouse": f"https://job-boards.greenhouse.io/{slug}",
+            "ashby": f"https://jobs.ashbyhq.com/{slug}",
+            "lever": f"https://jobs.lever.co/{slug}"}.get(ats, "")
+
+
+def resolve_form(state, job, tg, url):
+    """(url, ats) for a posting whose own link is not a form, ("" , "") when there is none.
+
+    Every outcome other than a match ends the role here and says why, because each of them
+    means something different to Tom: a board with the role missing is a role that has
+    probably closed, and four cities sharing one title is a choice only he can make."""
+    cur = state["current"]
+    posting = f'<a href="{esc(url)}">the posting</a>' if url else "the posting"
+    try:
+        found = findform.find_form(job)
+    except Exception as e:
+        print(f"  form lookup failed: {e}")
+        found = {"outcome": "no-board", "candidates": []}
+    company = esc(job.get("company") or "?")
+
+    if found.get("outcome") == "found":
+        ats = submit.detect_ats(found["url"])
+        where = esc(f"{found.get('title')} \u00b7 "
+                    + (found.get("location") or "no location given"))
+        if ats:
+            tg.send("\n".join(
+                [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+                 esc(f"{job.get('company') or '?'} \u00b7 the link on the dashboard is not "
+                     f"a form, so I went to their {found.get('ats')} board."), "",
+                 f"<i>Filling this one: {where}</i>"]))
+            return found["url"], ats
+        # Their board is one without a driver. Still a win: a direct link to the real
+        # application beats a LinkedIn page he has to search from.
+        tg.send("\n".join(
+            [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+             esc(f"{job.get('company') or '?'} \u00b7 found the real application, but it "
+                 f"is on {found.get('ats')}, which I cannot fill yet."), "",
+             f'<a href="{esc(found["url"])}">Apply here</a>  <i>({where})</i>', "",
+             "<i>The CV and the letter are in the bank, and the letter's text is in the "
+             "packet for pasting into a box.</i>"]))
+        finish_submission(state, cur, "submit-unsupported",
+                          {"url": found["url"], "ats": found.get("ats")})
+        return "", ""
+
+    if found.get("outcome") == "ambiguous":
+        # Several roles with the same title and nothing to separate them. A form filled
+        # for the wrong city is a wrong application, not a near miss.
+        lines = [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+                 esc(f"{job.get('company') or '?'} \u00b7 their board has "
+                     f"{len(found.get('candidates') or [])} roles with this title, and "
+                     f"nothing to tell me which one is yours."),
+                 ""]
+        lines += [f'\u2022 <a href="{esc(c["url"])}">{esc(clip(c["title"], 50))}</a>  '
+                  f'<i>{esc(c.get("location") or "")}</i>'
+                  for c in (found.get("candidates") or [])[:4]]
+        lines += ["", "<i>Pick one and apply there. Everything is in the bank.</i>"]
+        tg.send("\n".join(lines))
+        finish_submission(state, cur, "submit-ambiguous",
+                          {"candidates": len(found.get("candidates") or [])})
+        return "", ""
+
+    if found.get("outcome") == "gone":
+        # Said carefully. A slug guessed from a company name can land on somebody else's
+        # board, and a role that has merely been retitled looks identical from here to one
+        # that has closed. What is certain is only what is stated: this title is not on
+        # that board.
+        board = board_link(found)
+        tg.send("\n".join(
+            [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+             esc(f"{job.get('company') or '?'} \u00b7 I found a {found.get('ats')} board "
+                 f"under their name with {found.get('board_size')} roles on it, and this "
+                 f"title is not one of them."), "",
+             "<i>Either the role has come down or it is listed under a different name "
+             "there. Nothing was sent.</i>",
+             f'<a href="{esc(board)}">Their board</a>' if board else "",
+             f"{posting} <i>may still be live.</i>" if url else ""]))
+        finish_submission(state, cur, "submit-role-gone", {"url": url})
+        return "", ""
+
+    tg.send("\n".join(
+        [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+         esc(f"{job.get('company') or '?'} \u00b7 the link is not a form and I could not "
+             f"find a board of theirs to look on."), "",
+         f'<a href="{esc(url)}">The posting is here</a>' if url else "",
+         "<i>The CV and the letter are in the bank, and the letter's text is in the packet "
+         "for pasting into a box. I can fill "
+         + esc(", ".join(submit.supported_boards())) + " forms.</i>"]))
+    finish_submission(state, cur, "submit-unsupported", {"url": url})
+    return "", ""
+
+
+def fill_form_stage(state, job, bank, tg, api_key):
+    """Read the form, plan every answer, screen the written ones, fill it, print it."""
+    cur = state["current"]
+    url = job.get("url") or ""
+    ats = submit.detect_ats(url)
+    if not ats:
+        # Half the roles on the radar arrive as a LinkedIn or aggregator link, and none of
+        # those is a form. Before giving up, go to the company's own board and look for the
+        # same role on it.
+        url, ats = resolve_form(state, job, tg, url)
+        if not ats:
+            return True
+    cur["form_url"] = url
+
+    submit.ensure_browser()
+    fields, _name = submit.read_form(url, ats)
+    if not fields:
+        raise RuntimeError("the form came back with no fields on it")
+
+    base, _from_bank = cvbuild.load_base(bank)
+    ident = submit.identity(base)
+    files = application_files(cur, job)
+    known, notes_code = submit.plan_known(fields, ident, job, files)
+
+    open_qs = submit.open_questions(fields, known)
+    written, skipped, notes = {}, [], ""
+    if open_qs:
+        before = usage_snapshot()
+        as_built = (as_built_block(cur["spec"]) if cur.get("spec")
+                    else (cur.get("as_built") or ""))
+        raw, skipped, notes = answer_questions(
+            api_key, job, cur.get("brief"), as_built, cur.get("letter_text"),
+            cur.get("answers"), open_qs)
+        record_usage(cur, "form", before)
+        corpus = cv_corpus(bank, base, cur)
+        written, rejected = submit.screen_answers(raw, fields, corpus)
+        for _fid, label, why in rejected:
+            print(f"  form answer rejected ({why[:60]}): {label[:60]!r}")
+    else:
+        rejected = []
+
+    answers = dict(known)
+    answers.update(written)
+    plan = submit.build_plan(url, ats, fields, answers, files, notes_code)
+    plan["posting_url"] = job.get("url") or ""
+    cur["form_rejected"] = rejected
+    cur["form_skipped"] = skipped
+    cur["form_notes"] = notes
+    return ship_preview(state, job, bank, tg, plan, notes, rejected, skipped)
+
+
+def send_stage(state, job, bank, tg):
+    """Replay the approved plan onto the form and press the button.
+
+    Every outcome other than a confirmed send leaves the role recoverable and says exactly
+    what happened. The one thing never said is that an application went in when the page
+    did not say it did."""
+    cur = state["current"]
+    plan = cur.get("plan") or {}
+    stem = form_stem(cur, job)
+    out_pdf = os.path.join(CV_OUT_DIR, f"{stem}-form.pdf")
+    os.makedirs(CV_OUT_DIR, exist_ok=True)
+
+    result = submit.submit_form(plan, out_pdf, bank.path)
+    reason = result.get("reason")
+
+    if reason == "changed":
+        # The employer edited the form between the preview and the send. The answers Tom
+        # approved no longer describe the page, so nothing is submitted and the whole plan
+        # is built again from the form as it is now.
+        tg.send("\n".join(
+            [f"\u26a0 <b>The form has changed</b>  "
+             f"{esc(clip(job.get('company') or '?', 40))}",
+             esc("It is not the form you approved, so I have not sent it. Reading it "
+                 "again now and I will show you the new one.")]))
+        cur["stage"] = "fill"
+        cur.pop("plan", None)
+        return False
+
+    if reason == "incomplete":
+        missing = result.get("missing") or []
+        plan["blanks"] = submit.blanks(plan.get("fields", []), plan.get("answers") or {})
+        cur["stage"] = "approve"
+        lines = [f"\u26a0 <b>Not sent</b>  {esc(clip(job.get('company') or '?', 40))}",
+                 esc(f"{len(missing)} required question"
+                     f"{'' if len(missing) == 1 else 's'} still unanswered:"), ""]
+        lines += [blank_line(i, m) for i, m in enumerate(missing, 1)]
+        lines += ["", "<i>Reply with the answers, numbered, and I will fill them in and "
+                      "show you the form again.</i>"]
+        tg.send("\n".join(lines))
+        return False
+
+    pdf_rel = f"{APPLY_DIR}/{stem}-form.pdf"
+    if os.path.exists(out_pdf):
+        with open(out_pdf, "rb") as f:
+            bank.write_bytes(pdf_rel, f.read())
+
+    if reason == "no-button":
+        tg.send("\n".join(
+            [f"\u26a0 <b>Not sent</b>  {esc(clip(job.get('company') or '?', 40))}",
+             esc("The form filled in fine but I could not find its submit button, so "
+                 "nothing was pressed."), "",
+             f'<a href="{esc(plan.get("url") or "")}">Do this one by hand</a> '
+             f"<i>- the filled form is in the bank at "
+             f"<code>{esc(pdf_rel)}</code> so you can copy the answers across.</i>"]))
+        outcome = "submit-failed"
+    elif result.get("sent"):
+        tg.send("\n".join(
+            [f"\u2713 <b>Applied</b>  {esc(clip(job.get('title'), 60))}",
+             esc(f"{job.get('company') or '?'} \u00b7 {plan.get('ats')} \u00b7 "
+                 f"confirmed by the page"), "",
+             "<i>The form as it went is in the bank, with every answer in the "
+             "packet.</i>"]))
+        outcome = "submitted"
+    else:
+        # Clicked, and the page did not say it took it. Reported as exactly that: an
+        # application Tom has to look at, not one he can forget about.
+        checks = result.get("anti_bot") or plan.get("anti_bot")
+        lines = [f"\u26a0 <b>Sent, but not confirmed</b>  "
+                 f"{esc(clip(job.get('company') or '?', 40))}",
+                 esc("I pressed submit and the page did not come back with a "
+                     "confirmation. It may have gone through and it may not."), ""]
+        if checks:
+            lines += [esc(f"This board runs {checks} on submission and it may simply have "
+                          f"refused an automated send. That is what it is there for, and "
+                          f"it is not something to get around: if the form is still "
+                          f"sitting there, it wants a person."), ""]
+        lines += [esc(clip(result.get("page_said") or "", 200)), "",
+                  f'<a href="{esc(result.get("url") or plan.get("url") or "")}">Open the '
+                  f'form</a> <i>and check before applying again. Every answer is in the '
+                  f'packet to paste in.</i>']
+        tg.send("\n".join(lines))
+        outcome = "submitted-unconfirmed"
+
+    if cur.get("packet_file"):
+        bank.append(f"{PACKET_DIR}/{cur['packet_file']}",
+                    application_section_markdown(
+                        cur, job, plan, cur.get("form_rejected") or [],
+                        cur.get("form_skipped") or [], cur.get("form_notes") or "",
+                        outcome, pdf_rel, result.get("page_said") or ""))
+    finish_submission(state, cur, outcome, {"form": pdf_rel, "url": plan.get("url")})
+    bank.save_state(state)
+    sha = bank.commit(f"Application: {job.get('title')} at {job.get('company') or '?'}")
+    if sha:
+        tg.send(f'<a href="https://{BANK_REPO}/commit/{sha}">the form, in the bank</a>')
     return True
 
 
@@ -2580,6 +3158,67 @@ def handle_commands(texts, state, queue, tg, bank=None):
                                 "hook comes off the posting itself. It'll be a thinner "
                                 "letter.</i>"]
                 tg.send("\n".join(msg))
+        elif cmd == "/submit":
+            # Opt-in, on the CV that already went out, and it never sends anything: it
+            # fills the form and prints it. /send is the only thing that submits, and it
+            # is a separate message on purpose -- an application is the one action in this
+            # whole pipeline that cannot be undone.
+            last = state.get("last_cv")
+            recoverable = last or (bank is not None and recoverable_cv(state))
+            # The id is taken off whichever of the two exists, because a CV recovered from
+            # the bank carries no copy of the posting and its link has to come off the
+            # dashboard.
+            role_id = (last or recoverable or {}).get("id")
+            if state.get("current"):
+                tg.send(f"Working on {esc(clip(state['current'].get('title'), 50))} right "
+                        f"now. /submit once that one's finished.")
+            elif not recoverable:
+                tg.send("No CV to apply with yet. /apply a role and I'll build one, then "
+                        "/submit it.")
+            elif already_submitted(state, role_id):
+                tg.send("You've already applied to that one. A second application is a "
+                        "second application, so I won't send it twice.")
+            else:
+                base_role = last or recover_last_cv(bank, state)
+                if not base_role:
+                    tg.send("There's a CV in the bank but I can't read it back. "
+                            "/apply the role again and I'll rebuild it from scratch.")
+                    continue
+                job = (load_job(role_id) or base_role.get("job_snapshot") or {})
+                if not (job.get("url") or ""):
+                    tg.send("I don't have a link to that role's form any more, so there's "
+                            "nothing to fill. /apply it again and I'll pick the link back "
+                            "up.")
+                    continue
+                run = json.loads(json.dumps(base_role))
+                run.update({"stage": "fill", "started_at": now_iso()})
+                for k in ("asked_at", "render_failures", "cv_failures", "cover_failures",
+                          "fill_failures", "plan", "nudged"):
+                    run.pop(k, None)
+                state["current"] = run
+                name = run.get("company") or run.get("cv_title") or run.get("title")
+                msg = [f"<b>Filling the form</b>  {esc(clip(name, 60))}",
+                       "", "<i>Nothing gets sent. I'll fill it in, print it, and show you "
+                           "the page before anything is submitted.</i>"]
+                if not run.get("cover_file"):
+                    msg += ["", "<i>No cover letter on this one. /cancel and /cover first "
+                                "if you want one attached.</i>"]
+                tg.send("\n".join(msg))
+        elif cmd == "/send":
+            cur = state.get("current")
+            if not cur or cur.get("stage") != "approve":
+                tg.send("Nothing waiting to be sent. /submit fills a form first, and I'll "
+                        "show it to you before anything goes.")
+            elif numbered_blanks(cur.get("plan") or {}):
+                open_qs = numbered_blanks(cur["plan"])
+                tg.send("\n".join(
+                    [f"<b>{len(open_qs)} required question"
+                     f"{'' if len(open_qs) == 1 else 's'} still unanswered</b>, so the "
+                     f"form would be rejected. Reply with the answers, numbered:", ""]
+                    + [blank_line(i, b) for i, b in enumerate(open_qs, 1)]))
+            else:
+                cur["stage"] = "send"
+                tg.send("<b>Sending it.</b> I'll tell you what the page says.")
         elif cmd == "/phone":
             arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
             if bank is None:
@@ -3014,6 +3653,62 @@ def advance(state, job, bank, tg, api_key, answers_text):
             return True
         record_usage(cur, "cover", before)
         return try_cover(state, job, bank, tg, letter)
+
+    # ---- fill: read the application form, plan every answer, and print the filled page.
+    # No round trip is spent getting here -- /submit carried the request -- and the one
+    # that follows is the only one this phase asks for, because it is the one that matters.
+    if cur["stage"] == "fill":
+        return try_fill(state, job, bank, tg, api_key)
+
+    # ---- approve: the wait. Either /send arrives, which moves the stage on, /cancel
+    # arrives, which drops it, or he answers the questions nothing could source.
+    if cur["stage"] == "approve":
+        reply = (answers_text or "").strip()
+        if not reply:
+            return False
+        plan = cur.get("plan") or {}
+        open_qs = numbered_blanks(plan)
+        if not open_qs:
+            tg.send("The form is filled and waiting. /send to submit it, /cancel to drop "
+                    "it.")
+            return False
+        replies = submit.parse_numbered(reply, len(open_qs))
+        if not replies:
+            tg.send("\n".join(
+                ["Couldn't tell which question that answers. Number them:", "",
+                 "<code>1 Dublin</code>", "<code>2 three months</code>"]))
+            return False
+        plan, filled, unmatched = submit.apply_replies(plan, replies)
+        if unmatched and not filled:
+            # A dropdown takes what it takes. Showing him the list again is one message;
+            # forcing a near-miss onto a work-authorisation question is a wrong answer on
+            # an employer's record.
+            tg.send("\n".join(
+                ["<b>That isn't one of the options.</b>", ""]
+                + [f"\u2022 {esc(clip(b['label'], 70))}\n  "
+                   f"<i>{esc(' / '.join(b.get('options') or []))}</i>"
+                   for b, _v in unmatched]))
+            return False
+        if not filled:
+            tg.send("None of those matched a question I am waiting on. /send to submit "
+                    "the form as it stands, /cancel to drop it.")
+            return False
+        lines = ["<b>Added</b>"] + [
+            f"\u2022 {esc(clip(label, 60))}: {esc(clip(value, 80))}"
+            for label, value in filled]
+        if unmatched:
+            lines += ["", "<i>Not taken, because it is not one of the options: "
+                      + esc(", ".join(b["label"][:40] for b, _v in unmatched)) + "</i>"]
+        lines += ["", "<i>Filling it in again and printing it for you.</i>"]
+        tg.send("\n".join(lines))
+        # Re-filled from scratch rather than patched in place, because the page in front of
+        # us is a new page: the browser that held the old one is long gone.
+        return ship_preview(state, job, bank, tg, plan, cur.get("form_notes") or "",
+                            cur.get("form_rejected") or [], cur.get("form_skipped") or [])
+
+    # ---- send: he approved it. This is the only stage that can press a submit button.
+    if cur["stage"] == "send":
+        return send_stage(state, job, bank, tg)
     return False
 
 

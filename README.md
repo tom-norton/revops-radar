@@ -236,7 +236,7 @@ opening or the close is what failed, nothing is sent at all — a letter without
 not a letter — and you get told why.
 
 **Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/redo`,
-`/cover`, `/help`.
+`/cover`, `/submit`, `/send`, `/help`.
 
 **Answer questions however you like.** A reply that is nothing but letters is read in
 code, exactly, with no model involved: `1a 2b 3c`, `a b c`, `C, c, b`, `1. a  2. c` all
@@ -254,6 +254,106 @@ the only real fix is pushing work in rather than polling for it — a Telegram w
 the bank is ever written into it. That makes `BULLET_BANK_PAT` a hard dependency: without
 it there is nowhere to persist an interview that spans days, and the poller fails loudly
 rather than proceeding.
+
+## Applying
+
+Opt-in, and it never sends anything on its own:
+
+```
+/submit     fill the form for the CV that just went out, and show it to you
+/send       submit the form you have just read
+```
+
+`/submit` opens the application form in a browser, fills it, prints the filled page to a
+PDF and sends you that PDF. **Nothing is submitted.** The fill stage has no route to a
+submit button at all — pressing it lives in one function, and the only thing that reaches
+that function is a `/send` from you. That split is the whole design: a CV that ships wrong
+gets a `/redo`, a letter that reads thin gets rewritten, and an application that goes in
+has gone in, on a real company's record, under your name.
+
+**Code fills the facts; a model only answers the questions.** Your name, email, phone,
+location, LinkedIn, the CV, the cover letter, work authorisation and sponsorship are all
+filled from what is on file — the same skeleton the letterhead is built from, so a number
+set with `/phone` reaches the form the moment it reaches the CV. Work authorisation comes
+off your nationality and the market the role is in: a US citizen applying to a Dublin role
+is not authorised there and does need sponsorship, and that is legal status rather than a
+judgement call. The model is never shown those fields, so it cannot put a wrong answer in
+one. What it does answer is the rest: "what excites you most about this opportunity", "how
+did you hear about this job", and whatever else that particular form asks.
+
+**Demographic questions are never answered.** Gender, race, ethnicity, veteran status,
+disability: the model never sees them, and the code does not answer them either, beyond
+taking the form's own "prefer not to say" when a required field will not accept a blank.
+
+**Blank beats invented, and a blank stops the send.** Every written answer goes through the
+same honesty screen as the CV and the letter, against the same sources; one whose claim
+cannot be traced, or that carries a number from nowhere, is dropped and its field left
+empty. A salary expectation you have not given is never guessed at. Anything required and
+still empty is listed back to you, numbered, and `/send` refuses until you answer it —
+reply `1 Dublin`, `2 three months` and it fills them in and prints the form again. Your own
+answers go in as your words, unscreened, because the screen exists to stop a model
+inventing your experience and you cannot invent your own.
+
+**What you approved is what gets sent.** The runner that filled the form is destroyed long
+before you read the PDF, so `/send` opens the form again and replays the plan onto it. If
+the employer has edited the form in the meantime the shape no longer matches, nothing is
+submitted, and it re-reads and re-prints for you instead. After the click the page is read
+back: if it does not confirm, you are told it was sent but not confirmed, never that you
+have applied. **The one thing you are never told is that an application went in when the
+page did not say so.**
+
+**A LinkedIn link is not a form, so it goes looking for the real one.** Half the roles on
+the radar arrive through LinkedIn or an aggregator, and LinkedIn will not give up the
+"apply on company website" URL to anyone who is not logged in. So it does not chase the
+link: it goes to the company instead, finds their own job board through the public APIs
+Greenhouse, Ashby and Lever publish, and looks for the same role on it. Nine of the first
+ten companies tried this way were found from the company name alone.
+
+The matching is deliberately strict, because the downside is not a near miss. Three real
+cases from the current scan:
+
+| Company | What happened |
+|---|---|
+| Okta | One exact title on their board, in Dublin. Filled it. |
+| Braze | Four identical titles across US cities, posting was London. Refused, and sent you the four links. |
+| Vanta | 109 roles on the board, nothing above 0.33. You are told the title is not on their board, with a link to it, rather than told the role is dead: a slug guessed from a company name can land on somebody else's board, and a retitled role looks the same from here as a closed one. |
+
+A title has to match nearly exactly rather than merely closely, and where several roles
+share one title the market has to pick exactly one of them. Anything else comes back to you
+as links to choose between.
+
+**What it actually resolves**, measured over 30 distinct LinkedIn-sourced companies in the
+current scan: 12 found, of which 8 are Greenhouse and fill automatically and 4 are Ashby
+and come back as a direct apply link. 4 more have a board with no matching title on it. The
+remaining 14 are companies running their own careers stack (Google, Salesforce, Canva, Box,
+Deel) where there is nothing public to find. So roughly a quarter of LinkedIn roles become
+one-tap, and another eighth become a direct link instead of a LinkedIn page.
+
+**Both boards run an invisible reCAPTCHA on submission, and nothing here tries to get past
+it.** Greenhouse loads reCAPTCHA Enterprise into every application page; Ashby loads an
+invisible reCAPTCHA v2 with a hidden response field on the form. That check exists to put a
+person behind a submission, and a job application is exactly the kind of submission an
+employer is entitled to want a person behind. So the check is detected and named instead:
+in the preview, while you are still deciding whether to send, and again if a submission
+goes through unconfirmed, where the message tells you the check may simply have refused an
+automated send and points you at the packet, which already has every answer written down to
+paste in by hand. Whether a real send clears the check is not knowable by reading, and your
+first live `/send` on a Greenhouse role is what settles it.
+
+Boards it can fill: **Greenhouse**, including the employers whose board URL redirects to
+their own careers site with the form embedded in it. Ashby and Lever are found and handed
+to you as a direct link, which still beats a LinkedIn page you have to search from. There
+is no Ashby driver, and the reason is not that its form is hard: it was probed and mapped
+(`tools/notes/ashby-form.md`) and it is more tractable than Greenhouse's. It is that a
+driver whose submissions the reCAPTCHA refuses would produce a filled form nobody can send,
+so it waits on the answer above.
+Workday and LinkedIn Easy Apply are left alone entirely: both want an account and a
+logged-in session, which is a credential sitting in a runner and a different conversation.
+Either way the CV and the letter are already in the bank and the letter's text is already
+in the packet for pasting into a box.
+
+**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/redo`,
+`/cover`, `/submit`, `/send`, `/help`.
 
 ## The CV build
 
@@ -429,9 +529,13 @@ anywhere other than markets and the CSM track, the radar is the one that's wrong
 python tests/test_scoring.py    # pure functions: weighted total, flags, title gate, location, dedupe
 python tests/test_apply.py      # comp gate, answer handling, the apply state machine across ticks
 python tests/test_cv.py         # layout policy, the honesty screen, the review gate, bank write-back
+python tests/test_cover.py      # the letter: the two honesty screens, the one-page trim, /cover
+python tests/test_submit.py     # the form: what code fills, what nobody fills, and that nothing sends
 node tests/test_worker.mjs      # the Cloudflare relay's two guards
 python tests/preview_messages.py # print every bot message as Telegram renders it (no asserts)
 python tests/test_cv_render.py --install  # the real render: docx -> PDF -> JPEG, measured
+python tests/test_submit_form.py --install  # a real browser filling, printing and submitting a form
+python tools/probe_form.py <url>  # dump a real form's structure, to write a driver against it. Reads only.
 python scan.py --selftest       # replay stored dimension scores through the engine, offline
 python scan.py --dry            # full pipeline, no Claude calls
 python applyq.py --selftest     # apply-queue pure functions, offline
@@ -451,6 +555,14 @@ in the **CV render smoke** workflow, on any change that can move the layout — 
 the rendered pages behind as a run artifact, because the last check on a CV is a person
 looking at one. It also renders a deliberately bad page, so the checks are known to fail on
 something rather than merely known to pass.
+
+`test_submit_form.py` is the same idea for the form fill and runs in the **Form fill
+smoke** workflow. It drives a real Chromium over `tests/fixtures/application-form.html`, a
+stand-in built to carry the shapes a real board uses, and never over an employer's form —
+a test that submits a real application is a real application. What it proves is the half a
+stub cannot reach: that a dropdown opens and gives up its options, that a hidden file input
+takes a path, that the printed page still has the answers on it, and that a form which has
+changed since it was approved is refused rather than guessed at.
 
 ## Setup / secrets
 

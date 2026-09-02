@@ -181,6 +181,76 @@ show("cover letter that would not fit on a page", "\n".join([
     "<i>It is at <code>cv/2026-09-01-fonoa-revenue-operations-lead-emea-cover.pdf</code> "
     "in the bank, with its text in the packet. /cover again and I'll write it shorter.</i>"]))
 
+# ---- the application form. Built through the real preview_caption() rather than typed
+# out here, because the whole question this file answers is whether the message a real plan
+# produces reads well on a phone.
+FORM_FIELDS = [
+    applyq.submit.field("first_name", applyq.submit.TEXT, "First Name", True),
+    applyq.submit.field("email", applyq.submit.TEXT, "Email", True),
+    applyq.submit.field("resume", applyq.submit.FILE, "Attach", True),
+    applyq.submit.field("cover_letter", applyq.submit.FILE, "Attach"),
+    applyq.submit.field("question_1", applyq.submit.SELECT,
+                        "Are you authorised to work in the country in which this role is "
+                        "located?", True, ["Yes", "No"]),
+    applyq.submit.field("question_2", applyq.submit.SELECT, "How did you hear about this "
+                        "job?", True, ["LinkedIn", "A friend", "Other"]),
+    applyq.submit.field("question_3", applyq.submit.TEXTAREA,
+                        "What excites you most about this opportunity?", True),
+    applyq.submit.field("question_4", applyq.submit.TEXT,
+                        "What are your salary expectations?", True),
+    applyq.submit.field("question_5", applyq.submit.SELECT, "Gender", True,
+                        ["Male", "Female", "I don't wish to answer"]),
+    applyq.submit.field("consent[]", applyq.submit.CHECKBOX,
+                        "I acknowledge the privacy notice", True),
+]
+FORM_ANSWERS = {
+    "first_name": applyq.submit.answer("Tom", applyq.submit.BY_CODE),
+    "email": applyq.submit.answer("tp.norton@pm.me", applyq.submit.BY_CODE),
+    "resume": applyq.submit.answer("cv/2026-09-01-fonoa.pdf", applyq.submit.BY_CODE),
+    "cover_letter": applyq.submit.answer("cv/2026-09-01-fonoa-cover.pdf",
+                                         applyq.submit.BY_CODE),
+    "question_1": applyq.submit.answer("No", applyq.submit.BY_CODE),
+    "question_3": applyq.submit.answer("The rates pipeline rebuild is the work I want "
+                                       "more of.", applyq.submit.BY_MODEL),
+    "question_5": applyq.submit.answer("I don't wish to answer", applyq.submit.BY_CODE),
+}
+FORM_PLAN = applyq.submit.build_plan(JOB["url"], "greenhouse", FORM_FIELDS, FORM_ANSWERS,
+                                     {}, ["Gender: declined"])
+
+show("/submit, on its way", "\n".join([
+    f"<b>Filling the form</b>  {applyq.esc(JOB['company'])}", "",
+    "<i>Nothing gets sent. I'll fill it in, print it, and show you the page before "
+    "anything is submitted.</i>"]))
+show("the filled form (this is the caption on the PDF)",
+     applyq.preview_caption(
+         JOB, FORM_PLAN, "Left the salary box for you: there is no expectation on file "
+                         "and guessing at one is a number you would be held to.",
+         [("question_2", "How did you hear about this job?",
+           "wording not traceable to the bank")],
+         [{"id": "question_4", "why": "no salary expectation on file"}], []))
+show("/send while a question is still open", "\n".join(
+    ["<b>2 required questions still unanswered</b>, so the form would be rejected. Reply "
+     "with the answers, numbered:", ""]
+    + [applyq.blank_line(i, b)
+       for i, b in enumerate(applyq.numbered_blanks(FORM_PLAN), 1)]))
+show("applied", "\n".join([
+    f"\u2713 <b>Applied</b>  {applyq.esc(JOB['title'])}",
+    applyq.esc(f"{JOB['company']} \u00b7 greenhouse \u00b7 confirmed by the page"), "",
+    "<i>The form as it went is in the bank, with every answer in the packet.</i>"]))
+show("sent, and the page did not confirm it", "\n".join([
+    f"\u26a0 <b>Sent, but not confirmed</b>  {applyq.esc(JOB['company'])}",
+    applyq.esc("I pressed submit and the page did not come back with a confirmation. It "
+               "may have gone through and it may not."), "",
+    applyq.esc("Please correct the errors below"), "",
+    f'<a href="{applyq.esc(JOB["url"])}">Check it</a> <i>before applying again - a second '
+    f'application is a second application.</i>']))
+show("a board that cannot be filled", "\n".join([
+    f"<b>{applyq.esc(JOB['title'])}</b>",
+    applyq.esc(f"{JOB['company']} \u00b7 this one is not on a board I can fill."), "",
+    f'<a href="{applyq.esc(JOB["url"])}">The form is here</a>',
+    "<i>The CV and the letter are in the bank, and the letter's text is in the packet for "
+    "pasting into a box. I can fill greenhouse forms.</i>"]))
+
 show("still open (nudge)", "<b>Still open</b>\n\n"
      + f"<b>1</b>  {applyq.esc(applyq.clip(QS[2]['question'], 160))}\n\n"
      + "<i>Answer, or say skip and I'll leave it out.</i>")

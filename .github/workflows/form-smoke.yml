@@ -1,0 +1,62 @@
+name: Form fill smoke
+
+# The application form, filled in a real browser.
+#
+# Not part of the 15-minute apply tick: Chromium is a download and an apt install, and the
+# tick runs ~96 times a day. It installs the browser on demand instead, the first time a
+# form is actually filled, exactly as the CV render installs LibreOffice.
+#
+# What this guards is the half of the phase a stub cannot reach. Whether a react-select
+# dropdown opens and gives up its options, whether a hidden file input takes a path,
+# whether the filled page prints with the answers still on it, and whether a submit button
+# can be found and pressed are questions about a browser, and only a browser answers them.
+#
+# It runs against tests/fixtures/application-form.html and never against an employer. A
+# test that submits a real application is a real application.
+
+on:
+  push:
+    paths:
+      - "submit.py"
+      - "tests/test_submit_form.py"
+      - "tests/fixtures/**"
+      - "tools/probe_form.py"
+      - ".github/workflows/form-smoke.yml"
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: "A form URL to dump the structure of, instead of running the tests. Reads only."
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fill a form and print it
+        if: ${{ !inputs.probe }}
+        # --install pulls Playwright and its Chromium, which is what ensure_browser() does
+        # on a real run.
+        run: python tests/test_submit_form.py --install
+      - name: Dump a form's structure
+        # How a driver for a new board gets written: point this at one of that board's real
+        # postings and read what is actually on the page. It reads and never submits.
+        if: ${{ inputs.probe }}
+        run: python tools/probe_form.py "${{ inputs.probe }}"
+      - name: The printed form
+        if: ${{ always() && !inputs.probe }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: form-smoke-pages
+          # Safe on a public repo: everything on these pages comes from the fixture and
+          # the test file, not from the private bank.
+          path: cv-out/application-*.pdf
+          if-no-files-found: error
+          retention-days: 14

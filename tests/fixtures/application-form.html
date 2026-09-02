@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fixture: Revenue Operations Manager</title>
+<style>
+ body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 44rem; }
+ label { display: block; margin: 1rem 0 .25rem; font-weight: 600; }
+ input[type=text], input[type=email], input[type=tel], textarea { width: 100%; padding: .4rem; }
+ .menu { border: 1px solid #999; margin-top: .25rem; }
+ .menu div { padding: .35rem .5rem; cursor: pointer; }
+ .hidden { display: none; }
+ #confirmation { padding: 2rem; background: #eef7ee; }
+</style>
+</head>
+<body>
+<!--
+  A stand-in for a real board's application form, and deliberately not a copy of one: this
+  is checked into a public repo and driven by a test that ticks its boxes and presses its
+  button. It carries the shapes that matter -- labelled text fields, a file input behind a
+  visually-hidden control, a textarea, react-select's combobox-plus-generated-option-ids,
+  a required acknowledgement, and a submit that confirms in place -- because those are what
+  the driver has to handle. Nothing here reaches an employer.
+-->
+<h1>Revenue Operations Manager</h1>
+<form id="application" onsubmit="return false;">
+  <label for="first_name">First Name*</label>
+  <input type="text" id="first_name" required>
+
+  <label for="last_name">Last Name*</label>
+  <input type="text" id="last_name" required>
+
+  <label for="email">Email*</label>
+  <input type="email" id="email" required>
+
+  <label for="phone">Phone</label>
+  <input type="tel" id="phone">
+
+  <label for="resume">Attach*</label>
+  <input type="file" id="resume" class="visually-hidden" required>
+
+  <label for="question_1">Are you authorised to work in the country in which this role is located?*</label>
+  <div class="select-shell">
+    <input id="question_1" role="combobox" type="text" readonly aria-required="true"
+           aria-labelledby="question_1-label" onclick="openMenu('question_1')">
+    <div class="menu hidden" id="menu-question_1"></div>
+  </div>
+
+  <label for="question_2">How did you hear about this job?*</label>
+  <div class="select-shell">
+    <input id="question_2" role="combobox" type="text" readonly aria-required="true"
+           onclick="openMenu('question_2')">
+    <div class="menu hidden" id="menu-question_2"></div>
+  </div>
+
+  <label for="question_3">What excites you most about this opportunity?*</label>
+  <textarea id="question_3" rows="4" required></textarea>
+
+  <label for="question_4">Gender</label>
+  <div class="select-shell">
+    <input id="question_4" role="combobox" type="text" readonly onclick="openMenu('question_4')">
+    <div class="menu hidden" id="menu-question_4"></div>
+  </div>
+
+  <label for="consent[]">I acknowledge the privacy notice*</label>
+  <input type="checkbox" id="consent[]" required>
+
+  <p><button type="submit" onclick="send()">Submit application</button></p>
+</form>
+<div id="confirmation" class="hidden"><h2>Thank you for applying</h2></div>
+
+<script>
+// react-select's own id scheme: the options exist only while the menu is open, and each
+// one is `react-select-<field>-option-<n>`. The driver addresses them by exactly that.
+const OPTIONS = {
+  question_1: ["Yes", "No"],
+  question_2: ["LinkedIn", "A friend", "Other"],
+  question_4: ["Male", "Female", "I don't wish to answer"],
+};
+function openMenu(id) {
+  const menu = document.getElementById("menu-" + id);
+  if (!menu.classList.contains("hidden")) { closeMenu(id); return; }
+  menu.innerHTML = "";
+  OPTIONS[id].forEach((text, i) => {
+    const d = document.createElement("div");
+    d.id = `react-select-${id}-option-${i}`;
+    d.textContent = text;
+    d.onclick = () => { document.getElementById(id).value = text; closeMenu(id); };
+    menu.appendChild(d);
+  });
+  menu.classList.remove("hidden");
+}
+function closeMenu(id) {
+  const menu = document.getElementById("menu-" + id);
+  menu.classList.add("hidden");
+  menu.innerHTML = "";
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") Object.keys(OPTIONS).forEach(closeMenu);
+});
+function send() {
+  const form = document.getElementById("application");
+  if (!form.reportValidity()) return;
+  form.classList.add("hidden");
+  document.getElementById("confirmation").classList.remove("hidden");
+}
+</script>
+</body>
+</html>
