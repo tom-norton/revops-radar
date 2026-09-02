@@ -20,8 +20,13 @@ on:
       - "submit.py"
       - "tests/test_submit_form.py"
       - "tests/fixtures/**"
+      - "tools/probe_form.py"
       - ".github/workflows/form-smoke.yml"
   workflow_dispatch:
+    inputs:
+      probe:
+        description: "A form URL to dump the structure of, instead of running the tests. Reads only."
+        default: ""
 
 permissions:
   contents: read
@@ -36,11 +41,17 @@ jobs:
         with:
           python-version: "3.12"
       - name: Fill a form and print it
+        if: ${{ !inputs.probe }}
         # --install pulls Playwright and its Chromium, which is what ensure_browser() does
         # on a real run.
         run: python tests/test_submit_form.py --install
+      - name: Dump a form's structure
+        # How a driver for a new board gets written: point this at one of that board's real
+        # postings and read what is actually on the page. It reads and never submits.
+        if: ${{ inputs.probe }}
+        run: python tools/probe_form.py "${{ inputs.probe }}"
       - name: The printed form
-        if: always()
+        if: ${{ always() && !inputs.probe }}
         uses: actions/upload-artifact@v4
         with:
           name: form-smoke-pages
