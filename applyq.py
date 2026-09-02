@@ -151,6 +151,10 @@ VARIATION_REVIEW_MIN_SCORE = 7.5
 # Summary variations, per the skill's Step 4c: canonical-tight, role-forward,
 # company-forward.
 VARIATION_LABELS = ["A", "B", "C"]
+# How many times a too-long summary gets a sentence removed before the CV ships anyway.
+# Two is enough to take a five-sentence summary down to three; past that the variation was
+# never within shouting distance of the limit and a warning is the honest outcome.
+SUMMARY_TRIM_ATTEMPTS = 2
 # The pick message carries three summaries in full. This cap is a guard against a model
 # that ignores "3-4 sentences", not a formatting choice: a real summary runs 350-550
 # characters, so 900 should never bite. It was 460, which truncated real summaries with an
@@ -180,7 +184,7 @@ NO_MATERIAL = re.compile(r"^\s*(no|none|nope|nothing|n/?a|skip|no meaningful exp
 # as a single reply. GitHub's cron is the bottleneck (it delivered 4 of an expected 60 runs
 # in the 15 hours after launch, with gaps up to 5h45m), and each extra turn costs another
 # one of those. Five turns at that rate is a day per application.
-STAGES = ["audit", "ask", "packet", "cv", "pick", "done"]
+STAGES = ["audit", "ask", "packet", "cv", "pick", "revise", "done"]
 
 # Stages where the run is waiting on Tom and there is no point advancing without him. The
 # hold-open loop in tick() watches these, and only these.
@@ -193,6 +197,7 @@ HELP = (
     "/status - what the poller is working on right now\n"
     "/cancel - drop the role in flight and move on\n"
     "/phone &lt;number&gt; - put your number on the CV (or /phone off)\n"
+    "/redo &lt;what to change&gt; - rebuild the last CV with your feedback\n"
     "/help - this\n\n"
     "When I ask a question, just reply to it. Numbered options accept the number."
 )
@@ -1191,11 +1196,24 @@ code before it reaches the page, so writing one costs the bullet its place on th
 
 Aim for 2-3 KEY bullets, first in their entry, closest to this role's core responsibility.
 
+AT MOST SIX BULLETS ON ANY ONE JOB, and order them so the six that survive are the six
+that matter to THIS posting. When there is more good material than that, do not just stop
+at six and let the rest fall off the end: decide which are least relevant and cut them, or
+merge two related ones into a single bullet that carries both facts. Anything past the
+sixth is dropped in code, so an unordered list loses whatever happened to be last.
+
 SUMMARY -- three variations, scored
 Start from the bank's canonical summary for this track (SUM-ANALYTICS / SUM-BUILDER / \
 SUM-CS). Do not write from a blank page: those are tuned and rebuilding them loses the \
-tuning. Three variations, all 3-4 sentences and none longer than will fit four printed \
-lines:
+tuning.
+
+HARD LIMIT: four printed lines on the CV. That is 11pt Calibri across a seven-inch \
+measure, which is roughly 105 characters a line, so keep every variation UNDER 400 \
+CHARACTERS. Count them. Three or four short sentences, not four long ones. A summary over \
+the limit gets its last sentence deleted in code before it prints, so a fifth sentence is \
+not extra content, it is a sentence you wrote and nobody reads.
+
+Three variations, all within that limit:
   A. Canonical-tight -- the bank summary with keyword swaps and light phrasing edits. The \
 floor, and often the right answer.
   B. Role-forward -- resequenced to lead with this JD's core function.
@@ -1342,9 +1360,13 @@ def screened_entries(tailored, base, corpus):
             continue
         texts = [b.get("text", "") for b in (e.get("bullets") or [])]
         kept, bad = cvbuild.screen_bullets(texts, corpus)
+        # Six per job. Screened first, so a bullet the honesty check threw out does not use
+        # up one of the six.
+        kept, over = cvbuild.cap_bullets(kept)
+        rejected += bad + [(b, f"over the {cvbuild.MAX_BULLETS_PER_ROLE}-bullet limit on "
+                               f"this job") for b in over]
         if kept:
             by_entry.setdefault(eid, []).extend(kept)
-        rejected += bad
     return by_entry, rejected
 
 
@@ -1413,6 +1435,107 @@ def resolve_pick(text, summaries):
             if s.get("label") == label:
                 return s, True
     return best_summary(summaries), False
+
+
+# ---------------------------------------------------------------- revision (/redo)
+
+REVISE_SYSTEM = """A tailored CV was built for Tom Norton and sent to him. He has read it \
+and asked for a change. Rebuild the page with that change made, and change nothing he did \
+not ask about.
+
+You are given the CV exactly as it went out, his feedback, the bullet bank, the CV \
+skeleton, and any bullets drafted from his own interview answers. Return the whole page \
+again: the summary, the bullets per entry, and the skills line. Anything he did not \
+mention comes back identical, character for character. A revision that quietly improves \
+three other bullets is not a revision, it is a second draft, and he has already read and \
+approved the first one.
+
+WHAT HIS FEEDBACK CANNOT DO. It is an instruction about the page, not a new source of \
+fact. If he asks for something the bank, the skeleton and his own answers cannot support \
+-- a number that exists nowhere, a responsibility he has not described, a stronger verb \
+than a SCOPE GUARD allows -- do not write it. Say so in `notes`, plainly, and return the \
+page without it. He would rather be told than find out in an interview. Every claim you \
+return still has to trace back to those sources; a bullet that does not is discarded in \
+code before it prints, so writing one costs the bullet its place.
+
+The limits still hold: at most six bullets on any one job, ordered so the six that survive \
+are the six that matter; the summary under 400 characters so it fits four printed lines; \
+no first person; no em dashes; no placeholder metrics.
+
+`notes` is one or two sentences for Tom: what you changed, and anything you would not do \
+and why. Write it to be read on a phone."""
+
+REVISE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "entries": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "string"},
+                "bullets": {"type": "array", "items": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"},
+                                   "source": {"type": "string"},
+                                   "key": {"type": "boolean"}},
+                    "required": ["text", "source", "key"],
+                    "additionalProperties": False}},
+            },
+            "required": ["entry_id", "bullets"], "additionalProperties": False}},
+        "skills": {"type": "string"},
+        "changes": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"section": {"type": "string"}, "original": {"type": "string"},
+                           "revised": {"type": "string"}, "keywords": {"type": "string"},
+                           "evidence": {"type": "string"}},
+            "required": ["section", "original", "revised", "keywords", "evidence"],
+            "additionalProperties": False}},
+        "notes": {"type": "string"},
+    },
+    "required": ["summary", "entries", "skills", "changes", "notes"],
+    "additionalProperties": False,
+}
+
+
+def as_built_block(spec):
+    """The CV as it actually printed, by entry_id, so the revision edits the page Tom read
+    rather than the tailoring output he never saw."""
+    L = [f"ROLE TITLE: {spec.get('role_title')}", "",
+         f"SUMMARY: {spec.get('summary')}", "",
+         f"SKILLS: {spec.get('skills')}", ""]
+    for section in spec.get("sections") or []:
+        L.append(f"[{section.get('heading')}]")
+        for b in section.get("bullets") or []:
+            L.append(f"  - {cvbuild.bullet_text(b)}")
+        for e in section.get("entries") or []:
+            for role in e.get("roles") or []:
+                L.append(f"  {e.get('left')} - {role.get('sub_left')}")
+                for b in (role.get("bullets") or []):
+                    L.append(f"    - {cvbuild.bullet_text(b)}")
+    return "\n".join(L)
+
+
+def revise_cv(api_key, job, audit, spec, feedback, base, bank_md, drafts):
+    drafted = [b.get("text") for b in ((drafts or {}).get("bullets") or [])
+               if (b.get("text") or "").strip()]
+    parts = [
+        f"=== TOM'S FEEDBACK ===\n{feedback}",
+        f"=== THE CV AS IT WENT OUT ===\n{as_built_block(spec)}",
+        f"=== THE POSTING ===\n{job.get('title')} at {job.get('company') or '?'}\n"
+        f"Track: {audit.get('track')}\n\n"
+        f"{scan.sample_desc(job.get('description'), 4000)}",
+        f"=== BULLET BANK ===\n{bank_md or '(empty)'}",
+        f"=== CV SKELETON ===\n{skeleton_block(base)}",
+    ]
+    if drafted:
+        parts.append("=== BULLETS FROM TOM'S OWN INTERVIEW ANSWERS ===\n"
+                     + "\n".join(f"- {d}" for d in drafted))
+    text = scan._claude_call(
+        api_key, TAILOR_MODEL, REVISE_SYSTEM, "\n\n".join(parts), TAILOR_MAX_TOKENS,
+        extra={"output_config": {"effort": AUDIT_EFFORT,
+                                 "format": {"type": "json_schema",
+                                            "schema": REVISE_SCHEMA}}})
+    return scan._extract_json(text)
 
 
 # ---------------------------------------------------------------- bank write-back (Step 9)
@@ -1694,6 +1817,18 @@ def cv_section_markdown(job, cur, chosen, summaries, tailored, rejected, facts, 
         L += [f"- {why}\n  > {text}" for text, why in rejected]
         L.append("")
 
+    if cur.get("feedback"):
+        L += ["### Revision", "",
+              f"**Tom asked for:** {cur['feedback']}", ""]
+        if cur.get("revision_notes"):
+            L += [f"**What changed:** {cur['revision_notes']}", ""]
+    if cur.get("cv_trimmed"):
+        L += ["### Summary trimmed to four lines", "",
+              "The chosen summary ran past the four-line rule, so its last sentence was "
+              "dropped and the page re-rendered. Removed:", ""]
+        L += [f"> {t}" for t in cur["cv_trimmed"]]
+        L.append("")
+
     L += ["### Render check", "", "```",
           "\n".join(f"{k}: {v}" for k, v in (facts or {}).items()), "```", ""]
     if warnings:
@@ -1781,13 +1916,34 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
         job.get("title") if tailored.get("role_title_usable") else "",
         audit.get("track"))
     cur["cv_title"] = title
-    spec = cvbuild.assemble_spec(base, audit.get("track"), title,
-                                 chosen.get("text"), by_entry, tailored.get("skills"))
-
     stem = cv_name(job)
     cvbuild.ensure_toolchain()
-    paths = cvbuild.render(spec, CV_OUT_DIR, stem)
-    problems, warnings, facts = cvbuild.verify(paths, spec)
+
+    # Four printed lines, measured off the page rather than guessed at from a character
+    # count: whether a sentence wraps is a question about Calibri's metrics. Over the
+    # limit, the last sentence goes and it renders again. A summary is three or four
+    # sentences and the last one is the least load-bearing by construction, so dropping
+    # beats rewriting -- a rewrite would be new text arriving after the honesty screen has
+    # already passed on it.
+    summary = chosen.get("text") or ""
+    trimmed = []
+    for attempt in range(SUMMARY_TRIM_ATTEMPTS + 1):
+        spec = cvbuild.assemble_spec(base, audit.get("track"), title, summary, by_entry,
+                                     tailored.get("skills"))
+        paths = cvbuild.render(spec, CV_OUT_DIR, stem)
+        problems, warnings, facts = cvbuild.verify(paths, spec)
+        lines = facts.get("summary_lines", 0)
+        if lines <= cvbuild.SUMMARY_MAX_LINES or attempt == SUMMARY_TRIM_ATTEMPTS:
+            break
+        shorter = cvbuild.drop_last_sentence(summary)
+        if not shorter:
+            break
+        trimmed.append(summary[len(shorter):].strip())
+        print(f"  summary ran to {lines} lines; dropping its last sentence and "
+              f"re-rendering")
+        summary = shorter
+    cur["cv_summary"] = summary
+    cur["cv_trimmed"] = trimmed
     cvbuild.log_render(paths, problems, warnings, facts, spec=spec, verbose=CV_LOG_TEXT)
 
     # The PDF is committed either way. A CV that failed its checks is still the fastest way
@@ -1798,7 +1954,9 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
 
     summaries = cur.get("summaries") or []
     bank_applied, blocked, didnt_qualify = [], [], []
-    if not problems:
+    # A revision is a redraft of a page whose bullets already went through Step 9 on the
+    # first build. Running it again would promote the same material twice.
+    if not problems and not cur.get("revised"):
         # Step 9 runs only on a CV that actually shipped. Promoting a bullet off a build
         # that failed its checks would put it in the bank on the strength of a page nobody
         # ever saw.
@@ -1825,6 +1983,14 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
         {"id": cur["id"], "title": cur.get("title"), "company": cur.get("company"),
          "outcome": "done" if not problems else "cv-failed", "at": now_iso(),
          "packet": packet, "cv": pdf_rel, "usage": cur.get("usage") or {}})
+    # Kept so /redo has a page to edit rather than a tailoring output Tom never saw. The
+    # posting travels with it: a role can drop off the dashboard, and "the CV you sent me
+    # yesterday" should still be revisable today.
+    cur["spec"] = spec
+    cur["job_snapshot"] = {k: job.get(k) for k in
+                           ("id", "title", "company", "market", "score", "url",
+                            "description")}
+    state["last_cv"] = cur
     state["current"] = None
     state["last_tick"] = now_iso()
     bank.save_state(state)
@@ -1842,21 +2008,32 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
 
     tally = [f"{len(cvbuild.spec_bullets(spec))} bullets"]
     if rejected:
-        tally.append(f"{len(rejected)} rejected")
+        tally.append(f"{len(rejected)} cut")
     if bank_applied:
         tally.append(f"bank +{len(bank_applied)}")
-    caption = "\n".join([
-        f"✓ <b>{esc(clip(title, 70))}</b>",
-        esc(" · ".join([job.get("company") or "?", audit.get("track") or "",
-                        f"{facts.get('pages', '?')} pages"] + tally).strip(" ·")),
-        f"<i>Summary {esc(chosen.get('label'))} · picked by {esc(picked_by)}</i>"])
+    lines = [f"✓ <b>{esc(clip(title, 70))}</b>",
+             esc(" · ".join([job.get("company") or "?", audit.get("track") or "",
+                                  f"{facts.get('pages', '?')} pages"] + tally)
+                 .strip(" ·"))]
+    if cur.get("revised"):
+        lines.append("<i>Rebuilt from your feedback.</i>")
+    else:
+        lines.append(f"<i>Summary {esc(chosen.get('label'))} · picked by "
+                     f"{esc(picked_by)}</i>")
+    if cur.get("revision_notes"):
+        lines += ["", esc(clip(cur["revision_notes"], 300))]
+    if trimmed:
+        lines += ["", "<i>Summary was over four lines, so I dropped: "
+                      f"{esc(clip(' '.join(trimmed), 160))}</i>"]
+    caption = "\n".join(lines)
     if not tg.send_document(paths["pdf"], caption):
         tg.send(caption + f"\n\n<i>Telegram would not take the file. It is at "
                           f"<code>{esc(pdf_rel)}</code> in the bank.</i>")
     for w in warnings:
         print(f"  warn: {w}")
     if sha:
-        tg.send(f'<a href="https://{BANK_REPO}/commit/{sha}">packet, CV and bank changes</a>')
+        what = "packet and CV" if cur.get("revised") else "packet, CV and bank changes"
+        tg.send(f'<a href="https://{BANK_REPO}/commit/{sha}">{what}</a>')
     return True
 
 
@@ -1965,6 +2142,29 @@ def handle_commands(texts, state, queue, tg, bank=None):
                     {**{k: cur.get(k) for k in ("id", "title", "company")},
                      "outcome": "cancelled", "at": now_iso()})
                 state["current"] = None
+        elif cmd == "/redo":
+            arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
+            last = state.get("last_cv")
+            if state.get("current"):
+                tg.send(f"Working on {esc(clip(state['current'].get('title'), 50))} right "
+                        f"now. /redo once that one's finished.")
+            elif not last or not last.get("spec"):
+                tg.send("No CV to revise yet. /apply a role and I'll build one.")
+            elif not arg:
+                tg.send("<b>Tell me what to change.</b>\n\n"
+                        "<i>/redo cut the LexisNexis training bullet, it's the weakest</i>\n"
+                        "<i>/redo lead the summary with forecasting, not the MBA</i>\n"
+                        "<i>/redo the NAVEX section is too long</i>")
+            else:
+                revision = json.loads(json.dumps(last))
+                revision.update({"stage": "revise", "feedback": arg, "revised": True,
+                                 "started_at": now_iso()})
+                for k in ("asked_at", "render_failures", "cv_failures", "nudged"):
+                    revision.pop(k, None)
+                state["current"] = revision
+                name = last.get("cv_title") or last.get("title")
+                tg.send(f"<b>Rebuilding</b>  {esc(clip(name, 60))}\n\n"
+                        f"<i>{esc(clip(arg, 160))}</i>")
         elif cmd == "/phone":
             arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
             if bank is None:
@@ -2336,6 +2536,38 @@ def advance(state, job, bank, tg, api_key, answers_text):
                     f"<b>{esc(chosen.get('label'))}</b>, the highest scored.")
         return try_build(state, job, bank, tg, api_key, chosen,
                          "Tom" if recognised else "agent")
+
+    # ---- revise: Tom read the CV and asked for a change. No round trip -- he already
+    # spent it by sending the feedback.
+    if cur["stage"] == "revise":
+        before = usage_snapshot()
+        try:
+            rev = revise_cv(api_key, job, cur.get("audit") or {}, cur.get("spec") or {},
+                            cur.get("feedback"), cvbuild.load_base(bank)[0],
+                            bank.read(BANK_FILE, ""), cur.get("drafts"))
+        except Exception as e:
+            n = cur.get("cv_failures", 0) + 1
+            cur["cv_failures"] = n
+            record_usage(cur, "revise", before)
+            if n < MAX_STAGE_RETRIES:
+                print(f"  revision failed ({n}/{MAX_STAGE_RETRIES}): {e}")
+                return False
+            tg.send(f"Couldn't rebuild {job.get('title')}: the revision failed {n} times.\n"
+                    f"Last error: {str(e)[:200]}\n"
+                    f"The CV you already have is untouched.")
+            state["current"] = None
+            return False
+        record_usage(cur, "revise", before)
+
+        tailored = dict(cur.get("tailored") or {})
+        tailored["entries"] = rev.get("entries") or tailored.get("entries")
+        tailored["skills"] = rev.get("skills") or tailored.get("skills")
+        tailored["changes"] = (tailored.get("changes") or []) + (rev.get("changes") or [])
+        cur["tailored"] = tailored
+        cur["revision_notes"] = rev.get("notes") or ""
+        chosen = {"label": "revised", "score": 0, "angle": "your feedback",
+                  "text": rev.get("summary") or cur.get("cv_summary") or ""}
+        return try_build(state, job, bank, tg, api_key, chosen, "your feedback")
     return False
 
 
@@ -2450,6 +2682,11 @@ def tick(dry=False):
             print(f"  starting {state['current']['title']}")
     else:
         job = load_job(state["current"]["id"])
+        if not job:
+            # A revision carries its own copy of the posting. "The CV you sent me
+            # yesterday" should still be revisable today, and a role ages off the
+            # dashboard in a week.
+            job = state["current"].get("job_snapshot")
         if not job:
             tg.send(f"{state['current'].get('title')} is no longer on the dashboard. "
                     f"Dropping it mid-run.")

@@ -175,7 +175,27 @@ answered "no meaningful experience" to, produces no bullet. The drafting call is
 shown it. Nothing gets filled in by inference, and the posting's own language is never
 treated as evidence you did something. `tests/test_apply.py` asserts this directly.
 
-**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/help`.
+## Telling it the CV is wrong
+
+```
+/redo cut the LexisNexis training bullet, it's the weakest
+/redo lead the summary with the forecasting, not the MBA
+/redo the NAVEX section is too long
+```
+
+It rebuilds the last CV with that change and nothing else, and sends the new PDF. No round
+trip: you spent it by sending the feedback. The revision edits **the page you actually
+read**, not the tailoring output behind it, and the posting travels with the finished role
+so "the CV you sent me yesterday" is still revisable after the role ages off the dashboard.
+
+Your feedback is an instruction about the page, not a new source of fact. Ask for a number
+that exists nowhere and it will not write it: it says so, in the message, and hands you the
+page without it. The same honesty screen runs on a revision as on a first build. The bullet
+bank is **not** written a second time, because those bullets already went through the
+promotion test on the first build.
+
+**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/redo`,
+`/help`.
 
 **Answer questions however you like.** A reply that is nothing but letters is read in
 code, exactly, with no model involved: `1a 2b 3c`, `a b c`, `C, c, b`, `1. a  2. c` all
@@ -218,6 +238,17 @@ per track, the role-title fallbacks, US Letter, 0.75in margins, Calibri, the tea
 and the right-aligned tab stop at 10080 twips all live in `cv/build-cv.js` and `cvbuild.py`,
 where nothing a model returns can move them. `docx` builds the file, LibreOffice headless
 converts it, and `pdftoppm` renders the pages.
+
+**Two standing rules are enforced, not requested.** At most **six bullets on any one
+job**, and a summary that fits **four printed lines**. Both are in the skill and both were
+in the tailoring prompt, and the first CV that shipped had eight bullets on NAVEX and a
+six-line summary, because asking is not the same as guaranteeing. The bullet cap runs on
+the way in and again on the way out; anything past the sixth is listed in the packet rather
+than silently lost. The summary is measured off the rendered page (`pdftotext -layout`
+preserves the real line breaks, and whether a sentence wraps is a question about Calibri's
+metrics, not about character counts) and, if it runs long, loses its last sentence and
+re-renders. Dropped, never rewritten: a rewrite would be new text arriving after the
+honesty screen had already passed on it. You are told what came off.
 
 **One employer, one entry.** LexisNexis is a single company Tom worked at twice, rendered
 as one header line with two titles under it. Rendering it as two employers turns an

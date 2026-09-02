@@ -139,6 +139,22 @@ show("the skeleton is missing something (said once, not per role)",
      + "\n\n<i>The CV builds either way. The phone number is left out of the public repo "
        "on purpose, so the private copy is where it goes.</i>")
 
+show("CV rebuilt from feedback", "\n".join([
+    f"✓ <b>{applyq.esc(applyq.clip('REVENUE OPERATIONS LEAD, EMEA', 70))}</b>",
+    applyq.esc(" · ".join([JOB["company"], AUDIT["track"], "2 pages", "13 bullets",
+                           "2 cut"])),
+    "<i>Rebuilt from your feedback.</i>", "",
+    applyq.esc("Cut the LexisNexis training bullet and merged the two QBR bullets into "
+               "one. Left the $150K figure alone: you asked to round it up and the bank "
+               "has it as roughly $150K, so rounding would be a claim I can't source."),
+    "", "<i>Summary was over four lines, so I dropped: Built the Excel tracking model "
+        "covering renewal dates, ARR at risk and NRR progress.</i>"]))
+show("/redo with nothing after it",
+     "<b>Tell me what to change.</b>\n\n"
+     "<i>/redo cut the LexisNexis training bullet, it's the weakest</i>\n"
+     "<i>/redo lead the summary with forecasting, not the MBA</i>\n"
+     "<i>/redo the NAVEX section is too long</i>")
+
 show("still open (nudge)", "<b>Still open</b>\n\n"
      + f"<b>1</b>  {applyq.esc(applyq.clip(QS[2]['question'], 160))}\n\n"
      + "<i>Answer, or say skip and I'll leave it out.</i>")
