@@ -142,6 +142,26 @@ def main():
                 f"{head!r} {size} bytes")
     print(f"  the printed form is at {pdf} ({size} bytes)")
 
+    # ---- the automated-submission check is noticed and named
+    with submit.Session() as s:
+        s.page.goto(url, wait_until="domcontentloaded")
+        ok &= check("a page with no anti-automation check reports none",
+                    submit.anti_bot(s.page) == "", submit.anti_bot(s.page))
+        guarded = os.path.join(tmp, "guarded.html")
+        with open(FIXTURE, encoding="utf-8") as f:
+            html = f.read()
+        # Exactly how Greenhouse and Ashby carry it: a script reference on the page, and
+        # in Ashby's case a hidden response field the widget fills in.
+        html = html.replace("</body>", '<textarea id="g-recaptcha-response" '
+                                       'name="g-recaptcha-response" hidden></textarea>\n'
+                                       '<script src="https://www.recaptcha.net/recaptcha/'
+                                       'enterprise.js"></script>\n</body>')
+        with open(guarded, "w", encoding="utf-8") as f:
+            f.write(html)
+        s.page.goto(fixture_url(guarded), wait_until="domcontentloaded")
+        ok &= check("a page that runs reCAPTCHA is reported as running it",
+                    submit.anti_bot(s.page) == "reCAPTCHA", submit.anti_bot(s.page))
+
     # ---- a dropdown will not take a value it does not carry
     with submit.Session() as s:
         driver = submit.driver_for("greenhouse")

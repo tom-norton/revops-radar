@@ -597,6 +597,37 @@ READ_FIELDS_JS = r"""
 """
 
 
+# Invisible anti-automation. Both boards this code knows about run one: Greenhouse loads
+# reCAPTCHA Enterprise (GOOGLE_RECAPTCHA_INVISIBLE_KEY, recaptcha/enterprise.js) into the
+# application page, and Ashby loads an invisible reCAPTCHA v2 with a hidden
+# g-recaptcha-response field on the form itself.
+#
+# Nothing here tries to get past one, and nothing here ever will: that is what these
+# checks are for, and a job application is exactly the kind of submission an employer is
+# entitled to want a person behind. What this does instead is say so -- in the preview,
+# before Tom decides to send, and again if a submission goes through unconfirmed -- so
+# that a form which bounces is a known risk he took rather than a mystery.
+ANTI_BOT_JS = r"""
+() => {
+  const html = document.documentElement.innerHTML;
+  const found = [];
+  if (/recaptcha/i.test(html)) found.push('reCAPTCHA');
+  if (/hcaptcha/i.test(html)) found.push('hCaptcha');
+  if (/turnstile/i.test(html)) found.push('Turnstile');
+  return [...new Set(found)].join(', ');
+}
+"""
+
+
+def anti_bot(page):
+    """What automated-submission check the page carries, or "". Never acted on beyond
+    saying it out loud."""
+    try:
+        return page.evaluate(ANTI_BOT_JS) or ""
+    except Exception:
+        return ""
+
+
 def read_fields(page, driver):
     """Every control on the form, with its label, in page order.
 
@@ -874,7 +905,7 @@ def read_form(url, ats, headless=True):
 
 
 def preview(plan, out_pdf, bank_path="", headless=True):
-    """Fill the form and print it. Returns (pdf_path, failed_ids, fields_now).
+    """Fill the form and print it. Returns (pdf_path, failed_ids, fields_now, anti_bot).
 
     There is no submit in this function and there is no argument that would add one. That
     is the safety model: the only code that can click the button is submit_form(), and the
@@ -885,7 +916,7 @@ def preview(plan, out_pdf, bank_path="", headless=True):
         fields_now = read_fields(s.page, driver)
         failed = fill_form(s.page, plan, driver, bank_path)
         form_pdf(s.page, out_pdf)
-        return out_pdf, failed, fields_now
+        return out_pdf, failed, fields_now, anti_bot(s.page)
 
 
 def submit_form(plan, out_pdf, bank_path="", headless=True):
@@ -922,10 +953,12 @@ def submit_form(plan, out_pdf, bank_path="", headless=True):
         if not driver.submit(s.page):
             return {"sent": False, "reason": "no-button", "pdf": out_pdf,
                     "fields": fields_now}
+        checks = anti_bot(s.page)
         s.page.wait_for_timeout(SETTLE_MS * 2)
         ok, body = driver.confirmed(s.page)
         return {"sent": bool(ok), "reason": "" if ok else "unconfirmed", "pdf": out_pdf,
-                "page_said": body, "url": s.page.url, "fields": fields_now}
+                "page_said": body, "url": s.page.url, "fields": fields_now,
+                "anti_bot": checks}
 
 
 # ---------------------------------------------------------------- his own answers

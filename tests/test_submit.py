@@ -549,7 +549,7 @@ def finished_role():
 
 
 def machine(fields=None, sent=True, reason="", state=None, model_answers=None, job=None,
-            found=None):
+            found=None, anti_bot=""):
     """The form stages wired to stubs. Returns (step, state, tg, bank, calls).
 
     The browser is replaced wholesale: these tests are about what the state machine does
@@ -571,7 +571,7 @@ def machine(fields=None, sent=True, reason="", state=None, model_answers=None, j
         os.makedirs(os.path.dirname(out_pdf) or ".", exist_ok=True)
         with open(out_pdf, "wb") as f:
             f.write(b"%PDF-1.4 filled form")
-        return out_pdf, [], [dict(f) for f in the_fields]
+        return out_pdf, [], [dict(f) for f in the_fields], anti_bot
 
     def fake_submit_form(plan, out_pdf, bank_path="", headless=True):
         calls["submit"] += 1
@@ -585,7 +585,7 @@ def machine(fields=None, sent=True, reason="", state=None, model_answers=None, j
                     "fields": [dict(f) for f in the_fields]}
         return {"sent": sent, "reason": "" if sent else "unconfirmed", "pdf": out_pdf,
                 "page_said": "Thank you for applying" if sent else "Please try again",
-                "url": plan.get("url")}
+                "url": plan.get("url"), "anti_bot": anti_bot}
 
     def fake_answers(api_key, job, brief, as_built, letter_text, answers, fields_):
         calls["model"] += 1
@@ -845,6 +845,34 @@ def test_a_click_with_no_confirmation_is_reported_as_exactly_that():
     step("/send")
     assert state["history"][-1]["outcome"] == "submitted-unconfirmed"
     assert any("not confirmed" in m for m in tg.sent), tg.sent
+
+
+def test_a_board_that_checks_for_automated_sends_says_so_before_he_sends():
+    """Both boards this drives run an invisible reCAPTCHA. Nothing here tries to get past
+    one -- that is what it is there for -- so the only honest thing to do is say so while
+    he is still deciding."""
+    step, state, tg, _b, _c = machine(anti_bot="reCAPTCHA")
+    step("/submit")
+    assert state["current"]["plan"]["anti_bot"] == "reCAPTCHA"
+    assert any("reCAPTCHA" in m and "refuse an automated send" in m for m in tg.sent), \
+        tg.sent
+
+
+def test_an_unconfirmed_send_names_the_check_rather_than_blaming_the_form():
+    step, state, tg, _b, _c = machine(sent=False, anti_bot="reCAPTCHA")
+    step("/submit")
+    step("1. The forecasting rebuild\n2. 60,000 EUR")
+    step("/send")
+    assert state["history"][-1]["outcome"] == "submitted-unconfirmed"
+    said = "\n".join(tg.sent)
+    assert "it wants a person" in said, said
+    assert "paste in" in said
+
+
+def test_a_board_with_no_check_says_nothing_about_one():
+    _step, _s, tg, _b, _c = machine()
+    _step("/submit")
+    assert not any("reCAPTCHA" in m for m in tg.sent)
 
 
 def test_the_same_role_is_not_applied_to_twice():

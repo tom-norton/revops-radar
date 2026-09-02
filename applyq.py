@@ -2643,6 +2643,13 @@ def preview_caption(job, plan, notes, rejected, skipped, failed):
         lines += ["", f"<i>{len(plan['consents'])} acknowledgement"
                       f"{'' if len(plan['consents']) == 1 else 's'} ticked. They are on "
                       f"the last page.</i>"]
+    if plan.get("anti_bot"):
+        # Said before he types /send rather than after it bounces. Nothing here tries to
+        # get past the check; a job application is exactly the kind of submission an
+        # employer is entitled to want a person behind.
+        lines += ["", f"<i>This board runs {esc(plan['anti_bot'])} on submission, which "
+                      f"can refuse an automated send. If it does I'll tell you, and the "
+                      f"answers above are all in the packet to paste in by hand.</i>"]
     lines += ["", "<b>Nothing has been sent.</b> Read it, then /send to submit it, "
                   "/cancel to drop it."]
     if open_qs:
@@ -2654,6 +2661,7 @@ def application_section_markdown(cur, job, plan, rejected, skipped, notes, outco
                                  pdf_rel, page_said=""):
     L = ["", "---", "", "## Application form", "",
          f"- **Board:** {plan.get('ats')}",
+         f"- **Automated-submission check:** {plan.get('anti_bot') or 'none seen'}",
          f"- **Form:** {plan.get('url')}",
          f"- **Outcome:** {outcome}",
          f"- **Filled form:** `{pdf_rel}`" if pdf_rel else "- **Filled form:** not printed",
@@ -2690,7 +2698,8 @@ def ship_preview(state, job, bank, tg, plan, notes, rejected, skipped):
     stem = form_stem(cur, job)
     out_pdf = os.path.join(CV_OUT_DIR, f"{stem}-form.pdf")
     os.makedirs(CV_OUT_DIR, exist_ok=True)
-    _pdf, failed, _fields = submit.preview(plan, out_pdf, bank.path)
+    _pdf, failed, _fields, checks = submit.preview(plan, out_pdf, bank.path)
+    plan["anti_bot"] = checks
 
     pdf_rel = f"{APPLY_DIR}/{stem}-form.pdf"
     with open(out_pdf, "rb") as f:
@@ -2944,15 +2953,21 @@ def send_stage(state, job, bank, tg):
     else:
         # Clicked, and the page did not say it took it. Reported as exactly that: an
         # application Tom has to look at, not one he can forget about.
-        tg.send("\n".join(
-            [f"\u26a0 <b>Sent, but not confirmed</b>  "
-             f"{esc(clip(job.get('company') or '?', 40))}",
-             esc("I pressed submit and the page did not come back with a confirmation. It "
-                 "may have gone through and it may not."), "",
-             esc(clip(result.get("page_said") or "", 200)), "",
-             f'<a href="{esc(result.get("url") or plan.get("url") or "")}">Check it</a> '
-             f"<i>before applying again - a second application is a second application.</i>"
-             ]))
+        checks = result.get("anti_bot") or plan.get("anti_bot")
+        lines = [f"\u26a0 <b>Sent, but not confirmed</b>  "
+                 f"{esc(clip(job.get('company') or '?', 40))}",
+                 esc("I pressed submit and the page did not come back with a "
+                     "confirmation. It may have gone through and it may not."), ""]
+        if checks:
+            lines += [esc(f"This board runs {checks} on submission and it may simply have "
+                          f"refused an automated send. That is what it is there for, and "
+                          f"it is not something to get around: if the form is still "
+                          f"sitting there, it wants a person."), ""]
+        lines += [esc(clip(result.get("page_said") or "", 200)), "",
+                  f'<a href="{esc(result.get("url") or plan.get("url") or "")}">Open the '
+                  f'form</a> <i>and check before applying again. Every answer is in the '
+                  f'packet to paste in.</i>']
+        tg.send("\n".join(lines))
         outcome = "submitted-unconfirmed"
 
     if cur.get("packet_file"):
