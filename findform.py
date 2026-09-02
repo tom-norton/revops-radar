@@ -51,6 +51,47 @@ SUFFIX_RE = re.compile(r"\b(inc|llc|ltd|limited|gmbh|bv|nv|sa|ag|plc|corp|corpor
                        r"technologies|technology|software|labs|group|holdings|company|"
                        r"the)\b", re.I)
 
+# Where an application actually lives, as opposed to where a job was advertised.
+#
+# The distinction is the whole problem. Half the radar's rows are aggregator links --
+# LinkedIn, Adzuna, revopsroles, hiring.cafe -- and none of those is a form. Worse, the
+# dedupe step picks ONE url per role by source rank, so a role seen on both revopsroles and
+# hiring.cafe keeps the revopsroles link and files the real one under `also_seen`, where
+# nothing was looking. Triptease's Revenue Operations Manager was exactly that: the
+# workable.com application was already in the record, one field away, while /submit was
+# reporting there was no form to fill.
+APPLY_HOSTS = re.compile(
+    r"(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|"
+    r"recruitee\.com|teamtailor\.com|personio\.|bamboohr\.|jobvite\.|icims\.com|"
+    r"myworkdayjobs\.com|myworkdaysite\.com|breezy\.hr|join\.com|careerpuck\.com|"
+    r"pinpointhq\.com|rippling\.com|paylocity\.com|eightfold\.ai)", re.I)
+AGGREGATOR_HOSTS = re.compile(
+    r"(linkedin\.com|adzuna\.|indeed\.|revopsroles\.com|hiring\.cafe|reed\.co\.uk|"
+    r"glassdoor\.|ziprecruiter\.|talent\.com|jooble\.|otta\.com|welcometothejungle\.)",
+    re.I)
+
+
+def is_apply_host(url):
+    """True for a URL on a system that actually takes applications."""
+    return bool(APPLY_HOSTS.search(url or "")) and not AGGREGATOR_HOSTS.search(url or "")
+
+
+def known_links(job, fillable=None):
+    """Every URL this job record already carries, most useful first.
+
+    Costs nothing: it is reading the row, not the internet. The order is what matters --
+    a link a driver can fill outranks a link to a real application system, which outranks
+    the aggregator page the role happened to be advertised on."""
+    seen, urls = set(), []
+    for u in [job.get("url")] + [a.get("url") for a in (job.get("also_seen") or [])]:
+        u = (u or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            urls.append(u)
+    can_fill = fillable or (lambda _u: False)
+    return sorted(urls, key=lambda u: (not can_fill(u), not is_apply_host(u)))
+
+
 BOARDS = {
     "greenhouse": "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
     "ashby": "https://api.ashbyhq.com/posting-api/job-board/{slug}",
@@ -216,7 +257,7 @@ def rank(jobs, title, market=""):
     return close, (close[0] if len(close) == 1 else None)
 
 
-def find_form(job, companies=None, fetch=None):
+def find_form(job, companies=None, fetch=None, fillable=None):
     """Where this posting's application form actually is.
 
     Returns a dict, always, because every outcome here is worth saying out loud:
@@ -227,8 +268,20 @@ def find_form(job, companies=None, fetch=None):
       no-board   no public board found under any spelling of the company name
 
     `candidates` carries what was seen either way, so a message to Tom can show him what
-    it found rather than only what it concluded."""
+    it found rather than only what it concluded.
+
+    `fillable` says which URLs have a driver behind them, so that a link already in the
+    record can be preferred over one that would have to be looked up."""
     company = job.get("company") or ""
+    # Step nought, and free: the record may already carry the real application. Dedupe
+    # keeps one url per role by source rank and files the rest under `also_seen`, so the
+    # workable.com link for a role advertised on revopsroles is sitting right there.
+    for url in known_links(job, fillable):
+        if url != (job.get("url") or "") and is_apply_host(url):
+            return {"outcome": "known", "company": company, "url": url,
+                    "title": job.get("title") or "", "location": job.get("location") or "",
+                    "ats": "", "candidates": []}
+
     ats, slug, jobs = find_board(company, companies, fetch)
     if not jobs:
         return {"outcome": "no-board", "company": company, "candidates": []}

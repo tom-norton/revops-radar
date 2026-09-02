@@ -218,7 +218,7 @@ HELP = (
     "/phone &lt;number&gt; - put your number on the CV (or /phone off)\n"
     "/redo &lt;what to change&gt; - rebuild the last CV with your feedback\n"
     "/cover &lt;anything to steer it&gt; - write the cover letter for the last CV\n"
-    "/submit - fill the application form for the last CV and show it to you\n"
+    "/submit &lt;link, optional&gt; - fill the application form and show it to you\n"
     "/send - send the form you just approved. Nothing goes without this.\n"
     "/help - this\n\n"
     "When I ask a question, just reply to it. Numbered options accept the number."
@@ -2759,11 +2759,33 @@ def resolve_form(state, job, tg, url):
     cur = state["current"]
     posting = f'<a href="{esc(url)}">the posting</a>' if url else "the posting"
     try:
-        found = findform.find_form(job)
+        found = findform.find_form(job, fillable=submit.detect_ats)
     except Exception as e:
         print(f"  form lookup failed: {e}")
         found = {"outcome": "no-board", "candidates": []}
     company = esc(job.get("company") or "?")
+
+    if found.get("outcome") == "known":
+        # It was in the row all along, under `also_seen`. Dedupe keeps one url per role by
+        # source rank and files the rest away, so the real application for a role
+        # advertised on an aggregator is often already on file.
+        ats = submit.detect_ats(found["url"])
+        if ats:
+            tg.send("\n".join(
+                [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+                 esc(f"{job.get('company') or '?'} \u00b7 the dashboard link is an "
+                     f"advert, not a form. The real application was already on file."), "",
+                 f'<i>Filling {esc(found["url"])}</i>']))
+            return found["url"], ats
+        tg.send("\n".join(
+            [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+             esc(f"{job.get('company') or '?'} \u00b7 the dashboard link is an advert. The "
+                 f"real application is here, but on a system I cannot fill yet."), "",
+             f'<a href="{esc(found["url"])}">Apply here</a>', "",
+             "<i>The CV and the letter are in the bank, and the letter's text is in the "
+             "packet for pasting into a box.</i>"]))
+        finish_submission(state, cur, "submit-unsupported", {"url": found["url"]})
+        return "", ""
 
     if found.get("outcome") == "found":
         ats = submit.detect_ats(found["url"])
@@ -2839,8 +2861,21 @@ def resolve_form(state, job, tg, url):
 def fill_form_stage(state, job, bank, tg, api_key):
     """Read the form, plan every answer, screen the written ones, fill it, print it."""
     cur = state["current"]
-    url = job.get("url") or ""
+    override = cur.get("form_override") or ""
+    url = override or job.get("url") or ""
     ats = submit.detect_ats(url)
+    if not ats and override:
+        # He pointed at it himself. Not being able to fill it is worth saying plainly,
+        # rather than quietly going off to look for something else instead.
+        tg.send("\n".join(
+            [f"<b>{esc(clip(job.get('title'), 60))}</b>",
+             esc(f"That link is on a system I cannot fill yet. I can fill "
+                 f"{', '.join(submit.supported_boards())} forms."), "",
+             f'<a href="{esc(url)}">Apply here</a>', "",
+             "<i>The CV and the letter are in the bank, and the letter's text is in the "
+             "packet for pasting into a box.</i>"]))
+        finish_submission(state, cur, "submit-unsupported", {"url": url})
+        return True
     if not ats:
         # Half the roles on the radar arrive as a LinkedIn or aggregator link, and none of
         # those is a form. Before giving up, go to the company's own board and look for the
@@ -3159,6 +3194,10 @@ def handle_commands(texts, state, queue, tg, bank=None):
                                 "letter.</i>"]
                 tg.send("\n".join(msg))
         elif cmd == "/submit":
+            # An optional URL, which is the escape hatch for every source this cannot
+            # resolve on its own. A link he pastes is better evidence than anything a
+            # lookup can infer, so it wins outright and nothing is searched for.
+            arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
             # Opt-in, on the CV that already went out, and it never sends anything: it
             # fills the form and prints it. /send is the only thing that submits, and it
             # is a separate message on purpose -- an application is the one action in this
@@ -3175,6 +3214,10 @@ def handle_commands(texts, state, queue, tg, bank=None):
             elif not recoverable:
                 tg.send("No CV to apply with yet. /apply a role and I'll build one, then "
                         "/submit it.")
+            elif arg and not re.match(r"^https?://\S+$", arg):
+                tg.send("That doesn't look like a link. <code>/submit</code> on its own "
+                        "uses the role's own, or <code>/submit https://...</code> points "
+                        "me at the exact form.")
             elif already_submitted(state, role_id):
                 tg.send("You've already applied to that one. A second application is a "
                         "second application, so I won't send it twice.")
@@ -3193,13 +3236,18 @@ def handle_commands(texts, state, queue, tg, bank=None):
                 run = json.loads(json.dumps(base_role))
                 run.update({"stage": "fill", "started_at": now_iso()})
                 for k in ("asked_at", "render_failures", "cv_failures", "cover_failures",
-                          "fill_failures", "plan", "nudged"):
+                          "fill_failures", "plan", "nudged", "form_override"):
                     run.pop(k, None)
+                if arg:
+                    run["form_override"] = arg
                 state["current"] = run
                 name = run.get("company") or run.get("cv_title") or run.get("title")
                 msg = [f"<b>Filling the form</b>  {esc(clip(name, 60))}",
                        "", "<i>Nothing gets sent. I'll fill it in, print it, and show you "
                            "the page before anything is submitted.</i>"]
+                if arg:
+                    msg += ["", f"<i>Using the link you gave me, not the one on the "
+                                f"dashboard.</i>"]
                 if not run.get("cover_file"):
                     msg += ["", "<i>No cover letter on this one. /cancel and /cover first "
                                 "if you want one attached.</i>"]
