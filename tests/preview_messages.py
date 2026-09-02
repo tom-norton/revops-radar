@@ -85,6 +85,60 @@ show("done", "\n".join([
     f'<a href="https://{applyq.BANK_REPO}/commit/{sha}">packet</a> · '
     f'<a href="{JOB["url"]}">posting</a>']))
 
+SUMMARIES = [
+    {"label": "A", "angle": "Canonical-tight", "score": 7.5,
+     "why": "Keeps the tuned bank summary and swaps in the JD's own vocabulary.",
+     "changed": "Swapped 'customer success' for 'revenue operations' in the opener.",
+     "text": "Revenue operations and customer success operator with 11 years in B2B SaaS, "
+             "most recently managing $5.2M ARR across 22 enterprise accounts. ESADE MBA "
+             "finishing 2026, with GTM funnel modelling and CRM architecture work behind "
+             "it. Strongest where post-sale data meets forecasting."},
+    {"label": "B", "angle": "Role-forward", "score": 8.5,
+     "why": "Leads with systems ownership, which is the top third of the posting.",
+     "changed": "Resequenced to open on the GTM stack rather than the CS tenure.",
+     "text": "Revenue operations builder who has owned the GTM stack end to end, from lead "
+             "routing and CRM architecture to renewal forecasting. 11 years in B2B SaaS "
+             "and an ESADE MBA finishing 2026. Most recently managed $5.2M ARR at NAVEX "
+             "while building the reporting the forecast ran on."},
+    {"label": "C", "angle": "Company-forward", "score": 6.5,
+     "why": "Ties to the tax-automation expansion, but spends a sentence doing it.",
+     "changed": "Opens on Fonoa's move into indirect tax coverage.",
+     "text": "Revenue operations professional drawn to Fonoa's expansion across indirect "
+             "tax coverage, where GTM systems have to keep pace with new markets. 11 years "
+             "in B2B SaaS, ESADE MBA finishing 2026, and $5.2M ARR most recently managed "
+             "at NAVEX."},
+]
+
+show("THE OTHER BIG ONE: summary pick (score at or above the gate)",
+     applyq.format_variations(SUMMARIES, JOB, AUDIT))
+show("below the gate: picked for him, no question asked",
+     applyq.format_auto_pick(applyq.best_summary(SUMMARIES), SUMMARIES, JOB, AUDIT))
+show("packet done, CV starting", "\n".join([
+    f"<b>{applyq.esc(applyq.clip(JOB['title'], 70))}</b>",
+    applyq.esc(" · ".join([JOB["company"], AUDIT["track"], "2 new bullets",
+                           "1 gap left open"])),
+    "", "<i>Packet done. Building the CV.</i>"]))
+show("CV delivered (this is the caption on the PDF)", "\n".join([
+    f"✓ <b>{applyq.esc(applyq.clip('REVENUE OPERATIONS LEAD, EMEA', 70))}</b>",
+    applyq.esc(" · ".join([JOB["company"], AUDIT["track"], "2 pages", "14 bullets",
+                           "1 rejected", "bank +2"])),
+    "<i>Summary B · picked by Tom</i>"]))
+show("CV failed its checks", "\n".join(
+    ["⚠ <b>" + applyq.esc(applyq.clip(JOB["title"], 70)) + "</b>",
+     applyq.esc(f"{JOB['company']} · CV built but did not pass its checks, so I have not "
+                f"sent it."), "",
+     "• " + applyq.esc("right-aligned tab stop is not holding: 'Dec 2021 - Aug 2025' ends "
+                       "at 412pt, margin is 558pt"),
+     "", "<i>The PDF and the page images are in the run log and at "
+         "<code>cv/2026-09-01-fonoa-revenue-operations-lead-emea.pdf</code>.</i>"]))
+show("the skeleton is missing something (said once, not per role)",
+     "<b>Two minutes on the CV skeleton</b>\n\n"
+     + "\n".join(f"\u2022 {applyq.esc(g)}"
+                 for g in applyq.cvbuild.skeleton_gaps(applyq.cvbuild.load_base()[0]))
+     + f'\n\n<a href="{applyq.cvbuild.BASE_EDIT_URL}">Open cv-base.json</a>'
+     + "\n\n<i>The CV builds either way. The phone number is left out of the public repo "
+       "on purpose, so the private copy is where it goes.</i>")
+
 show("still open (nudge)", "<b>Still open</b>\n\n"
      + f"<b>1</b>  {applyq.esc(applyq.clip(QS[2]['question'], 160))}\n\n"
      + "<i>Answer, or say skip and I'll leave it out.</i>")

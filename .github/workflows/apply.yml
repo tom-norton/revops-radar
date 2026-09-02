@@ -23,6 +23,10 @@ on:
         description: "Print the queue and what's in flight, then stop"
         type: boolean
         default: false
+      cv_debug:
+        description: "Print the CV's text in the log and keep the pages as an artifact. This repo is PUBLIC."
+        type: boolean
+        default: false
 
 # Serial, and enforced here as well as in the code. Two overlapping ticks would both read
 # the same run state out of the bullet bank, both advance it, and the second push would
@@ -39,21 +43,30 @@ jobs:
     runs-on: ubuntu-latest
     # A tick that has just asked Tom something stays alive for ~10 minutes waiting for the
     # reply, so the whole role finishes in one run instead of waiting on the next firing.
-    # This cap stops a wedged run holding the concurrency group for GitHub's 6-hour default.
-    timeout-minutes: 20
+    # A tick that also builds a CV spends a few more minutes installing LibreOffice and
+    # rendering. This cap stops a wedged run holding the concurrency group for GitHub's
+    # 6-hour default.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: pip install requests
       - name: Offline tests
         # Pure functions and the state machine, with the model calls and the chat stubbed.
         # Catches a broken comp gate or a regressed honesty rule before a tick spends money
         # or asks Tom a question it shouldn't.
+        #
+        # The CV render is deliberately NOT here: it needs two minutes of apt, and this
+        # runs on all ~96 ticks a day. It runs on push instead, in cv-smoke.yml.
         run: |
           python tests/test_scoring.py
           python tests/test_apply.py
+          python tests/test_cv.py
           node tests/test_worker.mjs
       - name: Status only
         if: inputs.status
@@ -74,4 +87,21 @@ jobs:
           # Checked against TELEGRAM_CHAT_ID before the message is believed. The relay
           # authenticates Telegram, not Tom, and anyone can message a bot.
           APPLYQ_INBOUND_CHAT: ${{ inputs.chat_id }}
+          # Off by default. The CV's bullets come out of the private bank, and this repo's
+          # Actions log is public. The log always gets the measurements and the page
+          # structure, which is what catches a layout break; the pages themselves go to
+          # Telegram with the PDF.
+          APPLYQ_CV_LOG_TEXT: ${{ inputs.cv_debug && '1' || '0' }}
         run: python applyq.py ${{ inputs.dry && '--dry' || '' }}
+      - name: CV pages
+        # Same reasoning: an artifact on a public repo is public. Only kept when the run
+        # was started with cv_debug on, to diagnose something.
+        if: ${{ always() && inputs.cv_debug }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cv-pages-${{ github.run_id }}
+          path: |
+            cv-out/*.jpg
+            cv-out/*.pdf
+          if-no-files-found: ignore
+          retention-days: 7

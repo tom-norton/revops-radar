@@ -15,6 +15,7 @@ this whole build hangs off -- no bullet drafted from a gap he did not answer.
 import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import applyq  # noqa: E402
@@ -25,12 +26,18 @@ import applyq  # noqa: E402
 class FakeTelegram:
     def __init__(self):
         self.sent = []
+        self.documents = []
 
     def send(self, text):
         self.sent.append(text)
 
     def last(self):
         return self.sent[-1] if self.sent else ""
+
+    def send_document(self, path, caption=""):
+        self.documents.append((path, caption))
+        self.sent.append(caption)
+        return True
 
 
 class FakeBank:
@@ -51,6 +58,9 @@ class FakeBank:
 
     def save_state(self, state):
         self.files[applyq.STATE_FILE] = json.dumps(state)
+
+    def write_bytes(self, rel, data):
+        self.files[rel] = data
 
     def commit(self, message):
         self.commits.append(message)
@@ -82,12 +92,18 @@ AUDIT = {
 }
 
 
-def machine(audit=None, comp=None, drafts=None):
+def machine(audit=None, comp=None, drafts=None, score=6.8, tailored=None,
+            bank_changes=None):
     """A state machine wired to stubs. Returns (step, state, tg, bank, calls) where step()
-    runs one tick with an optional inbound message from Tom."""
+    runs one tick with an optional inbound message from Tom.
+
+    `score` defaults below VARIATION_REVIEW_MIN_SCORE so a role runs straight through to a
+    shipped CV in one reply. The gate itself is exercised in test_cv.py, where a role is
+    given a score above the line on purpose."""
     tg, bank = FakeTelegram(), FakeBank({applyq.BANK_FILE: "### [NAVEX-01]\nText: ..."})
-    calls = {"audit": 0, "draft": 0, "salary": 0, "split": 0, "drafted_from": None}
-    job = dict(JOB, comp=comp if comp is not None else JOB["comp"])
+    calls = {"audit": 0, "draft": 0, "salary": 0, "split": 0, "drafted_from": None,
+             "brief": 0, "tailor": 0, "bankwrite": 0, "render": 0, "shipped": None}
+    job = dict(JOB, comp=comp if comp is not None else JOB["comp"], score=score)
 
     def fake_audit(api_key, j, profile, bank_md, answers_md):
         calls["audit"] += 1
@@ -111,9 +127,70 @@ def machine(audit=None, comp=None, drafts=None):
         parts = [p.strip() for p in reply.split("|")]
         return (parts + [""] * len(qs))[:len(qs)]
 
+    def fake_brief(api_key, j):
+        calls["brief"] += 1
+        return {"priorities": [{"priority": "Expand indirect tax coverage",
+                                "evidence": "Company blog, June 2026"}],
+                "challenges": [], "why_hiring": "", "culture": [], "visa_note": "",
+                "thin": False}
+
+    def fake_tailor(api_key, j, aud, brief, base, bank_md, drafted):
+        """Stands in for the Opus tailoring pass. It echoes Tom's own answers back as
+        bullets, which is what makes the honesty screen a real gate in these tests rather
+        than something the stub tiptoes around."""
+        calls["tailor"] += 1
+        if tailored is not None:
+            return json.loads(json.dumps(tailored))
+        answers = [a["answer"] for a in (state["current"].get("answers") or [])
+                   if applyq.has_material(a["answer"])]
+        return {
+            "role_title_usable": True,
+            "entries": [{"entry_id": "navex",
+                         "bullets": [{"text": a, "source": "NEW", "key": True}
+                                     for a in answers] or
+                                    [{"text": "Managed 5.2M ARR across 22 accounts",
+                                      "source": "BANK:NAVEX-01", "key": True}]}],
+            "summaries": [
+                {"label": "A", "angle": "Canonical-tight", "score": 7.0, "why": "floor",
+                 "changed": "keyword swaps", "text": "Revenue operations operator."},
+                {"label": "B", "angle": "Role-forward", "score": 8.0, "why": "leads right",
+                 "changed": "resequenced", "text": "Revenue operations builder."},
+                {"label": "C", "angle": "Company-forward", "score": 6.0, "why": "thin",
+                 "changed": "company first", "text": "Drawn to Acme."}],
+            "skills": "Salesforce | SQL | Revenue Operations",
+            "keywords": [{"keyword": "SQL", "status": "Present"}],
+            "changes": [{"section": "Summary", "original": "x", "revised": "y",
+                         "keywords": "SQL", "evidence": "bank"}],
+        }
+
+    def fake_bank_changes(api_key, j, aud, used, drafted, bank_md):
+        calls["bankwrite"] += 1
+        return json.loads(json.dumps(
+            bank_changes if bank_changes is not None
+            else {"changes": [], "didnt_qualify": []}))
+
+    def fake_render(spec, outdir, stem):
+        """No LibreOffice in a unit test. The real render is exercised end to end by
+        tests/test_cv_render.py, which is what the smoke workflow runs."""
+        calls["render"] += 1
+        calls["shipped"] = spec
+        os.makedirs(outdir, exist_ok=True)
+        pdf = os.path.join(outdir, f"{stem}.pdf")
+        with open(pdf, "wb") as f:
+            f.write(b"%PDF-1.4 stub")
+        return {"spec": "", "docx": "", "pdf": pdf, "jpegs": [f"{stem}-1.jpg"]}
+
     applyq.run_audit, applyq.draft_bullets, applyq.research_salary = (
         fake_audit, fake_draft, fake_salary)
     applyq.split_reply = fake_split
+    applyq.research_brief = fake_brief
+    applyq.tailor_cv = fake_tailor
+    applyq.decide_bank_changes = fake_bank_changes
+    applyq.cvbuild.ensure_toolchain = lambda *a, **k: None
+    applyq.cvbuild.render = fake_render
+    applyq.cvbuild.verify = lambda paths, spec: ([], [], {"pages": 2})
+    applyq.cvbuild.log_render = lambda *a, **k: None
+    applyq.CV_OUT_DIR = tempfile.mkdtemp(prefix="applyq-cv-")
     # split_is_sane() is deliberately NOT stubbed: it is the guard standing between a model
     # and Tom's resume, so every state-machine test runs through the real one.
     applyq.scan.load_profile = lambda: "(profile)"
@@ -259,7 +336,12 @@ def test_one_reply_finishes_the_whole_role():
     packets = [k for k in bank.files if k.startswith(applyq.PACKET_DIR + "/")]
     assert len(packets) == 1
     assert "Cleaned up the pipeline." in bank.files[packets[0]]
-    assert len(bank.commits) == 1
+    # Two commits: the packet lands as finished work before anything that can fail runs,
+    # then the CV, the change log and the bank write-back land together.
+    assert len(bank.commits) == 2
+    # The CV itself reached him, as a file rather than a link into a private repo.
+    assert len(tg.documents) == 1
+    assert state["history"][0]["cv"].endswith(".pdf")
 
 
 def test_saying_yes_to_research_runs_it_without_another_round_trip():

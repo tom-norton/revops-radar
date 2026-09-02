@@ -5,40 +5,91 @@ whenever your background, targets, or constraints change; the pipeline picks up 
 version on the next run. Keep it factual. Do not add skills or experience you don't have.
 
 ## Candidate summary
-11 years B2B SaaS across Customer Success and Account Management, GRC/compliance domain
-(NAVEX, LexisNexis). ESADE MBA (Barcelona) finishing July 2026. Pivoting into Revenue
+11 years B2B SaaS across Customer Success and Account Management, GRC/compliance and legal
+information domains (NAVEX, LexisNexis). ESADE MBA (Barcelona) finishing July 2026
+(conferral March 2027); BSBA in Marketing from University of Dayton. Pivoting into Revenue
 Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior IC level. Parallel
 track: Senior / Principal Customer Success Manager at established companies. US citizen;
 needs employer visa sponsorship for any EU role.
 
 ## Experience (for Experience Alignment, 25%)
-- NAVEX — Customer Success Manager (Dec 2021 - Aug 2025). Managed $5.2M ARR across 22
-  enterprise accounts. Contributed account-level renewal risk assessments into the forecast
-  and surfaced performance insights for sales
-  leadership. Beat NRR targets three straight years (108-110%), Top Performer. Designed a
-  QBR format (product recommendations + usage data) later adopted across CS and AE teams.
-  Built a Gainsight post-implementation handoff playbook rolled out to all CSMs. Operationalized
-  a three-stage review-comment-publish workflow with Product/Support that retained $70K ARR.
-- LexisNexis — Account Manager, Corporate Legal (Jun 2016 - Dec 2021). $2M ARR portfolio,
-  full customer journey. QBRs mapping usage to time savings surfaced ~$150K annual expansion.
-  Trained new hires (cut ramp 25% in a quarter).
-- LexisNexis — Account Manager, Print & Digital (Jun 2014 - Jun 2016). $1.2M ARR, retention
-  and cross-sell.
+
+Everything below is scoped to what he can defend in an interview. Where a boundary was
+established in a gap interview it is stated as a boundary, because a role scored on scope
+he does not have is a role he wastes a week on.
+
+- NAVEX - Customer Success Manager (Dec 2021 - Aug 2025), Grand Rapids MI. $5.2M ARR
+  across 22 enterprise accounts, including two of the largest US banks and a number of
+  global multi-region accounts. Exceeded NRR targets three straight years (108-110%), Top
+  Performer.
+  - **Renewal risk forecasting.** Fed a monthly review looking six months forward, with
+    red/yellow accounts tracked to closure until renewal; consumers were CS leadership,
+    the renewals team and AEs, and the output shaped concession, escalation and resourcing
+    decisions. **Scope boundary: he contributed his own accounts to that forum. He did not
+    run it, set its agenda or own the materials.** Roles centred on owning an operating
+    rhythm are a stretch, not a match.
+  - **Reporting and self-service analytics.** Built his own Excel tracking model at
+    LexisNexis (see below); at NAVEX the reporting he produced was account-level rather
+    than systems-level. No BI tool ownership.
+  - **Usage and consumption commercials.** Ran annual usage reconciliation, pulling
+    contractual course-consumption data and headcount ahead of renewal to surface license
+    overages, and converted one account off a legacy per-case plan onto headcount-based
+    subscription pricing. Genuine consumption/true-up exposure, no metric attached to it.
+  - **Expansion.** Grew an enterprise account beyond its compliance buyer into a separate
+    HR function, a $200K training deal. **Scope boundary: the opening was inbound via an
+    internal reference, not prospected.**
+  - **Process and enablement.** Designed a QBR format adopted across a 25-person CS team
+    and by AEs; built a Gainsight post-implementation handoff playbook rolled out to all
+    CSMs; operationalized a three-stage review-comment-publish workflow with Product and
+    Support that retained $70K ARR; volunteered as product SME briefing 25+ CSMs.
+  - **Loss analysis.** Wrote the required Salesforce post-mortem for every full-product
+    churn and answered leadership questions on major losses monthly. **Scope boundary: he
+    did not own the churn review process.**
+  - **CRM systems.** Salesforce and Gainsight as a power user, not an administrator.
+    Confirmed August 2026: no admin rights in an employer Salesforce instance; changes went
+    through an admin team. Admin-level work exists only in his own HubSpot instance and in
+    Salesforce Admin coursework. **A role requiring hands-on production CRM administration
+    is a genuine gap.**
+- LexisNexis - Account Manager, Corporate Legal (Jun 2016 - Dec 2021), Dayton OH. $2M ARR
+  portfolio, full customer journey. Ran a defined renewal process opening fixed-term
+  renewals 3+ months ahead with a business review and converting qualifying auto-renewals
+  into multi-year agreements. QBRs mapping usage to time savings surfaced ~$150K in annual
+  expansion opportunities (surfaced, not closed). Built an Excel model tracking renewal
+  dates, ARR at risk, monthly upsell against goal, churn and NRR progress, adopted
+  informally by several teammates. Trained new hires, cutting ramp 25% in a quarter.
+  **No retention or attainment number survives from this role; he does not claim one.**
+- LexisNexis - Account Manager, Print & Digital (Jun 2014 - Jun 2016). $1.2M ARR, retention
+  and cross-sell. Early career, single line on the CV by design.
 
 ## RevOps / GTM projects (evidence of the pivot)
-- Factorial (ESADE case): built a GTM funnel model, sized the sales team, calculated CAC,
-  ran payback scenarios. Only team selected to present to Factorial's VP of CX; scored 9/10.
+- Factorial (ESADE MBA case): built the GTM funnel model for a $100M ARR HR-tech company
+  evaluating market entry, working back from TAM to a 190-deal target, sizing a
+  seven-person GTM team at $735K cost, and modeling CAC payback from 16 to 34 months across
+  three scenarios (blended CAC ~$6,400). Only team selected to present to Factorial's VP of
+  CX; scored 9/10. **This is his only territory, capacity or quota planning evidence.**
 - FrieslandCampina / Debic (ESADE master project): designed lead-scoring and routing logic
-  plus CRM data foundation, the core of a EUR 1.5M demand-gen roadmap.
-- AI RevOps Diagnostic (personal): Python/Streamlit dashboard + Claude API advisor analyzing
-  funnel conversion and velocity across the lifecycle.
-- Sales-to-CS Handoff Automation (personal): HubSpot + Zapier workflow triggering structured
-  onboarding on deal close.
+  plus the CRM data foundation behind a GTM strategy, the core initiative in a EUR 1.5M
+  demand-generation roadmap. Prototyped a redesigned lead-intake form.
+- GTM Health Diagnostic (personal): Python and Streamlit tool modeling the bowtie funnel,
+  flagging anomalies in stage conversion, and reconstructing true deal stage history from
+  HubSpot property-change logs, with a Claude-powered advisor on top.
+- Sales-to-CS Handoff Automation (personal): HubSpot and Zapier workflow triggering
+  structured onboarding on deal close.
+- Also built (not on the CV, deliberately): a job-scanning and scoring pipeline on GitHub
+  Actions, and Clay waterfall-enrichment lead lists. Evidence of build fluency, kept off
+  the CV because the subject matter reads as candidate-mode.
 
 ## Skills (for Skills Match, 20%)
-Salesforce (Admin cert in progress), HubSpot, Gainsight, Revenue Operations, GTM strategy,
-funnel modeling, CAC / NRR / retention analytics, QBR systems, CRM architecture, lead scoring
-and routing, SQL (basic), Excel, data analysis.
+Salesforce (power user; Admin cert in progress, no production admin rights), HubSpot
+(including his own instance, admin-level), Gainsight, Zapier, Clay, Python, Revenue
+Operations, GTM strategy, funnel and capacity modeling, CAC / NRR / retention analytics,
+QBR systems, CRM data architecture, lead scoring and routing, SQL (basic), Excel
+(advanced).
+
+Deliberately NOT claimed: Power BI (ruled out July 2026 as the wrong tool for SaaS in
+NL/UK/IE and a drilling risk in interviews), Tableau (no artifact exists), dbt, Looker,
+Marketo, CPQ, quote-to-cash tooling. A posting whose hard requirements sit in those is a
+skills miss, not a stretch.
 
 ## Seniority fit (15%)
 Target band: Manager or senior IC (Senior/Lead/Principal). Senior/Principal CSM at

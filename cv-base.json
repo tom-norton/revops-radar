@@ -1,0 +1,148 @@
+{
+  "_readme": [
+    "The CV skeleton: who Tom is, where he worked, when, and the structure of the page.",
+    "Taken verbatim from the 2026-08-05 base CVs (Tom_Norton_CV.docx and its Builder and",
+    "CS siblings), which is why the dates, locations and section shapes are exact.",
+    "",
+    "The `bullets` here are the base CV's own text. They are the floor: what a role gets",
+    "when the bullet bank has nothing better, and part of what a tailored revision is",
+    "allowed to be made of. The bank is still the master library and its CANONICAL",
+    "version wins wherever the two disagree.",
+    "",
+    "This copy is the seed. The live copy is cv-base.json in the private tom-bullet-bank",
+    "repo, and it wins whenever it exists: edit that one, not this one.",
+    "",
+    "Shape. An entry is one employer or school: `left` and `right` are the bold header",
+    "line (name, then location on the right margin), and `roles` are the titles under it.",
+    "LexisNexis is one entry with two roles, because it is one employer. A project is not",
+    "an entry: it is a single bullet with a bold lead-in, which is how the base CV reads."
+  ],
+
+  "theme": {
+    "font": "Calibri",
+    "accent": "117A82"
+  },
+
+  "name": "TOM NORTON",
+  "contact_separator": "  |  ",
+
+  "_contact_note": [
+    "The phone number is deliberately NOT here. This repo is public and a phone number in",
+    "a public repo gets scraped; the same number on a CV sent to a named recruiter does",
+    "not. It lives in the bank's private copy of this file instead, and the poller says so",
+    "on the first build. Add it there as a second entry, after Barcelona:",
+    "  { \"text\": \"+34 ...\" },"
+  ],
+
+  "contact": [
+    { "text": "Barcelona, Spain" },
+    { "text": "tp.norton@pm.me" },
+    { "text": "linkedin.com/in/tom-p-norton",
+      "href": "https://www.linkedin.com/in/tom-p-norton/" },
+    { "text": "Nationality: United States" }
+  ],
+
+  "education": [
+    {
+      "left": "ESADE Business & Law School, Ramon Llull University",
+      "right": "Barcelona, Spain",
+      "roles": [
+        {
+          "id": "edu-esade",
+          "sub_left": "Master of Business Administration (Full-Time)",
+          "sub_right": "09/25 - 07/26 (conferral 03/27)",
+          "bullets": ["North American International Experience Award"]
+        }
+      ]
+    },
+    {
+      "left": "University of Dayton",
+      "right": "Dayton, OH, USA",
+      "roles": [
+        {
+          "id": "edu-dayton",
+          "sub_left": "Bachelor of Science in Business Administration",
+          "sub_right": "09/10 - 05/14",
+          "bullets": [
+            "Major in Marketing, Minor in International Business",
+            "Study Abroad: University of Augsburg, Germany (Summer 2012)"
+          ]
+        }
+      ]
+    }
+  ],
+
+  "experience": [
+    {
+      "left": "NAVEX",
+      "right": "Grand Rapids, MI, USA",
+      "roles": [
+        {
+          "id": "navex",
+          "sub_left": "Customer Success Manager",
+          "sub_right": "12/21 - 08/25",
+          "bullets": [
+            "Owned renewal risk forecasting for a $5.2M ARR enterprise book, giving CS and sales leadership a six-month view of at-risk revenue that shaped concession, escalation, and resourcing decisions; exceeded NRR targets three straight years (108-110%).",
+            "Used peer benchmark data to show an enterprise customer their reporting volume sat far below comparable companies, then built the case for an intake redesign that closed a $10K upgrade and moved annual case volume from dozens to hundreds.",
+            "Designed a QBR format pairing customer-specific product recommendations with usage data; tracked follow-through to drive adoption, later adopted across a 25-person CS team and by AEs.",
+            "Partnered with Product and Support to design and operationalize a three-stage review-comment-publish workflow that retained $70K ARR and became standard process for all new customers.",
+            "Built a post-implementation handoff playbook in Gainsight that standardized the onboarding-to-CSM transition; piloted it and rolled it out to all CSMs to flag adoption risk earlier."
+          ]
+        }
+      ]
+    },
+    {
+      "left": "LexisNexis",
+      "right": "Dayton, OH, USA",
+      "roles": [
+        {
+          "id": "lexisnexis-corp",
+          "sub_left": "Account Manager (Corporate Legal)",
+          "sub_right": "06/16 - 12/21",
+          "bullets": [
+            "Ran a defined renewal process across a $2M ARR corporate portfolio, opening fixed-term renewals three or more months ahead of expiry with a business review, running discovery for expansion opportunities, and closing proposals before the renewal date; converted qualifying auto-renewals into multi-year agreements.",
+            "Conducted quarterly business reviews mapping usage to time savings, surfacing roughly $150K in annual expansion opportunities.",
+            "Trained new hires on discovery calls and product demos, reducing ramp-up time 25% within one quarter."
+          ]
+        },
+        {
+          "id": "lexisnexis-print",
+          "sub_left": "Account Manager (Print & Digital Solutions)",
+          "sub_right": "06/14 - 06/16",
+          "bullets": [
+            "Drove $1.2M ARR portfolio of law-firm customers, owning retention and satisfaction through strategic renewals, relationship development, and cross-sell of digital solutions."
+          ]
+        }
+      ]
+    }
+  ],
+
+  "projects": {
+    "factorial": {
+      "id": "factorial",
+      "lead": "Factorial (ESADE MBA case study):",
+      "text": "Built the GTM funnel model for a $100M ARR HR-tech company evaluating market entry, working back from TAM to a 190-deal target, sizing a seven-person GTM team at $735K cost, and modeling CAC payback from 16 to 34 months across three scenarios. Only team selected to present to their VP of CX; scored 9/10."
+    },
+    "debic": {
+      "id": "debic",
+      "lead": "FrieslandCampina, Debic (ESADE master project):",
+      "text": "Designed the lead-scoring and routing logic and CRM data foundation behind a GTM strategy, the core initiative in a €1.5M demand-generation roadmap. Prototyped a redesigned lead-intake form and presented to Debic's Digital and Commercial leads."
+    },
+    "gtm-health": {
+      "id": "gtm-health",
+      "lead": "GTM Health Diagnostic (personal project):",
+      "text": "Built a Python and Streamlit diagnostic for the RevOps analyst preparing a leadership briefing: models the bowtie funnel, flags anomalies in stage conversion, and reconstructs true deal stage history from HubSpot property-change logs, with a Claude-powered advisor layered on top."
+    },
+    "handoff": {
+      "id": "handoff",
+      "lead": "Sales-to-CS Handoff Automation (personal project):",
+      "text": "Built a HubSpot and Zapier workflow that triggers structured onboarding the moment a deal closes, eliminating manual data entry and the dropped-context handoffs common between Sales and CS."
+    }
+  },
+
+  "skills": {
+    "ANALYTICS": "Salesforce | SQL | Excel | Funnel Modeling | Forecasting | Revenue Operations | GTM Strategy",
+    "BUILDER": "Python | HubSpot | Zapier | Salesforce | SQL | Clay | Revenue Operations",
+    "CS": "Gainsight | Salesforce | HubSpot | Forecasting | Data Analysis | Revenue Operations | Excel"
+  }
+}
