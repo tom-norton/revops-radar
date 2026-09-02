@@ -329,9 +329,24 @@ remaining 14 are companies running their own careers stack (Google, Salesforce, 
 Deel) where there is nothing public to find. So roughly a quarter of LinkedIn roles become
 one-tap, and another eighth become a direct link instead of a LinkedIn page.
 
+**Both boards run an invisible reCAPTCHA on submission, and nothing here tries to get past
+it.** Greenhouse loads reCAPTCHA Enterprise into every application page; Ashby loads an
+invisible reCAPTCHA v2 with a hidden response field on the form. That check exists to put a
+person behind a submission, and a job application is exactly the kind of submission an
+employer is entitled to want a person behind. So the check is detected and named instead:
+in the preview, while you are still deciding whether to send, and again if a submission
+goes through unconfirmed, where the message tells you the check may simply have refused an
+automated send and points you at the packet, which already has every answer written down to
+paste in by hand. Whether a real send clears the check is not knowable by reading, and your
+first live `/send` on a Greenhouse role is what settles it.
+
 Boards it can fill: **Greenhouse**, including the employers whose board URL redirects to
 their own careers site with the form embedded in it. Ashby and Lever are found and handed
-to you as a direct link, which still beats a LinkedIn page you have to search from.
+to you as a direct link, which still beats a LinkedIn page you have to search from. There
+is no Ashby driver, and the reason is not that its form is hard: it was probed and mapped
+(`tools/notes/ashby-form.md`) and it is more tractable than Greenhouse's. It is that a
+driver whose submissions the reCAPTCHA refuses would produce a filled form nobody can send,
+so it waits on the answer above.
 Workday and LinkedIn Easy Apply are left alone entirely: both want an account and a
 logged-in session, which is a credential sitting in a runner and a different conversation.
 Either way the CV and the letter are already in the bank and the letter's text is already
@@ -520,6 +535,7 @@ node tests/test_worker.mjs      # the Cloudflare relay's two guards
 python tests/preview_messages.py # print every bot message as Telegram renders it (no asserts)
 python tests/test_cv_render.py --install  # the real render: docx -> PDF -> JPEG, measured
 python tests/test_submit_form.py --install  # a real browser filling, printing and submitting a form
+python tools/probe_form.py <url>  # dump a real form's structure, to write a driver against it. Reads only.
 python scan.py --selftest       # replay stored dimension scores through the engine, offline
 python scan.py --dry            # full pipeline, no Claude calls
 python applyq.py --selftest     # apply-queue pure functions, offline
