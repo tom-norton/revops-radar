@@ -467,6 +467,13 @@ class Bank:
             cur += "\n"
         self.write(rel, cur + text)
 
+    def read_bytes(self, rel, default=b""):
+        p = os.path.join(self.path, rel)
+        if not os.path.exists(p):
+            return default
+        with open(p, "rb") as f:
+            return f.read()
+
     def write_bytes(self, rel, data):
         """For the CV PDF. The bank is where the artifacts live, and a PDF is the one
         artifact here that is not text."""
@@ -1515,12 +1522,60 @@ def as_built_block(spec):
     return "\n".join(L)
 
 
-def revise_cv(api_key, job, audit, spec, feedback, base, bank_md, drafts):
+PACKET_TRACK_RE = re.compile(r"^- Track:\s*\*\*(\w+)\*\*", re.M)
+PACKET_CV_TITLE_RE = re.compile(r"^- Role title on the CV:\s*\*\*(.+?)\*\*", re.M)
+
+
+def recoverable_cv(state):
+    """The most recent finished role that actually produced a PDF, or None."""
+    return next((h for h in reversed(state.get("history") or []) if h.get("cv")), None)
+
+
+def recover_last_cv(bank, state):
+    """Rebuild a revisable role from the BANK when the run state does not carry one.
+
+    The state is a cache; the packet and the PDF are the durable record. Without this, a
+    CV built before /redo existed -- or after any state reset -- answers "no CV to revise
+    yet" while the PDF sits in the same repo, which is both wrong and infuriating.
+
+    The page comes back as the text of the PDF Tom actually read, which is a better input
+    to a revision than a reconstruction of it would be."""
+    done = recoverable_cv(state)
+    if not done:
+        return None
+    pdf = bank.read_bytes(done["cv"])
+    if not pdf:
+        return None
+    cvbuild.ensure_toolchain()
+    tmp = os.path.join(CV_OUT_DIR, "recovered.pdf")
+    os.makedirs(CV_OUT_DIR, exist_ok=True)
+    with open(tmp, "wb") as f:
+        f.write(pdf)
+    as_built = cvbuild.pdf_text(tmp)
+
+    packet = bank.read(f"{PACKET_DIR}/{done['packet']}", "") if done.get("packet") else ""
+    track = (PACKET_TRACK_RE.search(packet) or [None, ""])[1] if packet else ""
+    cv_title = (PACKET_CV_TITLE_RE.search(packet) or [None, ""])[1] if packet else ""
+    return {
+        "id": done.get("id"), "title": done.get("title"),
+        "company": done.get("company"), "packet_file": done.get("packet"),
+        "cv_title": cv_title or done.get("title"),
+        "audit": {"track": track or "ANALYTICS"},
+        # The title on the page came off the posting, and a recovery must not silently
+        # swap it for the track's standing default.
+        "tailored": {"role_title_usable": True},
+        "as_built": as_built,
+        "recovered": True,
+        "usage": {},
+    }
+
+
+def revise_cv(api_key, job, audit, as_built, feedback, base, bank_md, drafts):
     drafted = [b.get("text") for b in ((drafts or {}).get("bullets") or [])
                if (b.get("text") or "").strip()]
     parts = [
         f"=== TOM'S FEEDBACK ===\n{feedback}",
-        f"=== THE CV AS IT WENT OUT ===\n{as_built_block(spec)}",
+        f"=== THE CV AS IT WENT OUT ===\n{as_built}",
         f"=== THE POSTING ===\n{job.get('title')} at {job.get('company') or '?'}\n"
         f"Track: {audit.get('track')}\n\n"
         f"{scan.sample_desc(job.get('description'), 4000)}",
@@ -1768,7 +1823,13 @@ def cv_corpus(bank, base, cur):
     drafted = " ".join(b.get("text", "")
                        for b in ((cur.get("drafts") or {}).get("bullets") or []))
     answers = " ".join(a.get("answer", "") for a in (cur.get("answers") or []))
-    return cvbuild.source_corpus(bank.read(BANK_FILE, ""), skeleton, drafted, answers)
+    # On a revision, the page as it went out counts too. Everything on it already passed
+    # this same screen on the way to the printer, so letting the revision keep a bullet it
+    # was not asked to change is not a loophole -- refusing would be, because it would
+    # quietly delete good bullets every time Tom asked for one small edit.
+    as_built = cur.get("as_built") or ""
+    return cvbuild.source_corpus(bank.read(BANK_FILE, ""), skeleton, drafted, answers,
+                                 as_built)
 
 
 def cv_name(job):
@@ -2145,10 +2206,14 @@ def handle_commands(texts, state, queue, tg, bank=None):
         elif cmd == "/redo":
             arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
             last = state.get("last_cv")
+            # A CV built before this command existed has no `last_cv`, but its PDF and its
+            # packet are still in the bank. Recover from those rather than telling him
+            # there is nothing to revise while the file sits in the same repo.
+            recoverable = last or (bank is not None and recoverable_cv(state))
             if state.get("current"):
                 tg.send(f"Working on {esc(clip(state['current'].get('title'), 50))} right "
                         f"now. /redo once that one's finished.")
-            elif not last or not last.get("spec"):
+            elif not recoverable:
                 tg.send("No CV to revise yet. /apply a role and I'll build one.")
             elif not arg:
                 tg.send("<b>Tell me what to change.</b>\n\n"
@@ -2156,13 +2221,18 @@ def handle_commands(texts, state, queue, tg, bank=None):
                         "<i>/redo lead the summary with forecasting, not the MBA</i>\n"
                         "<i>/redo the NAVEX section is too long</i>")
             else:
-                revision = json.loads(json.dumps(last))
+                base_role = last or recover_last_cv(bank, state)
+                if not base_role:
+                    tg.send("There's a CV in the bank but I can't read it back. "
+                            "/apply the role again and I'll rebuild it from scratch.")
+                    continue
+                revision = json.loads(json.dumps(base_role))
                 revision.update({"stage": "revise", "feedback": arg, "revised": True,
                                  "started_at": now_iso()})
                 for k in ("asked_at", "render_failures", "cv_failures", "nudged"):
                     revision.pop(k, None)
                 state["current"] = revision
-                name = last.get("cv_title") or last.get("title")
+                name = revision.get("cv_title") or revision.get("title")
                 tg.send(f"<b>Rebuilding</b>  {esc(clip(name, 60))}\n\n"
                         f"<i>{esc(clip(arg, 160))}</i>")
         elif cmd == "/phone":
@@ -2542,7 +2612,10 @@ def advance(state, job, bank, tg, api_key, answers_text):
     if cur["stage"] == "revise":
         before = usage_snapshot()
         try:
-            rev = revise_cv(api_key, job, cur.get("audit") or {}, cur.get("spec") or {},
+            as_built = (as_built_block(cur["spec"]) if cur.get("spec")
+                        else (cur.get("as_built") or ""))
+            cur["as_built"] = as_built
+            rev = revise_cv(api_key, job, cur.get("audit") or {}, as_built,
                             cur.get("feedback"), cvbuild.load_base(bank)[0],
                             bank.read(BANK_FILE, ""), cur.get("drafts"))
         except Exception as e:
