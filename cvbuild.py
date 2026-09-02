@@ -22,6 +22,7 @@ actual PDF, not a belief about what the .docx said.
 import glob
 import json
 import os
+import pathlib
 import re
 import shutil
 import subprocess
@@ -75,6 +76,9 @@ TAB_TOLERANCE_PT = 8.0
 
 MAX_PAGES = 3                    # 2 is the target; 3 is a trim job, 4 is broken
 JPEG_DPI = 90
+# A two-page CV converts in about five seconds. A minute means something is wedged, and a
+# long timeout only makes finding that out slower.
+SOFFICE_TIMEOUT = 120
 
 # anti-ai.md, and Tom's own style rules.
 #
@@ -455,6 +459,12 @@ def render(spec, outdir, stem):
     LibreOffice headless does the PDF because it is the only converter on a runner that
     honours docx tab stops, and pdftoppm does the JPEGs because the only reliable way to
     know a CV looks right is to look at it."""
+    # Absolute from here on. LibreOffice's UserInstallation takes a file:// URI, and a
+    # RELATIVE one hangs it forever rather than failing: "file://cv-out/.lo-profile" parses
+    # as host "cv-out" with path "/.lo-profile", and soffice sits there until something
+    # kills it. This cost a ten-minute CI timeout and every real CV build, because the
+    # workspace path ("cv-out") is relative and the local test path happened not to be.
+    outdir = os.path.abspath(outdir)
     os.makedirs(outdir, exist_ok=True)
     spec_path = os.path.join(outdir, f"{stem}.spec.json")
     docx_path = os.path.join(outdir, f"{stem}.docx")
@@ -465,10 +475,15 @@ def render(spec, outdir, stem):
 
     # LibreOffice writes into -outdir keeping the basename, and needs a private profile:
     # the default one is shared and a second concurrent run silently does nothing.
-    profile = os.path.join(outdir, ".lo-profile")
+    # as_uri() rather than an f-string, so the three-slash form is not something anyone
+    # has to remember to type.
+    profile = pathlib.Path(outdir, ".lo-profile").as_uri()
+    # Two minutes, not ten. A conversion this size takes about five seconds; anything
+    # past a minute is wedged, and the only thing a long timeout buys is a slower
+    # discovery of that.
     _run(["soffice", "--headless", "--norestore",
-          f"-env:UserInstallation=file://{profile}",
-          "--convert-to", "pdf", "--outdir", outdir, docx_path], timeout=600)
+          f"-env:UserInstallation={profile}",
+          "--convert-to", "pdf", "--outdir", outdir, docx_path], timeout=SOFFICE_TIMEOUT)
     pdf_path = os.path.join(outdir, f"{stem}.pdf")
     if not os.path.exists(pdf_path):
         raise RuntimeError("LibreOffice produced no PDF")

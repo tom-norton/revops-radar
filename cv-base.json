@@ -29,9 +29,11 @@
   "_contact_note": [
     "The phone number is deliberately NOT here. This repo is public and a phone number in",
     "a public repo gets scraped; the same number on a CV sent to a named recruiter does",
-    "not. It lives in the bank's private copy of this file instead, and the poller says so",
-    "on the first build. Add it there as a second entry, after Barcelona:",
-    "  { \"text\": \"+34 ...\" },"
+    "not. It lives in the bank's private copy of this file instead.",
+    "",
+    "Nobody edits JSON to set it. Send the bot  /phone +34 700 000 000  and it writes the",
+    "bank's copy and commits;  /phone off  takes it back off;  /phone  on its own says",
+    "what is currently on the CV."
   ],
 
   "contact": [

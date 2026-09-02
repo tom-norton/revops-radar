@@ -151,9 +151,14 @@ VARIATION_REVIEW_MIN_SCORE = 7.5
 # Summary variations, per the skill's Step 4c: canonical-tight, role-forward,
 # company-forward.
 VARIATION_LABELS = ["A", "B", "C"]
-# The pick message carries three summaries, so each one gets a real share of the screen
-# rather than the one-line treatment a question gets.
-SUMMARY_CHARS = 460
+# The pick message carries three summaries in full. This cap is a guard against a model
+# that ignores "3-4 sentences", not a formatting choice: a real summary runs 350-550
+# characters, so 900 should never bite. It was 460, which truncated real summaries with an
+# ellipsis and left Tom picking between three things he could not finish reading -- on the
+# one message in the whole run where he is being asked to decide.
+SUMMARY_CHARS = 900
+# The one-line note on what a variation changed from the canonical.
+CHANGED_CHARS = 130
 
 # At most this many gaps go to interview per role. The skill's own cap. More than three
 # questions and the phone stops being the right place to answer them.
@@ -187,6 +192,7 @@ HELP = (
     "/queue - what's waiting\n"
     "/status - what the poller is working on right now\n"
     "/cancel - drop the role in flight and move on\n"
+    "/phone &lt;number&gt; - put your number on the CV (or /phone off)\n"
     "/help - this\n\n"
     "When I ask a question, just reply to it. Numbered options accept the number."
 )
@@ -878,6 +884,55 @@ Return ONLY a JSON object: {"answers": ["<for q1>", "<for q2>", ...]} with exact
 entry per question, in order."""
 
 
+# One answer token: an optional question number, then the option letter. Covers "1a",
+# "1. a", "a)", and a bare "b". Four options is the cap, hence a-d.
+_KEY_TOKEN = r"(?:([1-9])\s*[.):]?\s*)?([a-dA-D])[.):,]?"
+KEY_TOKEN_RE = re.compile(_KEY_TOKEN)
+# The whole reply, and nothing but tokens. Separators between them are REQUIRED, so "bad"
+# reads as a word rather than as picks b, a and d.
+KEY_REPLY_RE = re.compile(rf"^{_KEY_TOKEN}(?:[\s,;/|]+{_KEY_TOKEN})*$")
+
+
+def parse_answer_key(reply, qs):
+    """A reply that is nothing but letters, resolved in code. Returns one answer per
+    question, or None when the reply is prose and the model has to read it.
+
+    This exists because the most common reply is the cheapest one to type on a phone:
+    "1a 2b 3c", or just "a b c". Sending that to a model to be split is both a waste and a
+    risk -- it was the risk that bit. Anything this parses is exact by construction."""
+    r = " ".join((reply or "").split())
+    if not r or not KEY_REPLY_RE.fullmatch(r):
+        return None                        # a real word in there: prose, not a key
+    picks = [(int(m.group(1)) - 1 if m.group(1) else None, m.group(2).lower())
+             for m in KEY_TOKEN_RE.finditer(r)]
+    if not picks or len(picks) > len(qs):
+        return None
+
+    out = [""] * len(qs)
+    for i, (numbered, letter) in enumerate(picks):
+        target = numbered if numbered is not None else i
+        if not 0 <= target < len(qs):
+            return None
+        opts = [str(o) for o in (qs[target].get("options") or []) if str(o).strip()][:4]
+        j = ord(letter) - 97
+        if not 0 <= j < len(opts):
+            return None
+        out[target] = opts[j]
+    return out
+
+
+def offered_options(qs):
+    """Every option string Tom was shown, normalised. An answer matching one of these was
+    written by us, not invented by the splitter, so it is trustworthy by definition."""
+    seen = set()
+    for q in qs or []:
+        for o in (q.get("options") or []):
+            norm = " ".join(str(o or "").lower().split())
+            if norm:
+                seen.add(norm)
+    return seen
+
+
 def split_reply(api_key, qs, reply):
     """One cheap call to map a single human reply onto N questions.
 
@@ -902,21 +957,31 @@ def split_reply(api_key, qs, reply):
     return out + [""] * (len(qs) - len(out))
 
 
-def split_is_sane(answers, reply):
+def split_is_sane(answers, reply, qs=None):
     """Cheap guard against the splitter writing rather than splitting. Every answer it
-    returns has to be traceable to something in Tom's reply or to an option he was offered;
-    an answer that is neither is discarded, and a discarded answer is an unanswered
-    question, which produces no bullet.
+    returns has to be traceable to something in Tom's reply, or be one of the options he
+    was actually offered; an answer that is neither is discarded, and a discarded answer
+    is an unanswered question, which produces no bullet.
 
     This exists because the whole build rests on bullets coming from Tom's words. A
-    splitter that paraphrases him into something more useful would break that quietly."""
+    splitter that paraphrases him into something more useful would break that quietly.
+
+    The options half of that rule was in this docstring from the start and was never in the
+    code, which broke every lettered reply. The split prompt asks for an option's TEXT when
+    Tom picks a letter, and "Yes, pipeline cleanup" shares no words with a reply of
+    "1a 2b 3c" -- so the guard threw away every answer after the first one he happened to
+    write out in full. An option we put in front of him is not something a model invented."""
     hay = re.sub(r"[^a-z0-9 ]+", " ", (reply or "").lower())
     hay_words = set(hay.split())
+    offered = offered_options(qs)
     clean = []
     for a in answers:
+        norm = " ".join(str(a or "").lower().split())
         words = [w for w in re.sub(r"[^a-z0-9 ]+", " ", a.lower()).split() if len(w) > 3]
         if not a:
             clean.append("")
+        elif norm in offered:
+            clean.append(a)
         elif not words or sum(w in hay_words for w in words) / len(words) >= 0.5:
             clean.append(a)
         else:
@@ -1313,7 +1378,7 @@ def format_variations(summaries, job, audit):
                    f"· <b>{score:g}/10</b>")
         out.append(esc(clip(s.get("text"), SUMMARY_CHARS)))
         if s.get("changed"):
-            out.append(f"<i>{esc(clip(s.get('changed'), 90))}</i>")
+            out.append(f"<i>{esc(clip(s.get('changed'), CHANGED_CHARS))}</i>")
         out.append("")
     out.append("<i>Reply with a letter.</i>")
     return "\n".join(out)
@@ -1701,11 +1766,11 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
         # slightly worse than it needs to be, and a nag on every application is how a
         # message stops being read.
         state["cv_base_nudged"] = True
-        tg.send("<b>Two minutes on the CV skeleton</b>\n\n"
+        tg.send("<b>Two things on the CV skeleton</b>\n\n"
                 + "\n".join(f"\u2022 {esc(g)}" for g in gaps)
-                + f'\n\n<a href="{cvbuild.BASE_EDIT_URL}">Open cv-base.json</a>'
-                + "\n\n<i>The CV builds either way. The phone number is left out of the "
-                  "public repo on purpose, so the private copy is where it goes.</i>")
+                + "\n\n<i>Send</i>  <code>/phone +34 700 000 000</code>  <i>and I'll put "
+                  "it on. Everything else is in</i> "
+                  f'<a href="{cvbuild.BASE_EDIT_URL}">cv-base.json</a>.')
 
     corpus = cv_corpus(bank, base, cur)
     by_entry, rejected = screened_entries(tailored, base, corpus)
@@ -1825,7 +1890,27 @@ def load_job(job_id):
     return None
 
 
-def handle_commands(texts, state, queue, tg):
+def set_phone(bank, number):
+    """Put a phone number on the CV, or take it off. Returns the new contact line.
+
+    Exists because the alternative was Tom hand-editing JSON in a private repo, which is
+    not a thing to ask of someone who has said plainly he is not a developer. The number
+    stays out of this public repo and goes in the bank's copy of the skeleton, which is
+    exactly where it belongs -- he just never has to see that."""
+    base, _from_bank = cvbuild.load_base(bank)
+    contact = [c for c in (base.get("contact") or [])
+               if not cvbuild.PHONE_RE.match((c.get("text") or "").strip())]
+    if number:
+        # Second, right after the location. That is where it sits on his base CV.
+        contact.insert(1 if contact else 0, {"text": number})
+    base["contact"] = contact
+    bank.write(cvbuild.BASE_FILE,
+               json.dumps(base, indent=2, ensure_ascii=False) + "\n")
+    bank.commit(f"cv-base: {'set' if number else 'remove'} phone number")
+    return contact
+
+
+def handle_commands(texts, state, queue, tg, bank=None):
     """Telegram commands, applied in order. Returns (queue, remaining_texts) where the
     remaining texts are the non-command messages -- those are answers to a pending
     question, and only the state machine knows what to do with them."""
@@ -1880,6 +1965,30 @@ def handle_commands(texts, state, queue, tg):
                     {**{k: cur.get(k) for k in ("id", "title", "company")},
                      "outcome": "cancelled", "at": now_iso()})
                 state["current"] = None
+        elif cmd == "/phone":
+            arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
+            if bank is None:
+                tg.send("Can't reach the bullet bank right now. Try again in a bit.")
+            elif not arg:
+                base, _ = cvbuild.load_base(bank)
+                now = next((c.get("text") for c in (base.get("contact") or [])
+                            if cvbuild.PHONE_RE.match((c.get("text") or "").strip())), None)
+                tg.send(f"Phone on the CV: <b>{esc(now)}</b>\n\n"
+                        f"<i>/phone &lt;number&gt; to change it, /phone off to remove it.</i>"
+                        if now else
+                        "No phone number on the CV yet.\n\n"
+                        "<i>Send /phone +34 700 000 000 and I'll put it on.</i>")
+            elif arg.lower() in ("off", "none", "remove", "clear"):
+                set_phone(bank, "")
+                tg.send("Phone number taken off the CV.")
+            elif not cvbuild.PHONE_RE.match(arg):
+                tg.send(f"<code>{esc(arg)}</code> doesn't look like a phone number. "
+                        f"Digits, spaces and a leading + only.")
+            else:
+                contact = set_phone(bank, arg)
+                tg.send(f"<b>Phone set.</b>  {esc(arg)}\n\n"
+                        + esc(" | ".join(c.get("text", "") for c in contact))
+                        + "\n\n<i>That's the contact line on every CV from now on.</i>")
         elif cmd in ("/help", "/start"):
             tg.send(HELP)
         elif cmd.startswith("/"):
@@ -2019,16 +2128,22 @@ def advance(state, job, bank, tg, api_key, answers_text):
             reply = (answers_text or "").strip()
             if not reply:
                 return False
-            before = usage_snapshot()
-            try:
-                split = split_is_sane(split_reply(api_key, qs, reply), reply)
-            except Exception as e:
-                # One question is the common case, and a single reply to a single question
-                # needs no splitting at all. Falling back keeps a splitter outage from
-                # blocking the role.
-                print(f"  split failed ({e}); falling back")
-                split = [reply] + [""] * (len(qs) - 1)
-            record_usage(cur, "split", before)
+            # A reply that is only letters is resolved here, exactly, for nothing. The
+            # model is for prose.
+            split = parse_answer_key(reply, qs)
+            if split is not None:
+                print(f"  reply read as an answer key: {reply!r}")
+            else:
+                before = usage_snapshot()
+                try:
+                    split = split_is_sane(split_reply(api_key, qs, reply), reply, qs)
+                except Exception as e:
+                    # One question is the common case, and a single reply to a single
+                    # question needs no splitting at all. Falling back keeps a splitter
+                    # outage from blocking the role.
+                    print(f"  split failed ({e}); falling back")
+                    split = [reply] + [""] * (len(qs) - 1)
+                record_usage(cur, "split", before)
 
             answers, unanswered = [], []
             for q, a in zip(qs, split):
@@ -2319,7 +2434,7 @@ def tick(dry=False):
         # before that would acknowledge an answer a crash then threw away, and Tom would be
         # asked the same thing again with no way to tell why.
         state["telegram_offset"] = offset
-    queue, answers = handle_commands(texts, state, queue, tg)
+    queue, answers = handle_commands(texts, state, queue, tg, bank)
     # Only the newest free-text message answers the pending question. If Tom sent three
     # lines while thinking out loud, the last one is his answer.
     answer_text = answers[-1] if answers else ""
@@ -2366,7 +2481,7 @@ def tick(dry=False):
                 if not updates:
                     continue
                 texts = message_texts(updates, os.environ.get("TELEGRAM_CHAT_ID", ""))
-                queue, more = handle_commands(texts, state, queue, tg)
+                queue, more = handle_commands(texts, state, queue, tg, bank)
                 state["telegram_offset"] = offset
                 if more:
                     finished = advance(state, job, bank, tg, api_key, more[-1])
