@@ -102,7 +102,8 @@ def machine(audit=None, comp=None, drafts=None, score=6.8, tailored=None,
     given a score above the line on purpose."""
     tg, bank = FakeTelegram(), FakeBank({applyq.BANK_FILE: "### [NAVEX-01]\nText: ..."})
     calls = {"audit": 0, "draft": 0, "salary": 0, "split": 0, "drafted_from": None,
-             "brief": 0, "tailor": 0, "bankwrite": 0, "render": 0, "shipped": None}
+             "brief": 0, "tailor": 0, "bankwrite": 0, "render": 0, "shipped": None,
+             "revise": 0, "feedback": None}
     job = dict(JOB, comp=comp if comp is not None else JOB["comp"], score=score)
 
     def fake_audit(api_key, j, profile, bank_md, answers_md):
@@ -163,6 +164,18 @@ def machine(audit=None, comp=None, drafts=None, score=6.8, tailored=None,
                          "keywords": "SQL", "evidence": "bank"}],
         }
 
+    def fake_revise(api_key, j, aud, spec, feedback, base, bank_md, drafted):
+        """Stands in for the revision pass. Echoes the feedback into the summary so a test
+        can see it reached the page, and hands back one bullet per entry."""
+        calls["revise"] += 1
+        calls["feedback"] = feedback
+        return {"summary": f"Revised: {feedback}",
+                "entries": [{"entry_id": "navex",
+                             "bullets": [{"text": "Managed 5.2M ARR across 22 accounts",
+                                          "source": "BANK:NAVEX-01", "key": True}]}],
+                "skills": "Salesforce | SQL", "changes": [],
+                "notes": "Cut the bullet you asked about."}
+
     def fake_bank_changes(api_key, j, aud, used, drafted, bank_md):
         calls["bankwrite"] += 1
         return json.loads(json.dumps(
@@ -186,9 +199,11 @@ def machine(audit=None, comp=None, drafts=None, score=6.8, tailored=None,
     applyq.research_brief = fake_brief
     applyq.tailor_cv = fake_tailor
     applyq.decide_bank_changes = fake_bank_changes
+    applyq.revise_cv = fake_revise
     applyq.cvbuild.ensure_toolchain = lambda *a, **k: None
     applyq.cvbuild.render = fake_render
-    applyq.cvbuild.verify = lambda paths, spec: ([], [], {"pages": 2})
+    applyq.cvbuild.verify = lambda paths, spec: ([], [], {"pages": 2,
+                                                          "summary_lines": 3})
     applyq.cvbuild.log_render = lambda *a, **k: None
     applyq.CV_OUT_DIR = tempfile.mkdtemp(prefix="applyq-cv-")
     # split_is_sane() is deliberately NOT stubbed: it is the guard standing between a model

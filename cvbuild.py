@@ -76,6 +76,12 @@ TAB_TOLERANCE_PT = 8.0
 
 MAX_PAGES = 3                    # 2 is the target; 3 is a trim job, 4 is broken
 JPEG_DPI = 90
+# Two of Tom's standing CV rules. Both are in the skill, both were asked for in the
+# prompt, and neither was enforced anywhere -- so the first real CV shipped with eight
+# bullets on one job and a six-line summary. A prompt asking for a limit is a request; a
+# cap in code is a guarantee, which is the same reasoning as clip() on the chat messages.
+MAX_BULLETS_PER_ROLE = 6
+SUMMARY_MAX_LINES = 4
 # A two-page CV converts in about five seconds. A minute means something is wedged, and a
 # long timeout only makes finding that out slower.
 SOFFICE_TIMEOUT = 120
@@ -215,6 +221,69 @@ def role_title(jd_title, track):
     return (t if usable else STANDING_TITLES.get(track, STANDING_TITLES["ANALYTICS"])).upper()
 
 
+def cap_bullets(bullets, limit=MAX_BULLETS_PER_ROLE):
+    """(kept, cut). The tailoring pass is told to order bullets so the ones that matter to
+    this posting come first, and to merge rather than pile up; this is what makes the
+    limit true when it does neither."""
+    bullets = list(bullets or [])
+    return bullets[:limit], bullets[limit:]
+
+
+# Sentence boundary, used only to shorten a summary from the end. Deliberately crude: it
+# has to break on ". " and not much else, and a summary is four sentences of plain prose.
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def drop_last_sentence(text):
+    """The summary, one sentence shorter. Returns "" when there is nothing left to drop.
+
+    Dropping rather than rewriting, because a rewrite is a new claim and this runs after
+    the honesty screen has already passed on the text. The last sentence of a summary is
+    the least load-bearing one by construction: the canonical opens with who he is and
+    closes with an example."""
+    parts = [p for p in _SENTENCE_END.split((text or "").strip()) if p]
+    return " ".join(parts[:-1]) if len(parts) > 1 else ""
+
+
+def over_bullet_limit(spec):
+    """Roles on the assembled page carrying more than the cap. The cap runs on the way in;
+    this is the check on the way out, because two routes past a rule is one too many."""
+    over = []
+    for section in spec.get("sections") or []:
+        for e in section.get("entries") or []:
+            for role in e.get("roles") or []:
+                n = len([b for b in (role.get("bullets") or []) if bullet_text(b)])
+                if n > MAX_BULLETS_PER_ROLE:
+                    over.append(f"{role.get('sub_left')} has {n}")
+    return over
+
+
+def summary_lines(text, spec):
+    """How many PRINTED lines the summary takes, read off the page.
+
+    Not a character estimate. The rule is four lines at 11pt over a 7-inch measure, and
+    whether a given sentence wraps is a question about Calibri's metrics, not about
+    character counts. pdftotext -layout preserves the real line breaks, so the paragraph
+    between the role-title header and the first section heading is counted directly."""
+    lines = [l.strip() for l in (text or "").split("\n")]
+    title = " ".join((spec.get("role_title") or "").split()).upper()
+    heads = {" ".join((s.get("heading") or "").split()).upper()
+             for s in (spec.get("sections") or [])}
+    heads.add("SKILLS")
+    try:
+        start = next(i for i, l in enumerate(lines) if l.upper() == title) + 1
+    except StopIteration:
+        return 0
+    count = 0
+    for line in lines[start:]:
+        if not line:
+            continue
+        if line.upper() in heads:
+            break
+        count += 1
+    return count
+
+
 def clean_copy(text):
     """House style, applied rather than requested. Dashes normalised, whitespace collapsed.
 
@@ -243,10 +312,13 @@ def _entry_spec(entry, chosen):
     for role in entry.get("roles") or []:
         rid = role.get("id")
         picked = chosen.get(rid) if rid in chosen else (role.get("bullets") or [])
+        kept, _cut = cap_bullets([b for b in (picked or []) if bullet_text(b)])
         roles.append({
             "sub_left": clean_copy(role.get("sub_left")),
             "sub_right": clean_copy(role.get("sub_right")),
-            "bullets": [_clean_bullet(b) for b in (picked or []) if bullet_text(b)],
+            # Capped here as well as where the cut is reported, so no path to the page can
+            # get round it. On the base CV's own bullets it never bites.
+            "bullets": [_clean_bullet(b) for b in kept],
         })
     return {"left": clean_copy(entry.get("left")), "right": clean_copy(entry.get("right")),
             "roles": roles}
@@ -596,6 +668,20 @@ def verify(paths, spec):
 
     text = pdf_text(pdf)
     facts["chars"] = len(text)
+
+    lines = summary_lines(text, spec)
+    facts["summary_lines"] = lines
+    if lines > SUMMARY_MAX_LINES:
+        # A warning, not a block. build_and_ship shortens the summary and re-renders before
+        # it gets here; if it still does not fit, a five-line summary is a cosmetic problem
+        # and withholding the whole CV over it would be the wrong trade.
+        warnings.append(f"summary runs to {lines} printed lines, the rule is "
+                        f"{SUMMARY_MAX_LINES}")
+
+    over = over_bullet_limit(spec)
+    if over:
+        problems.append(f"more than {MAX_BULLETS_PER_ROLE} bullets on a job: "
+                        + "; ".join(over))
     if spec.get("name") and spec["name"].split()[0] not in text:
         problems.append("the name is not on the rendered page")
 

@@ -177,6 +177,76 @@ def test_an_empty_skills_line_falls_back_to_the_tracks_standing_one():
     assert spec["skills"].startswith("Python | HubSpot | Zapier")
 
 
+# ---------------------------------------------------------------- Tom's two standing rules
+#
+# Both are in the skill, both were in the tailoring prompt, and neither was enforced -- so
+# the first CV that shipped had eight bullets on NAVEX and a six-line summary. Asking is
+# not the same as guaranteeing.
+
+def test_no_job_gets_more_than_six_bullets():
+    nine = [f"Ran a defined renewal process, item {i}." for i in range(9)]
+    spec = cvbuild.assemble_spec(BASE, "ANALYTICS", "T", "S", {"navex": nine}, "sk")
+    navex = experience_roles(spec)[("NAVEX", "Customer Success Manager")]
+    assert len(navex["bullets"]) == cvbuild.MAX_BULLETS_PER_ROLE == 6
+    # The six kept are the first six, because the tailoring pass is told to order them by
+    # relevance to the posting. Dropping from the front would drop the KEY bullets.
+    assert cvbuild.bullet_text(navex["bullets"][0]).endswith("item 0.")
+
+
+def test_the_bullets_that_do_not_fit_are_reported_not_silently_lost():
+    tailored = {"entries": [{"entry_id": "navex", "bullets": [
+        {"text": f"Ran a defined renewal process, item {i}.", "source": "BANK", "key": False}
+        for i in range(8)]}]}
+    corpus = "Ran a defined renewal process item 0 1 2 3 4 5 6 7"
+    by_entry, rejected = applyq.screened_entries(tailored, BASE, corpus)
+    assert len(by_entry["navex"]) == 6
+    assert len(rejected) == 2
+    assert all("6-bullet limit" in why for _t, why in rejected)
+
+
+def test_a_page_that_somehow_carries_seven_bullets_is_blocked():
+    """The cap runs on the way in; this is the check on the way out, and verify() turns it
+    into a problem that stops the send. Two routes past a rule is one too many."""
+    spec = cvbuild.assemble_spec(BASE, "ANALYTICS", "T", "S", {}, "sk")
+    assert cvbuild.over_bullet_limit(spec) == []
+    exp = next(s for s in spec["sections"] if s["heading"] == "PROFESSIONAL EXPERIENCE")
+    exp["entries"][0]["roles"][0]["bullets"] = [f"bullet {i}" for i in range(7)]
+    over = cvbuild.over_bullet_limit(spec)
+    assert over and "Customer Success Manager has 7" in over[0]
+
+
+def test_the_summary_line_count_is_read_off_the_page_not_guessed():
+    """Four PRINTED lines. Whether a sentence wraps is a question about Calibri's metrics,
+    so it is counted from the rendered text between the role title and the first heading."""
+    spec = {"role_title": "REVENUE OPERATIONS MANAGER",
+            "sections": [{"heading": "EDUCATION"}, {"heading": "PROFESSIONAL EXPERIENCE"}]}
+    page = ("                TOM NORTON\n"
+            " Barcelona, Spain | tp.norton@pm.me\n"
+            "\n"
+            "REVENUE OPERATIONS MANAGER\n"
+            "line one of the summary\n"
+            "line two of the summary\n"
+            "line three of the summary\n"
+            "\n"
+            "EDUCATION\n"
+            "ESADE Business & Law School\n")
+    assert cvbuild.summary_lines(page, spec) == 3
+    assert cvbuild.summary_lines(page.replace("REVENUE OPERATIONS MANAGER\n", ""),
+                                 spec) == 0
+
+
+def test_an_over_long_summary_loses_its_last_sentence_not_its_last_words():
+    """Trimmed by sentence, never mid-clause, and never rewritten: a rewrite is new text
+    arriving after the honesty screen has already passed on it."""
+    four = ("One sentence here. A second one follows it. Then a third arrives. "
+            "And a fourth closes.")
+    three = cvbuild.drop_last_sentence(four)
+    assert three == "One sentence here. A second one follows it. Then a third arrives."
+    assert cvbuild.drop_last_sentence(three).endswith("follows it.")
+    assert cvbuild.drop_last_sentence("Only one sentence.") == ""
+    assert cvbuild.drop_last_sentence("") == ""
+
+
 # ---------------------------------------------------------------- the honesty screen
 
 CORPUS = ("Managed a $5.2M ARR portfolio across 22 enterprise accounts. "
@@ -431,6 +501,74 @@ def test_the_brief_is_researched_once_not_once_per_retry():
     step("Cleaned 400 stale opps | Yes, in Salesforce")
     step()
     assert calls["brief"] == 1
+
+
+# ---------------------------------------------------------------- feedback (/redo)
+
+def shipped(**kw):
+    """Drive a role all the way to a delivered CV."""
+    step, state, tg, bank, calls = machine(score=6.9, **kw)
+    step()
+    assert step("Cleaned 400 stale opps over two quarters | Yes, in Salesforce") is True
+    return step, state, tg, bank, calls
+
+
+def test_feedback_rebuilds_the_cv_with_no_second_round_trip():
+    """He spent the round trip by sending the feedback. Asking him anything after that
+    would be a second wait for a change he has already described."""
+    step, state, tg, bank, calls = shipped()
+    applyq.handle_commands([(0, "/redo cut the LexisNexis training bullet")],
+                           state, [], tg, bank)
+    assert state["current"]["stage"] == "revise"
+    assert step() is True
+    assert calls["revise"] == 1
+    assert calls["feedback"] == "cut the LexisNexis training bullet"
+    assert calls["shipped"]["summary"].startswith("Revised:")
+    assert len(tg.documents) == 2                     # the original, then the rebuild
+    caption = tg.documents[-1][1]
+    assert "Rebuilt from your feedback" in caption
+    assert "Cut the bullet you asked about" in caption   # what it did, in his hand
+
+
+def test_the_revision_edits_the_page_he_read_not_the_draft_he_never_saw():
+    _step, state, tg, bank, _calls = shipped()
+    spec = state["last_cv"]["spec"]
+    assert cvbuild.spec_bullets(spec), "the page as printed travels with the finished role"
+    assert state["last_cv"]["job_snapshot"]["id"] == JOB["id"]
+
+
+def test_a_revision_does_not_write_the_bank_a_second_time():
+    """Those bullets went through the promotion test on the first build. Running it again
+    would promote the same material twice."""
+    step, state, tg, bank, calls = shipped()
+    assert calls["bankwrite"] == 1
+    applyq.handle_commands([(0, "/redo shorter please")], state, [], tg, bank)
+    step()
+    assert calls["bankwrite"] == 1
+
+
+def test_redo_says_what_it_needs_rather_than_guessing():
+    tg, bank = FakeTelegram(), FakeBank()
+    state = {}
+    applyq.handle_commands([(0, "/redo")], state, [], tg, bank)
+    assert "No CV to revise yet" in tg.last()
+
+    _step, state, tg, bank, _calls = shipped()
+    applyq.handle_commands([(0, "/redo")], state, [], tg, bank)
+    assert "Tell me what to change" in tg.last()
+    assert state.get("current") is None
+
+    state["current"] = {"title": "Something else", "stage": "ask"}
+    applyq.handle_commands([(0, "/redo shorter")], state, [], tg, bank)
+    assert "right now" in tg.last()
+
+
+def test_a_revision_survives_the_role_dropping_off_the_dashboard():
+    """A role ages off the dashboard in a week. "The CV you sent me yesterday" should
+    still be revisable today."""
+    _step, state, _tg, _bank, _calls = shipped()
+    snap = state["last_cv"]["job_snapshot"]
+    assert snap["description"] and snap["title"] == JOB["title"]
 
 
 # ---------------------------------------------------------------- bank write-back

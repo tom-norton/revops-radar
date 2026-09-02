@@ -133,6 +133,32 @@ def main():
        "\u2014" not in cvbuild.pdf_text(bad_paths["pdf"])
        and not any("banned character" in p for p in bad_problems))
 
+    print("\n=== Tom's two standing rules, on the page ===")
+    # The first real CV shipped with eight bullets on NAVEX and a six-line summary. Both
+    # rules were in the prompt and neither was in the code.
+    nine = {"navex": [f"Ran a defined renewal process across a $2M ARR corporate "
+                      f"portfolio, variation {i}." for i in range(9)]}
+    _spec, cap_paths, cap_problems, _w, _f = build(bullets=nine, stem="cv-smoke-cap")
+    cap_text = cvbuild.pdf_text(cap_paths["pdf"])
+    ok("nine bullets on a job print as six", cap_text.count("variation") == 6,
+       f"{cap_text.count('variation')} printed")
+    ok("and that is clean, not a blocked build", not cap_problems, "; ".join(cap_problems))
+
+    long_summary = (SUMMARY + " Built the Excel tracking model covering renewal dates, "
+                    "ARR at risk, monthly upsell against goal, and progress toward annual "
+                    "NRR targets, because the official numbers landed weeks after month "
+                    "close.")
+    _spec, long_paths, _p, long_warnings, long_facts = build(
+        summary=long_summary, stem="cv-smoke-summary")
+    ok("an over-long summary is measured, not assumed",
+       long_facts.get("summary_lines", 0) > cvbuild.SUMMARY_MAX_LINES,
+       f"{long_facts.get('summary_lines')} lines before trimming")
+    trimmed = cvbuild.drop_last_sentence(long_summary)
+    _spec, _p2, _pr, _w2, fixed = build(summary=trimmed, stem="cv-smoke-summary-fixed")
+    ok("dropping its last sentence brings it inside four lines",
+       fixed.get("summary_lines", 0) <= cvbuild.SUMMARY_MAX_LINES,
+       f"{fixed.get('summary_lines')} lines after")
+
     print("\n=== too much content for two pages ===")
     # The skill's rule: a slight third-page spillover is fixed by trimming a line of bullet
     # text, not by inserting a page break, so it must not block the send. Four pages is a
@@ -146,7 +172,10 @@ def main():
     ok("and says what to do about it", any("trim" in w for w in fat_warnings),
        "; ".join(fat_warnings))
 
-    fatter = {k: v * 9 for k, v in all_base_bullets().items()}
+    # Longer bullets, not more of them: the six-per-job cap now means piling on copies
+    # cannot push the page count past three, which is itself the cap working.
+    fatter = {k: [(" ".join(all_base_bullets()[k]) + " ") * 3 for _ in range(6)]
+              for k in all_base_bullets() if all_base_bullets()[k]}
     _spec, _p, fatter_problems, _w, fatter_facts = build(bullets=fatter,
                                                          stem="cv-smoke-longer")
     ok("a genuinely oversized CV is blocked",
