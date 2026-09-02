@@ -65,6 +65,7 @@ import requests
 
 import scan
 import bankwrite
+import coverletter
 import cvbuild
 
 # ---------------------------------------------------------------- config
@@ -111,6 +112,10 @@ TAILOR_MODEL = "claude-opus-5"
 TAILOR_MAX_TOKENS = 12000
 BANKWRITE_MODEL = "claude-opus-5"
 BANKWRITE_MAX_TOKENS = 4000
+# The cover letter. Opus, because this is the one deliverable that is entirely prose and
+# entirely Tom's voice -- there is no bank canonical underneath it to fall back on.
+COVER_MODEL = "claude-opus-5"
+COVER_MAX_TOKENS = 4000
 # Telegram allows getUpdates OR a webhook, never both: once a webhook is registered,
 # getUpdates returns 409 and polling is dead. So the message can arrive two ways.
 #
@@ -184,7 +189,7 @@ NO_MATERIAL = re.compile(r"^\s*(no|none|nope|nothing|n/?a|skip|no meaningful exp
 # as a single reply. GitHub's cron is the bottleneck (it delivered 4 of an expected 60 runs
 # in the 15 hours after launch, with gaps up to 5h45m), and each extra turn costs another
 # one of those. Five turns at that rate is a day per application.
-STAGES = ["audit", "ask", "packet", "cv", "pick", "revise", "done"]
+STAGES = ["audit", "ask", "packet", "cv", "pick", "revise", "cover", "done"]
 
 # Stages where the run is waiting on Tom and there is no point advancing without him. The
 # hold-open loop in tick() watches these, and only these.
@@ -198,6 +203,7 @@ HELP = (
     "/cancel - drop the role in flight and move on\n"
     "/phone &lt;number&gt; - put your number on the CV (or /phone off)\n"
     "/redo &lt;what to change&gt; - rebuild the last CV with your feedback\n"
+    "/cover &lt;anything to steer it&gt; - write the cover letter for the last CV\n"
     "/help - this\n\n"
     "When I ask a question, just reply to it. Numbered options accept the number."
 )
@@ -1560,6 +1566,7 @@ def recover_last_cv(bank, state):
         "id": done.get("id"), "title": done.get("title"),
         "company": done.get("company"), "packet_file": done.get("packet"),
         "cv_title": cv_title or done.get("title"),
+        "cv_stem": os.path.splitext(os.path.basename(done.get("cv") or ""))[0],
         "audit": {"track": track or "ANALYTICS"},
         # The title on the page came off the posting, and a recovery must not silently
         # swap it for the track's standing default.
@@ -1590,6 +1597,109 @@ def revise_cv(api_key, job, audit, as_built, feedback, base, bank_md, drafts):
         extra={"output_config": {"effort": AUDIT_EFFORT,
                                  "format": {"type": "json_schema",
                                             "schema": REVISE_SCHEMA}}})
+    return scan._extract_json(text)
+
+
+# ---------------------------------------------------------------- cover letter (Step 5)
+
+COVER_SYSTEM = """You are writing Step 5 of Tom Norton's job-application-workflow: one \
+cover letter for a role whose tailored CV has already been built and sent to him.
+
+You choose the WORDS. You do not choose the layout. The letterhead, the date, the recipient \
+block, the subject line, the salutation and the sign-off are all written in code and are \
+already on the page. Write the paragraphs and nothing else -- no greeting, no date, no \
+address, no "Sincerely", no name. Anything of that kind you return prints twice.
+
+5a THE HOOK. Pick ONE, from the company brief: a named forward priority, a challenge Tom \
+has solved before, domain overlap, or the MBA's relevance to the phase the company is in. \
+One. A letter that opens on three things opens on nothing. Name the one you took, and why, \
+in `hook`.
+
+5b HOW IT OPENS. The first sentence IS the hook. Never "I am writing to express my \
+interest". Mirror the posting's own language for the work without parroting its sentences \
+back at it. Reference one specific cultural signal from the brief -- the concrete kind \
+("they publish a customer-facing postmortem after every outage"), never the generic kind.
+
+5c HOW IT READS. One page: an opening, two body paragraphs, a close. Warm, polished, \
+assertive, diplomatic. The register of somebody who expects to be taken seriously and is \
+easy to talk to. Flowing prose with the value front-loaded. No em dashes. No "synergy", \
+"deep dive", "touch base", "circle back", "move the needle". No "spearheaded", "leveraged", \
+"orchestrated". No "In today's rapidly evolving landscape". No "it is not X, it is Y". No \
+lists, no bullets, no headings: it is a letter. No hedging adverbs.
+
+WHAT YOU MAY SAY HE HAS DONE. Only what is already on the CV as it went out, in his own \
+interview answers, or in the bullet bank behind them. This letter re-angles that material \
+for this company; it does not add to it. THE POSTING IS NOT EVIDENCE. It says what they are \
+looking for, never what he did, and the moment it counts as evidence the whole honesty rule \
+is gone. A number that is not in his sources does not exist. Neither does a responsibility \
+he has not described, nor a stronger verb than a SCOPE GUARD allows.
+
+`claims` is how that gets checked. For every paragraph, list each assertion it makes about \
+Tom's own experience, restated as a standalone sentence in that paragraph's own words. Each \
+one is screened in code against his sources, and a claim that fails takes its whole \
+paragraph off the page with it. So: a paragraph whose claims you cannot source is a \
+paragraph not to write, and one that quietly asserts something it did not declare is the \
+thing this rule exists to stop. What you say about the COMPANY has to come from the brief or \
+the posting on the same terms.
+
+Say nothing about visas, relocation or work authorisation unless the posting or the brief \
+raises it first, and even then only what those two actually say.
+
+`notes` is one or two sentences for Tom: the angle you took, and anything you decided not to \
+say and why. Written to be read on a phone."""
+
+COVER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "hook": {"type": "string"},
+        "paragraphs": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "role": {"type": "string", "enum": ["opening", "body", "closing"]},
+                "text": {"type": "string"},
+                "claims": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["role", "text", "claims"], "additionalProperties": False}},
+        "notes": {"type": "string"},
+    },
+    "required": ["hook", "paragraphs", "notes"],
+    "additionalProperties": False,
+}
+
+
+def cover_answers_block(answers):
+    """Tom's own words from the gap interview, as the letter writer sees them.
+
+    Included because they are the one source that is his voice rather than a bullet's, and
+    a letter written only off the finished page reads like a page read aloud."""
+    said = [a for a in (answers or []) if (a.get("answer") or "").strip()
+            and a.get("has_material") is not False]
+    return "\n".join(f"- {a.get('question')}\n  {a.get('answer')}" for a in said)
+
+
+def write_cover(api_key, job, audit, brief, as_built, answers, steer=""):
+    parts = []
+    if (steer or "").strip():
+        # First, and labelled as his, because everything under it is context and this is an
+        # instruction.
+        parts.append(f"=== WHAT TOM ASKED FOR ===\n{steer.strip()}")
+    parts.append(f"=== THE POSTING ===\n{job.get('title')} at {job.get('company') or '?'}\n"
+                 f"Location: {job.get('location')}  Market: {job.get('market')}\n"
+                 f"Track: {audit.get('track')}\n\n"
+                 f"{scan.sample_desc(job.get('description'), 4000)}")
+    parts.append("=== COMPANY BRIEF ===\n" + (brief_block(brief) or
+                 "(nothing usable: the research came back thin or was never run. Take the "
+                 "hook from the posting's own language instead, and say in `notes` that the "
+                 "letter is thinner for it.)"))
+    parts.append(f"=== THE CV AS IT WENT OUT ===\n{as_built}")
+    said = cover_answers_block(answers)
+    if said:
+        parts.append(f"=== TOM'S OWN WORDS, FROM THE GAP INTERVIEW ===\n{said}")
+    text = scan._claude_call(
+        api_key, COVER_MODEL, COVER_SYSTEM, "\n\n".join(parts), COVER_MAX_TOKENS,
+        extra={"output_config": {"effort": AUDIT_EFFORT,
+                                 "format": {"type": "json_schema",
+                                            "schema": COVER_SCHEMA}}})
     return scan._extract_json(text)
 
 
@@ -2048,6 +2158,9 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
     # posting travels with it: a role can drop off the dashboard, and "the CV you sent me
     # yesterday" should still be revisable today.
     cur["spec"] = spec
+    # The letter is named after the CV, not after the day it was written: /cover a week
+    # later should still put the two files next to each other in the bank.
+    cur["cv_stem"] = stem
     cur["job_snapshot"] = {k: job.get(k) for k in
                            ("id", "title", "company", "market", "score", "url",
                             "description")}
@@ -2097,6 +2210,200 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
         tg.send(f'<a href="https://{BANK_REPO}/commit/{sha}">{what}</a>')
     return True
 
+
+
+# ---------------------------------------------------------------- the cover letter
+
+def company_corpus(cur, job):
+    """What a sentence about the COMPANY is allowed to be made of.
+
+    Deliberately separate from cv_corpus(). The posting and the brief are the sources for
+    what the company is doing and are not sources for anything about Tom -- that separation
+    is the whole reason the letter can talk about their Series B without the posting quietly
+    becoming evidence for his own numbers."""
+    return cvbuild.source_corpus(brief_block(cur.get("brief")),
+                                 json.dumps(cur.get("brief") or {}),
+                                 job.get("description"), job.get("title"),
+                                 job.get("company"))
+
+
+def cover_stem(cur, job):
+    return cur.get("cv_stem") or cv_name(job)
+
+
+def cover_section_markdown(cur, letter, spec, dropped_paras, dropped_sentences, trimmed,
+                           facts, warnings, pdf_rel):
+    L = ["", "---", "", "## Cover letter", "",
+         f"- Written: {now_iso()}",
+         f"- PDF: `{pdf_rel}`",
+         f"- Hook: {letter.get('hook', '')}"]
+    if cur.get("cover_steer"):
+        L.append(f"- Tom asked for: {cur['cover_steer']}")
+    if letter.get("notes"):
+        L.append(f"- Notes: {letter['notes']}")
+    # The full text, because half the application forms Tom will meet want a letter pasted
+    # into a box rather than uploaded, and a PDF is no use for that.
+    L += ["", "### The letter", "", "```", coverletter.letter_text(spec).rstrip(), "```", ""]
+
+    if dropped_paras:
+        L += ["### Paragraphs the honesty screen rejected", "",
+              "These did not print. Each made a claim about Tom that could not be traced "
+              "back to the bank, the base CV, his own answers or the CV as it shipped.", ""]
+        L += [f"- {why}\n  > {text}" for text, why in dropped_paras]
+        L.append("")
+    if dropped_sentences:
+        L += ["### Sentences dropped for an unsourced number", ""]
+        L += [f"- {why}\n  > {text}" for text, why in dropped_sentences]
+        L.append("")
+    if trimmed:
+        L += ["### Trimmed to one page", "",
+              "The letter ran past a page, so the last body paragraph was dropped and it "
+              "was rendered again. Removed:", ""]
+        L += [f"> {t}" for t in trimmed]
+        L.append("")
+    L += ["### Render check", "", "```",
+          "\n".join(f"{k}: {v}" for k, v in (facts or {}).items()), "```", ""]
+    if warnings:
+        L += ["Went out with these noted:", ""] + [f"- {w}" for w in warnings] + [""]
+    return "\n".join(L)
+
+
+def try_cover(state, job, bank, tg, letter):
+    """build_and_ship_cover with the same bounded retry the CV render gets. The render
+    shells out to node, LibreOffice and poppler, none of which are this role's fault."""
+    try:
+        return build_and_ship_cover(state, job, bank, tg, letter)
+    except Exception as e:
+        cur = state.get("current") or {}
+        n = cur.get("render_failures", 0) + 1
+        cur["render_failures"] = n
+        if n < MAX_STAGE_RETRIES:
+            print(f"  cover render failed ({n}/{MAX_STAGE_RETRIES}): {e}")
+            return False
+        tg.send(f"Gave up rendering the cover letter for {job.get('title')}: it failed "
+                f"{n} times.\nLast error: {str(e)[:250]}\n"
+                f"The CV is untouched. /cover to try again.")
+        finish_cover(state, cur, "cover-render-failed", None)
+        return True
+
+
+def finish_cover(state, cur, outcome, pdf_rel):
+    """Put the role back where /redo and a later /cover can find it, and record the run.
+
+    `cv` is deliberately NOT set on this history row: recoverable_cv() looks for the last
+    row carrying one, and a cover letter must never make the CV behind it unrevisable."""
+    state.setdefault("history", []).append(
+        {"id": cur.get("id"), "title": cur.get("title"), "company": cur.get("company"),
+         "outcome": outcome, "at": now_iso(), "packet": cur.get("packet_file"),
+         "cover": pdf_rel, "usage": cur.get("usage") or {}})
+    cur["stage"] = "done"
+    for k in ("cover_letter", "cover_failures", "render_failures"):
+        cur.pop(k, None)
+    state["last_cv"] = cur
+    state["current"] = None
+    state["last_tick"] = now_iso()
+
+
+def build_and_ship_cover(state, job, bank, tg, letter):
+    """Screen it, render it, measure it, and only then send it. Returns True when done.
+
+    The order is the point, exactly as it is for the CV: nothing reaches Tom's phone before
+    the page has been rendered and looked at. A letter that runs to two pages looks
+    perfectly fine to the code that produced it."""
+    cur = state["current"]
+    base, _from_bank = cvbuild.load_base(bank)
+
+    own = cv_corpus(bank, base, cur)
+    company = company_corpus(cur, job)
+    kept, dropped_paras, dropped_sentences, fatal = coverletter.screen(
+        letter.get("paragraphs"), own, company, job.get("company") or "")
+    for text, why in dropped_paras:
+        print(f"  paragraph rejected ({why[:60]}): {text[:70]!r}")
+    for text, why in dropped_sentences:
+        print(f"  sentence dropped ({why}): {text[:70]!r}")
+
+    if fatal:
+        # Not shipped, and not retried on its own either: the letter asserted something it
+        # could not source in the one paragraph that carries the whole letter, and the fix
+        # for that is a different angle, which is Tom's call and costs him one message.
+        tg.send("\n".join(
+            [f"⚠ <b>Cover letter not sent</b>  {esc(clip(job.get('company') or '?', 40))}",
+             esc(fatal), "",
+             "<i>Nothing was invented onto a page: it was caught before it printed. "
+             "Send /cover again, with an angle, and I'll write it a different way.</i>"]))
+        finish_cover(state, cur, "cover-screened-out", None)
+        return True
+
+    stem = cover_stem(cur, job)
+    cvbuild.ensure_toolchain()
+
+    # One page, measured off the rendered PDF rather than guessed at from a word count.
+    # Over the line, the last body paragraph goes and it renders again -- the same trade the
+    # summary's last sentence gets, and for the same reason: dropping is honest, rewriting
+    # would be new text arriving after the honesty screen has already passed on it.
+    trimmed = []
+    for attempt in range(coverletter.PARA_TRIM_ATTEMPTS + 1):
+        spec = coverletter.assemble_spec(base, job, kept,
+                                         datetime.now(timezone.utc).date(),
+                                         cur.get("cv_title"))
+        paths = coverletter.render(spec, CV_OUT_DIR, stem)
+        problems, warnings, facts = coverletter.verify(paths, spec)
+        if facts.get("pages", 0) <= coverletter.MAX_PAGES \
+                or attempt == coverletter.PARA_TRIM_ATTEMPTS:
+            break
+        kept, cut = coverletter.trim_one(kept)
+        if not cut:
+            break
+        trimmed.append(cut)
+        print(f"  letter ran to {facts.get('pages')} pages; dropping a body paragraph and "
+              f"re-rendering")
+    coverletter.log_render(paths, problems, warnings, facts, spec=spec, verbose=CV_LOG_TEXT)
+
+    pdf_rel = f"{CV_DIR}/{stem}-cover.pdf"
+    with open(paths["pdf"], "rb") as f:
+        bank.write_bytes(pdf_rel, f.read())
+    if cur.get("packet_file"):
+        bank.append(f"{PACKET_DIR}/{cur['packet_file']}",
+                    cover_section_markdown(cur, letter, spec, dropped_paras,
+                                           dropped_sentences, trimmed, facts, warnings,
+                                           pdf_rel))
+    cur["cover_file"] = pdf_rel
+    finish_cover(state, cur, "cover" if not problems else "cover-failed", pdf_rel)
+    bank.save_state(state)
+    sha = bank.commit(f"Cover letter: {job.get('title')} at {job.get('company') or '?'}")
+
+    if problems:
+        tg.send("\n".join(
+            [f"⚠ <b>Cover letter</b>  {esc(clip(job.get('company') or '?', 40))}",
+             esc("Built but did not pass its checks, so I have not sent it."), ""]
+            + [f"• {esc(clip(p, 150))}" for p in problems[:4]]
+            + ["", f"<i>It is at <code>{esc(pdf_rel)}</code> in the bank, with its text in "
+                   f"the packet. /cover again and I'll write it shorter.</i>"]))
+        return True
+
+    lines = [f"✓ <b>Cover letter</b>  {esc(clip(job.get('company') or '?', 40))}",
+             esc(f"{facts.get('words', '?')} words · one page"), ""]
+    if letter.get("hook"):
+        lines.append(f"<i>{esc(clip(letter['hook'], 220))}</i>")
+    if letter.get("notes"):
+        lines += ["", esc(clip(letter["notes"], 300))]
+    if trimmed:
+        lines += ["", "<i>It ran over a page, so I dropped a paragraph: "
+                      f"{esc(clip(' '.join(trimmed), 160))}</i>"]
+    if dropped_paras:
+        lines += ["", f"<i>{len(dropped_paras)} paragraph"
+                      f"{'' if len(dropped_paras) == 1 else 's'} cut by the honesty screen "
+                      f"- the packet says which.</i>"]
+    lines += ["", "<i>The text is in the packet too, for forms that want it pasted in.</i>"]
+    caption = "\n".join(lines)
+    if not tg.send_document(paths["pdf"], caption):
+        tg.send(caption + f"\n\n<i>Telegram would not take the file. It is at "
+                          f"<code>{esc(pdf_rel)}</code> in the bank.</i>")
+    for w in warnings:
+        print(f"  warn: {w}")
+    if sha:
+        tg.send(f'<a href="https://{BANK_REPO}/commit/{sha}">cover letter in the bank</a>')
+    return True
 
 
 # ---------------------------------------------------------------- usage accounting
@@ -2235,6 +2542,44 @@ def handle_commands(texts, state, queue, tg, bank=None):
                 name = revision.get("cv_title") or revision.get("title")
                 tg.send(f"<b>Rebuilding</b>  {esc(clip(name, 60))}\n\n"
                         f"<i>{esc(clip(arg, 160))}</i>")
+        elif cmd == "/cover":
+            # Opt-in, and only ever on the CV that already went out. Everything the letter
+            # needs -- the company brief, the audit, Tom's answers and the page as built --
+            # was collected on the CV run and is still on the role, so this costs one Opus
+            # call and no round trip. /cover again to rewrite it; there is nothing to undo.
+            arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
+            last = state.get("last_cv")
+            recoverable = last or (bank is not None and recoverable_cv(state))
+            if state.get("current"):
+                tg.send(f"Working on {esc(clip(state['current'].get('title'), 50))} right "
+                        f"now. /cover once that one's finished.")
+            elif not recoverable:
+                tg.send("No CV to write a letter for yet. /apply a role and I'll build "
+                        "one, then /cover it.")
+            else:
+                base_role = last or recover_last_cv(bank, state)
+                if not base_role:
+                    tg.send("There's a CV in the bank but I can't read it back. "
+                            "/apply the role again and I'll rebuild it from scratch.")
+                    continue
+                run = json.loads(json.dumps(base_role))
+                run.update({"stage": "cover", "cover_steer": arg,
+                            "started_at": now_iso()})
+                for k in ("asked_at", "render_failures", "cv_failures", "cover_failures",
+                          "nudged"):
+                    run.pop(k, None)
+                state["current"] = run
+                name = run.get("company") or run.get("cv_title") or run.get("title")
+                msg = [f"<b>Writing the cover letter</b>  {esc(clip(name, 60))}"]
+                if arg:
+                    msg += ["", f"<i>{esc(clip(arg, 160))}</i>"]
+                if not (run.get("brief") or {}).get("priorities"):
+                    # Said plainly rather than discovered later: the hook is supposed to
+                    # come off the company brief, and a recovered role does not carry one.
+                    msg += ["", "<i>I don't have the company research for this one, so the "
+                                "hook comes off the posting itself. It'll be a thinner "
+                                "letter.</i>"]
+                tg.send("\n".join(msg))
         elif cmd == "/phone":
             arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
             if bank is None:
@@ -2641,6 +2986,34 @@ def advance(state, job, bank, tg, api_key, answers_text):
         chosen = {"label": "revised", "score": 0, "angle": "your feedback",
                   "text": rev.get("summary") or cur.get("cv_summary") or ""}
         return try_build(state, job, bank, tg, api_key, chosen, "your feedback")
+
+    # ---- cover: the letter, on request only. No round trip either -- /cover carried the
+    # request, and the CV run already collected everything a letter needs.
+    if cur["stage"] == "cover":
+        before = usage_snapshot()
+        try:
+            # The page Tom actually read, not the tailoring output he never saw. It is both
+            # what the letter re-angles and, through cv_corpus(), part of what it is allowed
+            # to claim.
+            as_built = (as_built_block(cur["spec"]) if cur.get("spec")
+                        else (cur.get("as_built") or ""))
+            cur["as_built"] = as_built
+            letter = write_cover(api_key, job, cur.get("audit") or {}, cur.get("brief"),
+                                 as_built, cur.get("answers"), cur.get("cover_steer"))
+        except Exception as e:
+            n = cur.get("cover_failures", 0) + 1
+            cur["cover_failures"] = n
+            record_usage(cur, "cover", before)
+            if n < MAX_STAGE_RETRIES:
+                print(f"  cover letter failed ({n}/{MAX_STAGE_RETRIES}): {e}")
+                return False
+            tg.send(f"Couldn't write the cover letter for {job.get('title')}: it failed "
+                    f"{n} times.\nLast error: {str(e)[:200]}\n"
+                    f"The CV you already have is untouched.")
+            finish_cover(state, cur, "cover-write-failed", None)
+            return True
+        record_usage(cur, "cover", before)
+        return try_cover(state, job, bank, tg, letter)
     return False
 
 

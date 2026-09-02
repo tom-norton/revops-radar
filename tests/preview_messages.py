@@ -155,6 +155,32 @@ show("/redo with nothing after it",
      "<i>/redo lead the summary with forecasting, not the MBA</i>\n"
      "<i>/redo the NAVEX section is too long</i>")
 
+show("/cover, on its way", "\n".join([
+    f"<b>Writing the cover letter</b>  {applyq.esc(JOB['company'])}", "",
+    f"<i>{applyq.esc('lead on the forecasting rebuild, not the MBA')}</i>"]))
+show("cover letter delivered (this is the caption on the PDF)", "\n".join([
+    f"✓ <b>Cover letter</b>  {applyq.esc(JOB['company'])}",
+    applyq.esc("287 words · one page"), "",
+    "<i>" + applyq.esc("Their move into indirect tax coverage across new markets, from "
+                       "the June engineering post, which is the closest thing in the brief "
+                       "to work he has actually done.") + "</i>", "",
+    applyq.esc("Led on the rates pipeline rather than the MBA, and left the 30% ruling out "
+               "of it: the posting doesn't raise relocation and guessing at it reads as "
+               "asking."),
+    "", "<i>The text is in the packet too, for forms that want it pasted in.</i>"]))
+show("cover letter stopped by the honesty screen", "\n".join([
+    f"⚠ <b>Cover letter not sent</b>  {applyq.esc(JOB['company'])}",
+    applyq.esc("the opening paragraph did not survive the honesty screen, and a letter "
+               "without its hook is not a letter"), "",
+    "<i>Nothing was invented onto a page: it was caught before it printed. Send /cover "
+    "again, with an angle, and I'll write it a different way.</i>"]))
+show("cover letter that would not fit on a page", "\n".join([
+    f"⚠ <b>Cover letter</b>  {applyq.esc(JOB['company'])}",
+    applyq.esc("Built but did not pass its checks, so I have not sent it."), "",
+    "• " + applyq.esc("2 pages; a cover letter is one"), "",
+    "<i>It is at <code>cv/2026-09-01-fonoa-revenue-operations-lead-emea-cover.pdf</code> "
+    "in the bank, with its text in the packet. /cover again and I'll write it shorter.</i>"]))
+
 show("still open (nudge)", "<b>Still open</b>\n\n"
      + f"<b>1</b>  {applyq.esc(applyq.clip(QS[2]['question'], 160))}\n\n"
      + "<i>Answer, or say skip and I'll leave it out.</i>")

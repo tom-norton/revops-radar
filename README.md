@@ -199,8 +199,44 @@ page without it. The same honesty screen runs on a revision as on a first build.
 bank is **not** written a second time, because those bullets already went through the
 promotion test on the first build.
 
+## The cover letter
+
+Opt-in, never automatic:
+
+```
+/cover
+/cover lead on the forecasting rebuild, not the MBA
+/cover keep it short, they asked for brevity in the posting
+```
+
+It writes the letter for the CV that just went out and sends the PDF. No round trip and no
+new research: the company brief, the audit, your answers and the page as it shipped are all
+still on the finished role, so `/cover` is one model call and a render. Run it again to
+rewrite it; there is nothing to undo. The letter is named after the CV, so the two sit
+next to each other in the bank, and its **full text goes in the packet** because half the
+application forms want it pasted into a box rather than uploaded.
+
+The layout is not the model's to choose. The letterhead is the CV's letterhead, read off
+the same skeleton, so the number you set with `/phone` is on the letter the moment it is on
+the CV. The date, the recipient block, the subject line, the salutation and the sign-off
+are written in code, and **no hiring manager is ever invented** — it is addressed to the
+company. The renderer has no bullet in it, which is how the no-listicle rule holds.
+
+**One page, measured off the rendered PDF.** Over the line, the last body paragraph is
+dropped and it renders again, twice; still over, it is not sent, and you are told to ask
+for it shorter. A rule asked for in a prompt is a request.
+
+**The same honesty screen as the CV, applied twice.** Every claim the letter makes about
+your experience goes through the screen the bullets go through, against the bank, the base
+CV, your own answers and the page that already shipped; a claim that fails takes its
+paragraph off the page. Then every number is checked sentence by sentence against the
+sources that sentence is entitled to: a sentence about the company may use the company's
+numbers, a sentence about you may not, and the posting is evidence for neither. If the
+opening or the close is what failed, nothing is sent at all — a letter without its hook is
+not a letter — and you get told why.
+
 **Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/redo`,
-`/help`.
+`/cover`, `/help`.
 
 **Answer questions however you like.** A reply that is nothing but letters is read in
 code, exactly, with no model involved: `1a 2b 3c`, `a b c`, `C, c, b`, `1. a  2. c` all
@@ -242,7 +278,9 @@ private bank at `cv/YYYY-MM-DD-company-title.pdf`.
 per track, the role-title fallbacks, US Letter, 0.75in margins, Calibri, the teal accents
 and the right-aligned tab stop at 10080 twips all live in `cv/build-cv.js` and `cvbuild.py`,
 where nothing a model returns can move them. `docx` builds the file, LibreOffice headless
-converts it, and `pdftoppm` renders the pages.
+converts it, and `pdftoppm` renders the pages. The cover letter has its own renderer,
+`cv/build-letter.js` with `coverletter.py` beside it, on the same terms and sharing that
+same docx to PDF to JPEG path.
 
 **Two standing rules are enforced, not requested.** At most **six bullets on any one
 job**, and a summary that fits **four printed lines**. Both are in the skill and both were
@@ -324,9 +362,8 @@ exist. "Contributed his accounts to the renewal risk forum, did not run it" is t
 difference between a defensible bullet and one that falls apart in the first interview
 question. They go into the tailoring prompt as rules, not context.
 
-**Not in this phase.** Cover letters are Phase 3, on request via `/cover <id>`, and
-autonomous submission is Phase 4. The hiring-manager outreach email the skill describes is
-out of scope entirely.
+**Not in this phase.** Autonomous submission is Phase 4. The hiring-manager outreach email
+the skill describes is out of scope entirely.
 
 ## Reviewing what got thrown away
 

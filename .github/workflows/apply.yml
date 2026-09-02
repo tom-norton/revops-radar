@@ -67,6 +67,7 @@ jobs:
           python tests/test_scoring.py
           python tests/test_apply.py
           python tests/test_cv.py
+          python tests/test_cover.py
           node tests/test_worker.mjs
       - name: Status only
         if: inputs.status
