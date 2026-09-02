@@ -427,6 +427,65 @@ def gh_board(*jobs):
                       for i, (t, loc) in enumerate(jobs)]}}
 
 
+# ---- the link the record already has
+#
+# The case that sent this whole path back for a second look: Triptease's Revenue Operations
+# Manager came in through revopsroles, which is an advert rather than a form, while the
+# workable.com application sat in the same row under `also_seen` because dedupe keeps one
+# url per role by source rank.
+
+TRIPTEASE = {
+    "company": "Triptease", "title": "Revenue Operations Manager",
+    "location": "London, United Kingdom", "market": "UK-London",
+    "url": "https://revopsroles.com/jobs/d58b0646-2bf8-4706-b4ad-3e7cc92f34c6",
+    "also_seen": [
+        {"source": "adzuna", "url": "https://www.adzuna.co.uk/jobs/details/5865317190"},
+        {"source": "hiring.cafe",
+         "url": "https://jobs.workable.com/view/iyYEPp7vd8DfLWvZbqc6VT/hybrid-revenue-"
+                "operations-manager-in-london-at-triptease"},
+        {"source": "linkedin", "url": "https://www.linkedin.com/jobs/view/4462059292"}],
+}
+
+
+def test_the_real_application_already_in_the_row_is_used_before_anything_is_looked_up():
+    def explode(*a, **k):
+        raise AssertionError("went to the network when the row already had the answer")
+    out = findform.find_form(TRIPTEASE, [], explode)
+    assert out["outcome"] == "known"
+    assert "jobs.workable.com" in out["url"], out
+
+
+def test_an_advert_is_never_mistaken_for_an_application():
+    for advert in ("https://revopsroles.com/jobs/abc",
+                   "https://www.linkedin.com/jobs/view/1",
+                   "https://www.adzuna.co.uk/jobs/details/2",
+                   "https://ie.indeed.com/viewjob?jk=3",
+                   "https://hiring.cafe/jobs/4"):
+        assert not findform.is_apply_host(advert), advert
+    for real in ("https://job-boards.greenhouse.io/acme/jobs/1",
+                 "https://jobs.workable.com/view/abc/x",
+                 "https://jobs.ashbyhq.com/acme/1",
+                 "https://acme.wd1.myworkdayjobs.com/x/job/y"):
+        assert findform.is_apply_host(real), real
+
+
+def test_a_link_a_driver_can_fill_outranks_one_it_cannot():
+    """Both are real applications. The one that can be filled without him is better."""
+    job = dict(TRIPTEASE, also_seen=TRIPTEASE["also_seen"] + [
+        {"source": "greenhouse",
+         "url": "https://job-boards.greenhouse.io/triptease/jobs/9"}])
+    ranked = findform.known_links(job, fillable=submit.detect_ats)
+    assert "greenhouse.io" in ranked[0], ranked
+
+
+def test_a_row_with_nothing_but_adverts_still_goes_looking():
+    job = {"company": "Acme", "title": "RevOps", "market": "NL",
+           "url": "https://www.linkedin.com/jobs/view/1",
+           "also_seen": [{"source": "adzuna", "url": "https://www.adzuna.nl/details/2"}]}
+    out = findform.find_form(job, [], board({}))
+    assert out["outcome"] == "no-board"
+
+
 def test_a_slug_is_guessed_from_the_company_name():
     assert findform.board_slugs("Kong Inc.") == ["kong"]
     assert findform.board_slugs("commercetools") == ["commercetools"]
@@ -600,7 +659,7 @@ def machine(fields=None, sent=True, reason="", state=None, model_answers=None, j
                 [{"id": "question_8", "why": "no salary expectation on file"}],
                 "Left the salary box for you.")
 
-    def fake_find_form(job_, companies=None, fetch=None):
+    def fake_find_form(job_, companies=None, fetch=None, fillable=None):
         calls["find"] += 1
         return found if found is not None else {"outcome": "no-board", "candidates": []}
 
@@ -873,6 +932,48 @@ def test_a_board_with_no_check_says_nothing_about_one():
     _step, _s, tg, _b, _c = machine()
     _step("/submit")
     assert not any("reCAPTCHA" in m for m in tg.sent)
+
+
+def test_a_pasted_link_wins_outright_and_nothing_is_looked_up():
+    """The escape hatch for every source this cannot resolve on its own. He knows where
+    the form is; there is nothing to infer."""
+    step, state, tg, _b, calls = machine(
+        job=dict(GH_JOB, url="https://revopsroles.com/jobs/abc"))
+    step("/submit https://job-boards.greenhouse.io/acme/jobs/99")
+    assert calls["find"] == 0, "went looking when it had been handed the answer"
+    assert calls["preview"] == 1
+    assert state["current"]["plan"]["url"] == \
+        "https://job-boards.greenhouse.io/acme/jobs/99"
+    assert any("link you gave me" in m for m in tg.sent), tg.sent
+
+
+def test_a_pasted_link_on_a_board_with_no_driver_is_said_plainly():
+    """Not quietly swapped for something else: he pointed at that one."""
+    step, state, tg, _b, calls = machine(
+        job=dict(GH_JOB, url="https://revopsroles.com/jobs/abc"))
+    assert step("/submit https://jobs.workable.com/view/abc/x") is True
+    assert calls["find"] == 0 and calls["preview"] == 0
+    assert state["history"][-1]["outcome"] == "submit-unsupported"
+    assert any("cannot fill yet" in m for m in tg.sent), tg.sent
+
+
+def test_something_that_is_not_a_link_is_not_treated_as_one():
+    step, state, tg, _b, calls = machine()
+    step("/submit the workable one")
+    assert calls["preview"] == 0 and state.get("current") is None
+    assert any("doesn't look like a link" in m for m in tg.sent), tg.sent
+
+
+def test_a_real_application_found_in_the_row_is_filled_without_a_lookup():
+    step, state, tg, _b, calls = machine(
+        job=dict(GH_JOB, url="https://revopsroles.com/jobs/abc"),
+        found={"outcome": "known", "url": "https://job-boards.greenhouse.io/acme/jobs/99",
+               "title": "Revenue Operations Manager", "location": "London",
+               "candidates": []})
+    step("/submit")
+    assert calls["preview"] == 1
+    assert state["current"]["plan"]["url"].endswith("/jobs/99")
+    assert any("already on file" in m for m in tg.sent), tg.sent
 
 
 def test_the_same_role_is_not_applied_to_twice():
