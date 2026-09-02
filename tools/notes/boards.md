@@ -52,3 +52,35 @@ No `data-testid` anywhere on the page, so ids and label text are the handles.
 4. Radio groups as a field kind, which the Greenhouse driver never needed.
 5. `identity()` already produces `full_name`, and `IDENTITY_RULES` already matches a bare
    `name` field, so the one-name-field shape needs nothing new.
+
+
+---
+
+# Workable, and why the link in the row is not the form either
+
+Probed 2 Sep 2026 against Triptease's Revenue Operations Manager, the role that sent
+`/submit` back for a second look.
+
+`jobs.workable.com/view/<token>/<slug>` is **Workable's own job board, not an application
+form**. The probe found:
+
+```
+--- 0 controls
+--- buttons
+{"text": "Apply now"}   x2
+{"text": "Accept all"}  (cookie banner)
+```
+
+Zero inputs. Two "Apply now" buttons that navigate in JavaScript rather than carrying an
+href, so the real form is one hop further on, at the employer's own
+`apply.workable.com/<account>/j/<SHORTCODE>/apply/`. And it carries an anti-automation
+check, like every other board here.
+
+That makes `jobs.workable.com/view/...` a slightly optimistic thing for `is_apply_host()`
+to return true for: it is the canonical posting rather than an advert, which is why it
+still beats a revopsroles link and is worth handing to Tom, but a driver could not fill it
+without clicking through first.
+
+So a Workable driver needs one thing the Greenhouse one does not: `open()` has to press
+"Apply now" and wait for the real form before reading any fields. Worth knowing, not worth
+building until the reCAPTCHA question above is settled.
