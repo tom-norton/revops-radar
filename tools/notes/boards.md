@@ -5,7 +5,10 @@ Dumped from a real posting (Vanta, `jobs.ashbyhq.com/<slug>/<id>/application`) w
 writing a driver and it does not change often. Nothing here is private: it is the public
 structure of a public form.
 
-## Why there is no Ashby driver yet
+## Why the driver waited (historical)
+
+*Superseded 3 Sep 2026: the driver is built. Kept because the reasoning is still the
+reasoning, and the reCAPTCHA half of it has not changed.*
 
 Not because the page is hard. It is not: the ids below are stable and the whole thing is
 more tractable than Greenhouse's react-select dropdowns.
@@ -26,6 +29,14 @@ Greenhouse path already answers it, the first time Tom runs `/submit` and `/send
 Greenhouse role he actually wants. If it goes through, this driver is worth an hour. If it
 bounces, an Ashby driver would produce a filled form nobody can send, and the direct link
 findform.py already hands him is the whole of the available value.
+
+**What changed:** that test never happened, because there was nothing to run it on. With
+the dashboard cut to the last 7 days there was exactly **one** auto-fillable Greenhouse
+role at 6.0+ in the window, against five on Ashby. Waiting on a test that cannot be run is
+not caution, it is a stall -- and the same reCAPTCHA sits in front of both boards, so
+building Ashby is now the way the question gets answered at all rather than a bet placed
+before it. Ashby also leads the whole dataset (21 rows), and the driver took the hour the
+note predicted.
 
 ## The field map
 
@@ -53,6 +64,32 @@ No `data-testid` anywhere on the page, so ids and label text are the handles.
 5. `identity()` already produces `full_name`, and `IDENTITY_RULES` already matches a bare
    `name` field, so the one-name-field shape needs nothing new.
 
+
+---
+
+# Ashby: built, 3 Sep 2026
+
+The map below is what the driver in `submit.py` was written against, and it held: the only
+surprises came from the browser test, not the page.
+
+Two bugs it caught that no amount of reading would have:
+
+1. **A CSS id selector cannot start with a digit.** Every Ashby custom question is named
+   after a UUID, so `#4b728746-d0b1` is a *syntax error* rather than a miss, and it took
+   the whole fill down with it. Fields are addressed with `[id="..."]` now
+   (`submit.id_selector`), which has no such rule and needs no character class kept up to
+   date.
+2. **A hidden yes/no checkbox reads as a consent box.** Before reshaping it is a checkbox,
+   and `consent_fields()` ticks required checkboxes -- so the fill was answering a question
+   nobody had chosen an answer to. It is reshaped into a Yes/No dropdown before anything
+   sees it.
+
+The one thing still worth knowing: **a yes/no question's text is not on its checkbox.** It
+is in the markup above the buttons, and `nearText()` in `READ_FIELDS_JS` reaches it when it
+is close enough. When it does not, the field ends up with no readable question, and
+`readable_question()` keeps it away from the model entirely -- it goes to Tom as a blank on
+the printed form, where he can read the question himself. That rule is board-agnostic and
+worth keeping.
 
 ---
 
