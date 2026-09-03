@@ -340,9 +340,16 @@ scan whose own link isn't a form. And when none of that lands: **`/submit <link>
 it straight at whatever form you found by hand — a link you paste beats anything a lookup
 can infer, so it's used outright and nothing is searched for.
 
+**The dashboard shows the last 7 days.** A role you've sat on for a week isn't news, and
+471 rows is not a list anybody reads. It's a view filter only: `docs/jobs.json` keeps its
+45 days, because the scan dedupes each run against everything already on the dashboard and
+a row deleted from that file is a role that comes back tomorrow looking new. The header
+line says how many are hidden, so nothing disappears quietly. The excluded log gets the
+same cut.
+
 **The dashboard shows this before you ever tap Apply.** Every card carries a tag naming
 the board the application is actually on — a plain grey tag when it's a real system with
-no driver yet (Ashby, Workday, SmartRecruiters…), a green **✓ Greenhouse** when `/submit`
+no driver yet (Ashby, Workday, SmartRecruiters…), a green **✓** tag when `/submit`
 can fill it without being asked. Auto-fillable rows sort to the top of each section, and
 "Auto-fillable only" filters down to just those. This is the same free, no-network
 classification `/submit` itself starts from (`submit.application_status()`), computed
@@ -361,17 +368,26 @@ automated send and points you at the packet, which already has every answer writ
 paste in by hand. Whether a real send clears the check is not knowable by reading, and your
 first live `/send` on a Greenhouse role is what settles it.
 
-Boards it can fill: **Greenhouse**, including the employers whose board URL redirects to
-their own careers site with the form embedded in it. Ashby and Lever are found and handed
-to you as a direct link, which still beats a LinkedIn page you have to search from. There
-is no Ashby driver, and the reason is not that its form is hard: it was probed and mapped
-(`tools/notes/boards.md`) and it is more tractable than Greenhouse's. It is that a
-driver whose submissions the reCAPTCHA refuses would produce a filled form nobody can send,
-so it waits on the answer above.
-Workday and LinkedIn Easy Apply are left alone entirely: both want an account and a
-logged-in session, which is a credential sitting in a runner and a different conversation.
-Either way the CV and the letter are already in the bank and the letter's text is already
-in the packet for pasting into a box.
+Boards it can fill: **Greenhouse** (including regional boards like
+`job-boards.eu.greenhouse.io`, and employers whose board URL redirects to their own careers
+site with the form embedded in it) and **Ashby**. Ashby needed its own handling for four
+things, all mapped in `tools/notes/boards.md`: the form is a page on from the posting
+(`/application`), one field takes the whole name, a yes/no question is two buttons over a
+hidden checkbox rather than a dropdown, and a second id-less file input sits above the real
+one feeding Ashby's resume parser, so the CV goes to `#_systemfield_resume` by id and never
+to `input[type=file]` generally.
+
+Lever, SmartRecruiters and the rest are found and handed to you as a direct link, which
+still beats a LinkedIn page you have to search from. Workday and LinkedIn Easy Apply are
+left alone entirely: both want an account and a logged-in session, which is a credential
+sitting in a runner and a different conversation. Either way the CV and the letter are
+already in the bank and the letter's text is already in the packet for pasting into a box.
+
+**A question nobody can read is never sent to a model.** Some boards put the question in
+text above the control rather than in a label. Where that text can't be found, the honest
+answer is that nothing here knows what is being asked, so the field goes to you as a blank
+on the printed form, where you can read it yourself, rather than to a model that would
+answer it off the option list alone.
 
 **Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/redo`,
 `/cover`, `/submit`, `/send`, `/help`.

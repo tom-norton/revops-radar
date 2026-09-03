@@ -64,6 +64,7 @@ ATS_PATTERNS = (
     # or job-boards.greenhouse.io.
     ("greenhouse", re.compile(r"^https?://(?:job-)?boards\.(?:[\w-]+\.)?greenhouse\.io/",
                               re.I)),
+    ("ashby", re.compile(r"^https?://jobs\.ashbyhq\.com/[^/]+/", re.I)),
 )
 
 
@@ -476,10 +477,18 @@ def open_questions(fields, answers):
     about. Demographic questions and the facts code owns are filtered out here as well as
     in plan_known(), so that they are absent from the prompt itself rather than merely
     unanswered in it. A model that is never shown the phone field cannot put a number in
-    it."""
+    it.
+
+    A field whose question could not be read off the page is filtered out too. Some boards
+    put the question in text above the control rather than in a label, and where that text
+    cannot be found the honest answer is that nobody here knows what is being asked -- so
+    it goes to Tom as a blank on the printed form, where he can read the question himself,
+    rather than to a model that would answer it from the option list alone."""
     out = []
     for f in fields:
         if f["id"] in answers or f["kind"] in (FILE, CHECKBOX):
+            continue
+        if not readable_question(f):
             continue
         if is_demographic(f["label"]) or MANUAL_TEXT_RE.match(f["id"]):
             continue
@@ -487,6 +496,16 @@ def open_questions(fields, answers):
             continue
         out.append(f)
     return out
+
+
+# A label that is only an id, or nothing at all, is not a question anybody can answer.
+_ID_LIKE = re.compile(r"^[0-9a-f-]{8,}$|^_systemfield|^question_\d+$", re.I)
+
+
+def readable_question(f):
+    """True when the field carries a question a person could actually answer."""
+    label = " ".join((f.get("label") or "").split())
+    return bool(label) and not _ID_LIKE.match(label) and label != f.get("id")
 
 
 def screen_answers(model_answers, fields, corpus):
@@ -655,6 +674,19 @@ READ_FIELDS_JS = r"""
     }
     return el.getAttribute('aria-label') || el.getAttribute('placeholder') || '';
   };
+  // The nearest readable text around a control, for the boards that put a question above
+  // its input rather than in a <label>. Approximate by construction, so it is only ever a
+  // fallback -- and a field that ends up with nothing better is never handed to a model,
+  // see open_questions().
+  const nearText = (el) => {
+    let n = el, hops = 0;
+    while (n && hops < 4) {
+      const t = (n.innerText || '').trim();
+      if (t && t.length < 200) return t.split('\n')[0];
+      n = n.parentElement; hops++;
+    }
+    return '';
+  };
   document.querySelectorAll('input, select, textarea').forEach((el) => {
     const type = (el.type || '').toLowerCase();
     if (type === 'hidden' || type === 'submit' || type === 'button') return;
@@ -674,6 +706,13 @@ READ_FIELDS_JS = r"""
     out.push({
       id,
       kind,
+      // name, type and hidden are what a driver's reshape() needs to tell a radio group
+      // from a tick-box and a real consent box from a hidden yes/no. Unused by boards
+      // whose controls are already plain inputs.
+      name: el.name || '',
+      type,
+      context: nearText(el),
+      hidden: !(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
       label: (labelFor(el) || '').replace(/\*/g, ' ').trim(),
       required: el.required || el.getAttribute('aria-required') === 'true',
       options,
@@ -720,8 +759,15 @@ def read_fields(page, driver):
 
     A combobox carries its choices only once it has been opened, so the driver opens each
     one, reads the list and closes it again. That is slow and it is the only honest way to
-    know what a dropdown will accept before trying to put something in it."""
+    know what a dropdown will accept before trying to put something in it.
+
+    A board whose controls are not plain inputs gets a `reshape` hook: Ashby draws a yes/no
+    question as a hidden checkbox behind two buttons, and an EEOC question as a radio group
+    where the generic reader sees one field per radio. Reshaping there rather than in the
+    JS keeps one reader for every board and puts each board's oddities in its own class."""
     raw = page.evaluate(READ_FIELDS_JS)
+    if hasattr(driver, "reshape"):
+        raw = driver.reshape(raw)
     fields = []
     for r in raw:
         f = field(r["id"], r["kind"], r["label"], r["required"], r.get("options"))
@@ -750,19 +796,19 @@ def fill_form(page, plan, driver, bank_path=""):
                 if not os.path.exists(path):
                     failed.append(fid)
                     continue
-                page.set_input_files(f"#{css_id(fid)}", path, timeout=BROWSER_TIMEOUT_MS)
+                page.set_input_files(id_selector(fid), path, timeout=BROWSER_TIMEOUT_MS)
             elif f["kind"] == SELECT:
                 driver.pick_option(page, fid, value)
             elif f["kind"] == CHECKBOX:
-                page.check(f"#{css_id(fid)}", timeout=BROWSER_TIMEOUT_MS)
+                page.check(id_selector(fid), timeout=BROWSER_TIMEOUT_MS)
             else:
-                page.fill(f"#{css_id(fid)}", str(value), timeout=BROWSER_TIMEOUT_MS)
+                page.fill(id_selector(fid), str(value), timeout=BROWSER_TIMEOUT_MS)
         except Exception as e:
             print(f"  could not fill {fid}: {str(e)[:120]}")
             failed.append(fid)
     for fid in plan.get("consents", []):
         try:
-            page.check(f"#{css_id(fid)}", timeout=BROWSER_TIMEOUT_MS)
+            page.check(id_selector(fid), timeout=BROWSER_TIMEOUT_MS)
         except Exception as e:
             print(f"  could not tick {fid}: {str(e)[:120]}")
             failed.append(fid)
@@ -773,6 +819,16 @@ def css_id(fid):
     """A DOM id as a CSS selector. Greenhouse names its checkbox groups
     `question_123[]_456`, and an unescaped bracket is a CSS attribute selector."""
     return re.sub(r"([\[\]().:,+~*^$|>/])", r"\\\1", fid)
+
+
+def id_selector(fid):
+    """A selector for one element by id, whatever the id happens to be.
+
+    An attribute selector rather than `#id`, because Ashby names every custom question
+    after a UUID and a CSS id selector cannot start with a digit -- `#4b728746-d0b1` is a
+    syntax error, not a miss, so it takes the whole fill down with it. Only the quote
+    needs escaping here, which is the point: no character class to keep up to date."""
+    return '[id="{}"]'.format(str(fid).replace("\\", "\\\\").replace('"', '\\"'))
 
 
 # A4 at 96dpi is 794 CSS pixels wide. The fill runs in a 1280px window because that is
@@ -877,7 +933,7 @@ class Greenhouse:
 
     def read_options(self, page, fid):
         """Open the menu, read it, close it. Returns [] for a combobox that has none."""
-        sel = f"#{css_id(fid)}"
+        sel = id_selector(fid)
         try:
             page.click(sel, timeout=BROWSER_TIMEOUT_MS)
             page.wait_for_timeout(250)
@@ -893,7 +949,7 @@ class Greenhouse:
         """Choose one option by its exact text. Raises when the option is not there, which
         is the right outcome: a dropdown that has changed since the preview is a form that
         has changed, and a near-miss on a work-authorisation dropdown is not a typo."""
-        sel = f"#{css_id(fid)}"
+        sel = id_selector(fid)
         page.click(sel, timeout=BROWSER_TIMEOUT_MS)
         page.wait_for_timeout(250)
         options = self._menu_options(page, fid)
@@ -922,7 +978,155 @@ class Greenhouse:
         return bool(self.confirmation.search(body or "")), (body or "")[:400]
 
 
-DRIVERS = {"greenhouse": Greenhouse}
+class Ashby:
+    """Ashby's hosted boards (jobs.ashbyhq.com).
+
+    Written against a real posting, dumped with tools/probe_form.py -- the field map and
+    the reasoning are in tools/notes/boards.md. Four things differ from Greenhouse and all
+    four are why this needed its own class:
+
+      - **The form is a page further on.** findform hands back the posting
+        (`/<slug>/<id>`); the application is `/<slug>/<id>/application`.
+      - **One name field, not two.** `#_systemfield_name` takes the whole name, which
+        IDENTITY_RULES already covers by matching a bare `name`.
+      - **A yes/no question is two buttons over a hidden checkbox.** The checkbox carries
+        the question's id in its `name` and is never clickable; the buttons are what a
+        person presses. So it is read as a dropdown of Yes/No and filled by pressing one.
+      - **A second, id-less file input sits above the form** ("Autofill from resume"). It
+        feeds Ashby's parser and rewrites the fields underneath it, so the resume must go
+        to `#_systemfield_resume` by id and never to `input[type=file]` generally. The
+        generic reader skips it already, because it has neither id nor name.
+
+    The submit button is behind an invisible reCAPTCHA, exactly as Greenhouse's is. Nothing
+    here tries to get past it -- see anti_bot() and the note in boards.md."""
+
+    name = "ashby"
+    submit_selectors = ("button:has-text('Submit Application')",
+                        "button:has-text('Submit application')",
+                        "button[type=submit]")
+    confirmation = re.compile(r"(thank you for applying|application (?:has been )?"
+                              r"submitted|we(?:'| ha)ve received your application|"
+                              r"thanks for applying|your application)", re.I)
+    FORM_READY = "#_systemfield_name, #_systemfield_email"
+
+    def open(self, page, url):
+        page.goto(self.application_url(url), wait_until="domcontentloaded",
+                  timeout=BROWSER_TIMEOUT_MS)
+        try:
+            page.wait_for_selector(self.FORM_READY, timeout=BROWSER_TIMEOUT_MS)
+        except Exception:
+            pass
+        # Ashby renders the form client-side after the shell, so the fields arrive a beat
+        # after the page does. A plain fetch of this URL returns a spinner and nothing else.
+        page.wait_for_timeout(SETTLE_MS)
+
+    # jobs.ashbyhq.com/<slug>/<posting id>, which is what findform hands back. Matched
+    # rather than assumed, so that a URL which is already the form, or is not an Ashby
+    # posting at all, is left exactly as it is instead of growing a path segment.
+    POSTING_URL = re.compile(
+        r"^https?://jobs\.ashbyhq\.com/[^/]+/[^/?#]+/?$", re.I)
+
+    @classmethod
+    def application_url(cls, url):
+        """The application page for a posting URL, or the URL untouched when it is not
+        one. Idempotent: a URL already pointing at the form has no posting shape."""
+        u = (url or "").strip()
+        return u.rstrip("/") + "/application" if cls.POSTING_URL.match(u) else u
+
+    # A yes/no question: a checkbox that is not visible, whose name is the question's id.
+    # The generic reader reports it as a checkbox, which would make it a consent box and
+    # get it silently ticked. It is a question, and it is answered by pressing a button.
+    def reshape(self, raw):
+        out, radios = [], {}
+        for r in raw:
+            name = (r.get("name") or "").strip()
+            # An EEOC radio group: one entry per radio from the generic reader, and the
+            # group's name is the question. Collapsed into one dropdown whose options are
+            # the radios' own labels, so screen_answers() and the decline rule see a
+            # single field with a "Decline to self-identify" option on it.
+            if r["kind"] == CHECKBOX and r.get("type") == "radio" and name:
+                g = radios.get(name)
+                if not g:
+                    g = {"id": name, "kind": SELECT, "label": "", "required": r["required"],
+                         "options": [], "type": "radio"}
+                    radios[name] = g
+                    out.append(g)
+                if r.get("label"):
+                    g["options"].append(r["label"])
+                g["required"] = g["required"] or r["required"]
+                continue
+            if r["kind"] == CHECKBOX and r.get("hidden") and name:
+                # The question is not on the checkbox -- it is the text above the two
+                # buttons. nearText() reaches it when it is close enough, and returns the
+                # buttons' own "Yes / No" when it is not, which is no question at all and
+                # is dropped so that open_questions() treats the field as unreadable.
+                label = r.get("label") or r.get("context") or ""
+                if re.fullmatch(r"\s*(yes|no)(\s*[/|,]\s*(yes|no))*\s*", label, re.I):
+                    label = ""
+                out.append({"id": name, "kind": SELECT, "label": label,
+                            "required": r["required"], "options": ["Yes", "No"],
+                            "type": "yesno"})
+                continue
+            out.append(r)
+        # A radio group's question is not on any radio; it is the text above them. The
+        # generic reader's `context` is the nearest readable ancestor text, which is that
+        # question, so it stands in when nothing better is on the field itself.
+        for g in radios.values():
+            if not g["label"]:
+                g["label"] = _EEOC_LABELS.get(
+                    re.sub(r"^.*__", "", g["id"]), g["id"])
+        return out
+
+    def read_options(self, page, fid):
+        """A reshaped field already knows its options; anything else here is a real
+        combobox (Ashby's location autocomplete), which has no fixed list to read."""
+        return []
+
+    def pick_option(self, page, fid, value):
+        """Press the button that says it. Ashby's yes/no and EEOC answers are buttons and
+        radio labels, not menu items, so there is no menu to open."""
+        for sel in (f"[name='{fid}'] ~ * >> text='{value}'",
+                    f"xpath=//*[@name='{fid}']/ancestor::*[position()<=4]"
+                    f"//*[normalize-space(text())='{value}']",
+                    f"label:has-text('{value}')"):
+            try:
+                page.click(sel, timeout=6000)
+                page.wait_for_timeout(150)
+                return
+            except Exception:
+                continue
+        raise RuntimeError(f"{fid}: could not find anything to press for '{value}'")
+
+    def submit(self, page):
+        for sel in self.submit_selectors:
+            try:
+                page.click(sel, timeout=8000)
+                return True
+            except Exception:
+                continue
+        return False
+
+    def confirmed(self, page):
+        try:
+            body = page.inner_text("body", timeout=BROWSER_TIMEOUT_MS)
+        except Exception:
+            body = ""
+        return bool(self.confirmation.search(body or "")), (body or "")[:400]
+
+
+# Ashby names an EEOC radio group `<uuid>__systemfield_eeoc_<what>`, and the question text
+# itself is not on any of the radios. These are the labels a person reads above them, so a
+# reshaped group is recognisable to is_demographic() -- which is the whole point, since
+# that is what keeps every one of them unanswered.
+_EEOC_LABELS = {
+    "systemfield_eeoc_gender": "Gender",
+    "systemfield_eeoc_race": "Race / ethnicity",
+    "systemfield_eeoc_veteran_status": "Protected veteran status",
+    "systemfield_eeoc_disability": "Disability status",
+}
+
+
+DRIVERS = {"greenhouse": Greenhouse, "ashby": Ashby}
 
 
 def driver_for(ats):

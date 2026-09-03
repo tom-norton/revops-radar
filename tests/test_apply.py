@@ -462,6 +462,54 @@ def test_a_splitter_outage_falls_back_instead_of_blocking():
     assert calls["drafted_from"] == [("pipeline hygiene", "did the cleanup for two quarters")]
 
 
+def test_a_numbered_reply_answers_every_question_it_numbers():
+    """The reply Tom actually sent, verbatim from the run that lost half of it. Two
+    questions, two numbered answers, the second one a bare option letter.
+
+    It reached the model splitter because it is prose, the splitter 400'd because the call
+    sent output_config.effort to Haiku 4.5, which rejects it, and the exception handler
+    credited the whole reply to question one. Now it never reaches a model at all:
+    numbering is arithmetic, and arithmetic does not 400."""
+    qs = [{"options": ["Yes, ran the loop", "Yes, took part", "Nothing here"]},
+          {"options": ["Formal program", "Ad hoc", "Nothing here"]}]
+    reply = ("1. I did one peer interview at LexisNexis and weighed in on final decision. "
+             "I also did a lot of coaching/training there.\n2. A")
+    split = applyq.split_numbered(reply, qs)
+    assert split[0].startswith("I did one peer interview")
+    assert split[1] == "A"
+    # And the bare letter still resolves to the option it names.
+    assert applyq.resolve_answer(split[1], qs[1]) == "Formal program"
+
+
+def test_a_numbered_reply_costs_no_model_call_either():
+    step, _state, _tg, _bank, calls = machine()
+    step()
+    assert step("1. did the cleanup for two quarters\n2. built them") is True
+    assert calls["split"] == 0, "numbering is arithmetic; it does not need a model"
+
+
+def test_prose_with_no_numbers_still_goes_to_the_model():
+    qs = [{"options": ["Yes", "No"]}, {"options": ["Built them", "Nothing here"]}]
+    assert applyq.split_numbered("did some of that and not the other", qs) is None
+
+
+def test_a_splitter_outage_never_credits_one_answer_to_the_wrong_question():
+    """The old fallback was [reply] + blanks, which is correct for one question and an
+    invented answer for more than one. Several questions and no way to split them is a
+    question for Tom, not a guess."""
+    step, state, tg, _bank, calls = machine()
+
+    def boom(*a, **k):
+        raise RuntimeError("haiku down")
+
+    applyq.split_reply = boom
+    step()
+    # Prose, several questions, splitter down: nothing is recorded and he is asked again.
+    assert step("yeah did a bit of both really") is False
+    assert any("number on each one" in m for m in tg.sent), tg.sent
+    assert not (state["current"].get("answers") or []), "recorded an answer it invented"
+
+
 def test_a_reply_of_letters_answers_every_question_not_just_the_first():
     """The bug Tom hit on the first real run. The split prompt asks for an option's TEXT
     when he picks a letter, and the guard then checked that text against his reply, which

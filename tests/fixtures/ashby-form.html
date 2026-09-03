@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fixture: Ashby-shaped application</title>
+<style>
+ body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 42rem; }
+ .field { margin: 1.2rem 0; }
+ .q { font-weight: 600; margin-bottom: .3rem; }
+ input[type=text], input[type=email], input[type=tel] { width: 100%; padding: .4rem; }
+ .yesno button { padding: .3rem 1.1rem; margin-right: .4rem; }
+ .yesno button[aria-pressed=true] { background: #117A82; color: #fff; }
+ #confirmation { padding: 2rem; background: #eef7ee; }
+ .hidden { display: none; }
+</style>
+</head>
+<body>
+<!--
+  A stand-in for an Ashby application, built from the field map in tools/notes/boards.md,
+  which came from tools/probe_form.py against a real posting. Deliberately not a copy: it
+  carries the shapes the driver has to handle and nothing else, because this file is in a
+  public repo and a test drives it. Nothing here reaches an employer.
+
+  The shapes that matter:
+    - one full-name field, not first/last
+    - an id-less "autofill from resume" file input ABOVE the real one, which must never
+      be touched: it feeds Ashby's parser and rewrites the fields underneath it
+    - a yes/no question drawn as two buttons over a hidden checkbox
+    - an EEOC radio group whose question is not on any of the radios
+-->
+<h1>Revenue Operations Manager</h1>
+
+<div class="field">
+  <div class="q">Autofill from resume</div>
+  <input type="file">
+</div>
+
+<form id="application" onsubmit="return false;">
+  <div class="field">
+    <label class="q" for="_systemfield_name">Full Name*</label>
+    <input type="text" id="_systemfield_name" name="_systemfield_name" required>
+  </div>
+  <div class="field">
+    <label class="q" for="_systemfield_email">Email*</label>
+    <input type="email" id="_systemfield_email" name="_systemfield_email" required>
+  </div>
+  <div class="field">
+    <label class="q" for="_systemfield_resume">Resume*</label>
+    <input type="file" id="_systemfield_resume" required>
+  </div>
+  <div class="field">
+    <label class="q" for="4b728746-d0b1">LinkedIn Profile</label>
+    <input type="text" id="4b728746-d0b1" name="4b728746-d0b1">
+  </div>
+
+  <div class="field">
+    <div class="q">Do you require visa sponsorship?</div>
+    <span style="display:none"><input type="checkbox" id="6cff3ad4-d55b" name="6cff3ad4-d55b"></span>
+    <div class="yesno" data-for="6cff3ad4-d55b">
+      <button type="button" onclick="pick(this,'6cff3ad4-d55b',true)">Yes</button>
+      <button type="button" onclick="pick(this,'6cff3ad4-d55b',false)">No</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="q">Gender</div>
+    <label><input type="radio" name="ef84__systemfield_eeoc_gender" id="ef84__systemfield_eeoc_gender-labeled-radio-0"> Male</label>
+    <label><input type="radio" name="ef84__systemfield_eeoc_gender" id="ef84__systemfield_eeoc_gender-labeled-radio-1"> Female</label>
+    <label><input type="radio" name="ef84__systemfield_eeoc_gender" id="ef84__systemfield_eeoc_gender-labeled-radio-2"> Decline to self-identify</label>
+  </div>
+
+  <p><button type="submit" onclick="send()">Submit Application</button></p>
+</form>
+<div id="confirmation" class="hidden"><h2>Thank you for applying</h2></div>
+
+<script>
+function pick(btn, id, val) {
+  document.getElementById(id).checked = val;
+  [...btn.parentElement.querySelectorAll("button")]
+    .forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+}
+function send() {
+  const f = document.getElementById("application");
+  if (!f.reportValidity()) return;
+  f.classList.add("hidden");
+  document.getElementById("confirmation").classList.remove("hidden");
+}
+</script>
+</body>
+</html>

@@ -207,6 +207,65 @@ def main():
                 result.get("sent") is False and result.get("reason") == "incomplete",
                 result)
 
+    # ---- the Ashby driver, against Ashby's own shapes
+    ashby_url = fixture_url(os.path.join(HERE, "fixtures", "ashby-form.html"))
+    afields, _ = submit.read_form(ashby_url, "ashby")
+    aby = {f["id"]: f for f in afields}
+    ok &= check("ashby: the whole-name field is read",
+                "_systemfield_name" in aby, sorted(aby))
+    ok &= check("ashby: the autofill file input is not a field",
+                len([f for f in afields if f["kind"] == submit.FILE]) == 1,
+                [f["id"] for f in afields if f["kind"] == submit.FILE])
+    yn = aby.get("6cff3ad4-d55b") or {}
+    ok &= check("ashby: a yes/no question reads as a dropdown, not a tick-box",
+                yn.get("kind") == submit.SELECT and yn.get("options") == ["Yes", "No"], yn)
+    ok &= check("ashby: the yes/no question's own text is found",
+                "sponsorship" in (yn.get("label") or "").lower(), yn.get("label"))
+    eeoc = aby.get("ef84__systemfield_eeoc_gender") or {}
+    ok &= check("ashby: an EEOC radio group collapses into one field",
+                eeoc.get("kind") == submit.SELECT
+                and "Decline to self-identify" in (eeoc.get("options") or []), eeoc)
+    ok &= check("ashby: that field is recognised as demographic",
+                submit.is_demographic(eeoc.get("label") or ""), eeoc.get("label"))
+
+    aident = dict(IDENT, full_name="Tom Norton")
+    aplan, _ = plan_against(ashby_url, tmp, answers=None) if False else (None, None)
+    known, _notes = submit.plan_known(afields, aident, dict(JOB, market="IE-Dublin"),
+                                     {"resume": a_cv(tmp)})
+    ok &= check("ashby: the whole name goes in one field",
+                known.get("_systemfield_name", {}).get("value") == "Tom Norton",
+                known.get("_systemfield_name"))
+    ok &= check("ashby: the gender question is left alone",
+                "ef84__systemfield_eeoc_gender" not in known, known.keys())
+    ok &= check("ashby: sponsorship is answered from nationality and market",
+                known.get("6cff3ad4-d55b", {}).get("value") == "Yes",
+                known.get("6cff3ad4-d55b"))
+
+    aplan = submit.build_plan(ashby_url, "ashby", afields, known, {"resume": a_cv(tmp)})
+    with submit.Session() as s:
+        driver = submit.driver_for("ashby")
+        driver.open(s.page, ashby_url)
+        failed = submit.fill_form(s.page, aplan, driver, tmp)
+        ok &= check("ashby: every planned field took its value", not failed, failed)
+        vals = s.page.evaluate(
+            "() => ({name: document.getElementById('_systemfield_name').value,"
+            " spons: document.getElementById('6cff3ad4-d55b').checked,"
+            " gender: [...document.querySelectorAll('[name=ef84__systemfield_eeoc_gender]')]"
+            "          .some(r => r.checked),"
+            " resume: document.getElementById('_systemfield_resume').files.length,"
+            " autofill: document.querySelectorAll('input[type=file]')[0].files.length})")
+        ok &= check("ashby: the name landed", vals["name"] == "Tom Norton", vals)
+        ok &= check("ashby: pressing Yes ticked the hidden checkbox behind it",
+                    vals["spons"] is True, vals)
+        ok &= check("ashby: no gender radio was selected", vals["gender"] is False, vals)
+        ok &= check("ashby: the CV went to the resume field", vals["resume"] == 1, vals)
+        ok &= check("ashby: the autofill input was never touched",
+                    vals["autofill"] == 0, vals)
+
+    result = submit.submit_form(aplan, os.path.join(OUT, "ashby-sent.pdf"), tmp)
+    ok &= check("ashby: it submits and the page confirms it",
+                result.get("sent") is True, result.get("reason"))
+
     print("\nall passed" if ok else "\nFAILURES above")
     return 0 if ok else 1
 

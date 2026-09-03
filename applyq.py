@@ -981,14 +981,43 @@ def split_reply(api_key, qs, reply):
     schema = {"type": "object",
               "properties": {"answers": {"type": "array", "items": {"type": "string"}}},
               "required": ["answers"], "additionalProperties": False}
+    # NO `effort` here. Haiku 4.5 rejects output_config.effort outright -- it is an Opus
+    # 4.5+ / 4.6-family parameter -- so every one of these calls was returning
+    #     400 Client Error: Bad Request for url: https://api.anthropic.com/v1/messages
+    # and falling into the exception handler below, which used to put the whole reply
+    # against question one and leave the rest blank. Tom answered two questions in one
+    # message and the second one silently vanished; the only trace was a print in the
+    # Actions log. Splitting is a mechanical job anyway and the schema already constrains
+    # it, so there is nothing for an effort level to buy.
     text = scan._claude_call(
         api_key, SPLIT_MODEL, SPLIT_SYSTEM,
         f"QUESTIONS:\n{numbered}\n\nTOM'S REPLY:\n{reply}", SPLIT_MAX_TOKENS,
-        extra={"output_config": {"effort": "low",
-                                 "format": {"type": "json_schema", "schema": schema}}})
+        extra={"output_config": {"format": {"type": "json_schema", "schema": schema}}})
     out = (scan._extract_json(text).get("answers") or [])
     out = [str(a or "").strip() for a in out][:len(qs)]
     return out + [""] * (len(qs) - len(out))
+
+
+def split_numbered(reply, qs):
+    """A reply that numbers its own answers, split in code. None when it does not number
+    them and a model has to read it.
+
+    This is the format that actually gets typed, because it is the format the question
+    message uses: "1. I did one peer interview at LexisNexis... 2. A". Splitting that with
+    a model was always a waste, and when the model call started failing it was the
+    difference between two answers recorded and one. Arithmetic does not 400.
+
+    The numbering grammar lives in submit.parse_numbered() and is shared with the
+    application form's own numbered questions -- one grammar, so a reply that works for one
+    works for the other."""
+    found = submit.parse_numbered(reply, len(qs))
+    if not found:
+        return None
+    out = [""] * len(qs)
+    for n, text in found.items():
+        if 1 <= n <= len(qs):
+            out[n - 1] = text
+    return out if any(out) else None
 
 
 def split_is_sane(answers, reply, qs=None):
@@ -3430,22 +3459,40 @@ def advance(state, job, bank, tg, api_key, answers_text):
             reply = (answers_text or "").strip()
             if not reply:
                 return False
-            # A reply that is only letters is resolved here, exactly, for nothing. The
-            # model is for prose.
+            # Two code paths before the model, because both are exact and free: a reply
+            # that is only option letters ("1a 2b 3c"), and a reply that numbers its own
+            # answers ("1. ... 2. A"). The model is for prose that does neither.
             split = parse_answer_key(reply, qs)
             if split is not None:
                 print(f"  reply read as an answer key: {reply!r}")
+            elif split_numbered(reply, qs) is not None:
+                split = split_numbered(reply, qs)
+                print(f"  reply read as numbered answers ({sum(1 for a in split if a)} of "
+                      f"{len(qs)})")
             else:
                 before = usage_snapshot()
                 try:
                     split = split_is_sane(split_reply(api_key, qs, reply), reply, qs)
                 except Exception as e:
-                    # One question is the common case, and a single reply to a single
-                    # question needs no splitting at all. Falling back keeps a splitter
-                    # outage from blocking the role.
+                    # A splitter outage must not put words in his mouth. It used to fall
+                    # back to [reply] + blanks, which credits the whole reply to question
+                    # one -- fine when there is only one question, an invented answer when
+                    # there is more than one. So: one question takes the reply, several ask
+                    # him to number them, and nothing is recorded either way.
                     print(f"  split failed ({e}); falling back")
-                    split = [reply] + [""] * (len(qs) - 1)
-                record_usage(cur, "split", before)
+                    record_usage(cur, "split", before)
+                    if len(qs) == 1:
+                        split = [reply]
+                    else:
+                        tg.send("\n".join(
+                            ["Couldn't read that reply against the questions, and I'd "
+                             "rather ask than guess which answer went where.", "",
+                             "<i>Send it again with a number on each one:</i>", "",
+                             "<code>1 did the peer interview, weighed in on the call</code>",
+                             "<code>2 a</code>"]))
+                        return False
+                else:
+                    record_usage(cur, "split", before)
 
             answers, unanswered = [], []
             for q, a in zip(qs, split):

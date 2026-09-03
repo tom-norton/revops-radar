@@ -98,7 +98,7 @@
     <h2 id="apply-h">Apply — 6.0 and up</h2>
     <label class="fillfilter">
       <input type="checkbox" id="fillableOnly">
-      Auto-fillable only <span class="tag fillable" style="margin-left:4px">&check; Greenhouse</span>
+      Auto-fillable only <span class="tag fillable" style="margin-left:4px">&check;</span>
     </label>
     <div id="apply"></div>
   </div>
@@ -113,6 +113,18 @@
 // Defaults only. scan.py writes the real values into status.json so the bands live in one
 // place; if status.json is older than this page these are what you get.
 let GATE = 6.0, FLOOR = 5.0;
+// How far back the dashboard shows. The data keeps 45 days (scan.py's KEEP_DAYS) because
+// the scan dedupes each run against everything already on the dashboard -- drop a row from
+// jobs.json and the same role comes back tomorrow looking new -- so this is a view filter
+// and nothing else. A role older than this is one that has been sat on for a week; the
+// count of what's hidden is still shown, so nothing vanishes silently.
+const MAX_AGE_DAYS = 7;
+function ageDays(iso){
+  if(!iso) return 0;                      // no date: treat as current, never hide blindly
+  const d = (Date.now() - new Date(iso)) / 86400000;
+  return isNaN(d) ? 0 : d;
+}
+function isRecent(iso){ return ageDays(iso) <= MAX_AGE_DAYS; }
 const DIMS = [["experience","Exp"],["skills","Skills"],["seniority","Sen"],
               ["domain","Domain"],["location_visa","Loc/Visa"],["trajectory","Traj"]];
 
@@ -300,7 +312,7 @@ function renderExcluded(lowScored){
   const wrap = document.getElementById("excluded-wrap");
   const wasOpen = wrap.querySelector("details")?.open ?? false;
   wrap.innerHTML = "";
-  const rows = allExcluded.rows || [];
+  const rows = (allExcluded.rows || []).filter(r=>isRecent(r.dropped_at));
   const counts = allExcluded.counts || {};
   const totalDropped = Object.values(counts).reduce((a,b)=>a+b, 0);
   if(!lowScored.length && !rows.length) return;
@@ -309,6 +321,7 @@ function renderExcluded(lowScored){
   const bits = [];
   if(lowScored.length) bits.push(`${lowScored.length} scored under ${FLOOR.toFixed(1)}`);
   if(totalDropped) bits.push(`${totalDropped} dropped in the latest run`);
+  bits.push(`last ${MAX_AGE_DAYS} days`);
   d.innerHTML = `<summary>Excluded — ${bits.join(", ")} · check these if the good ones look thin</summary>`;
   const box = document.createElement("div"); box.style.marginTop = "10px";
 
@@ -342,6 +355,8 @@ function renderExcluded(lowScored){
 function renderAll(){
   let jobs = allJobs.filter(j=>!marked(hiddenIds, j) && !marked(appliedIds, j));
   const reviewed = allJobs.filter(j=>marked(hiddenIds, j) || marked(appliedIds, j));
+  const staleCount = jobs.filter(j=>!isRecent(j.found_at)).length;
+  jobs = jobs.filter(j=>isRecent(j.found_at));
   if(fillableOnly) jobs = jobs.filter(j=>j.ats_fillable);
 
   // Auto-fillable roles first within a section, score still decides order inside that --
@@ -357,7 +372,9 @@ function renderAll(){
   const lr = allStatus.last_run ? new Date(allStatus.last_run).toLocaleString("en-GB",
       {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
   document.getElementById("meta").textContent =
-      `Netherlands · Belgium · London · Dublin  ·  ${apply.length} to apply, ${border.length} borderline  ·  last run ${lr}`;
+      `Netherlands · Belgium · London · Dublin  ·  ${apply.length} to apply, ${border.length} borderline`
+      + (staleCount ? `  ·  ${staleCount} older than ${MAX_AGE_DAYS}d hidden` : "")
+      + `  ·  last run ${lr}`;
 
   const a = document.getElementById("apply"); a.innerHTML = "";
   if(apply.length) apply.forEach(j=>a.appendChild(card(j, false)));

@@ -96,9 +96,10 @@ GH_JOB = dict(JOB, url="https://job-boards.greenhouse.io/acme/jobs/1", market="I
 def test_only_boards_with_a_driver_are_claimed():
     assert submit.detect_ats("https://job-boards.greenhouse.io/acme/jobs/1") == "greenhouse"
     assert submit.detect_ats("https://boards.greenhouse.io/acme/jobs/1") == "greenhouse"
-    for other in ("https://jobs.ashbyhq.com/vanta/abc",
-                  "https://acme.wd1.myworkdayjobs.com/x/job/y",
+    assert submit.detect_ats("https://jobs.ashbyhq.com/vanta/abc") == "ashby"
+    for other in ("https://acme.wd1.myworkdayjobs.com/x/job/y",
                   "https://www.linkedin.com/jobs/view/123",
+                  "https://jobs.smartrecruiters.com/acme/1",
                   "https://jobs.lever.co/acme/abc", ""):
         assert submit.detect_ats(other) == "", other
 
@@ -111,6 +112,74 @@ def test_greenhouses_regional_boards_are_the_same_form():
         "https://job-boards.eu.greenhouse.io/convera/jobs/1") == "greenhouse"
     assert submit.detect_ats(
         "https://boards.eu.greenhouse.io/convera/jobs/1") == "greenhouse"
+
+
+def test_an_ashby_posting_resolves_to_its_application_page():
+    """findform hands back the posting; the form is a page further on. Idempotent, so a
+    URL that already points at the form is left alone."""
+    assert submit.Ashby.application_url("https://jobs.ashbyhq.com/vanta/abc") == \
+        "https://jobs.ashbyhq.com/vanta/abc/application"
+    assert submit.Ashby.application_url("https://jobs.ashbyhq.com/vanta/abc/application") == \
+        "https://jobs.ashbyhq.com/vanta/abc/application"
+    assert submit.Ashby.application_url("https://jobs.ashbyhq.com/vanta/abc/") == \
+        "https://jobs.ashbyhq.com/vanta/abc/application"
+
+
+def test_ashby_reshapes_its_controls_into_answerable_fields():
+    """The real Vanta shapes, from tools/probe_form.py: a hidden checkbox behind two Yes/No
+    buttons, and an EEOC radio group the generic reader sees as one field per radio."""
+    raw = [
+        {"id": "_systemfield_name", "kind": submit.TEXT, "name": "_systemfield_name",
+         "type": "text", "hidden": False, "label": "Full Name", "required": True,
+         "options": [], "context": "Full Name"},
+        {"id": "q1", "kind": submit.CHECKBOX, "name": "q1", "type": "checkbox",
+         "hidden": True, "label": "", "required": True, "options": [],
+         "context": "Do you require visa sponsorship?"},
+        {"id": "e-0", "kind": submit.CHECKBOX, "name": "abc__systemfield_eeoc_gender",
+         "type": "radio", "hidden": False, "label": "Male", "required": False,
+         "options": [], "context": "Male"},
+        {"id": "e-1", "kind": submit.CHECKBOX, "name": "abc__systemfield_eeoc_gender",
+         "type": "radio", "hidden": False, "label": "Decline to self-identify",
+         "required": False, "options": [], "context": "Decline"},
+    ]
+    out = submit.Ashby().reshape(raw)
+    by_id = {f["id"]: f for f in out}
+    # The hidden checkbox is a question, not a consent box -- ticking it would answer it.
+    yn = by_id["q1"]
+    assert yn["kind"] == submit.SELECT and yn["options"] == ["Yes", "No"]
+    assert yn["label"] == "Do you require visa sponsorship?"
+    # The radios collapse into one field the demographic rule can recognise.
+    eeoc = by_id["abc__systemfield_eeoc_gender"]
+    assert eeoc["kind"] == submit.SELECT and eeoc["label"] == "Gender"
+    assert submit.is_demographic(eeoc["label"])
+    assert submit.decline_option(eeoc["options"]) == "Decline to self-identify"
+
+
+def test_a_hidden_yes_no_is_never_ticked_as_a_consent_box():
+    """Before reshaping it is a required checkbox, and consent_fields() ticks those. A
+    ticked box here is an answered question, and not one anybody chose."""
+    raw = [{"id": "q1", "kind": submit.CHECKBOX, "name": "q1", "type": "checkbox",
+            "hidden": True, "label": "", "required": True, "options": [],
+            "context": "Yes / No"}]
+    out = submit.Ashby().reshape(raw)
+    fields = [submit.field(f["id"], f["kind"], f["label"], f["required"], f["options"])
+              for f in out]
+    assert submit.consent_fields(fields) == []
+
+
+def test_a_question_that_cannot_be_read_is_never_given_to_a_model():
+    """Ashby puts some questions in text above the control. Where that text cannot be
+    found, nobody here knows what is being asked -- so it goes to Tom as a blank on the
+    printed form, not to a model that would answer it off the option list alone."""
+    unreadable = submit.field("q1", submit.SELECT, "", True, ["Yes", "No"])
+    idlike = submit.field("q2", submit.SELECT, "0e82974a-0023-49a2", True, ["Yes", "No"])
+    good = submit.field("q3", submit.SELECT, "Are you willing to relocate?", True,
+                        ["Yes", "No"])
+    asked = {f["id"] for f in submit.open_questions([unreadable, idlike, good], {})}
+    assert asked == {"q3"}, asked
+    # It is still listed for him, because a required blank stops the send either way.
+    assert {b["id"] for b in submit.blanks([unreadable, idlike, good], {})} == \
+        {"q1", "q2", "q3"}
 
 
 # ---------------------------------------------------------------- which board a role is on
@@ -134,8 +203,8 @@ def test_application_status_on_a_directly_fillable_role():
 
 
 def test_application_status_on_a_known_but_undriven_board():
-    job = {"url": "https://jobs.ashbyhq.com/acme/1"}
-    assert submit.application_status(job) == ("ashby", False)
+    job = {"url": "https://jobs.smartrecruiters.com/acme/1"}
+    assert submit.application_status(job) == ("smartrecruiters", False)
 
 
 def test_application_status_finds_the_real_link_under_also_seen():
@@ -156,7 +225,8 @@ def test_application_status_on_a_pure_aggregator_row_is_blank_not_guessed():
 
 def test_application_status_prefers_a_fillable_link_over_a_merely_known_one():
     job = {"url": "https://www.linkedin.com/jobs/view/1",
-           "also_seen": [{"source": "hiring.cafe", "url": "https://jobs.ashbyhq.com/acme/1"},
+           "also_seen": [{"source": "hiring.cafe",
+                          "url": "https://jobs.smartrecruiters.com/acme/1"},
                          {"source": "greenhouse",
                           "url": "https://job-boards.greenhouse.io/acme/jobs/1"}]}
     assert submit.application_status(job) == ("greenhouse", True)
@@ -824,13 +894,13 @@ def test_a_role_on_a_board_with_no_driver_is_handed_over_as_a_direct_link():
     to search from."""
     step, state, tg, _b, calls = machine(
         job=dict(GH_JOB, url="https://www.linkedin.com/jobs/view/1"),
-        found={"outcome": "found", "url": "https://jobs.ashbyhq.com/acme/abc",
-               "ats": "ashby", "title": "Revenue Operations Manager",
+        found={"outcome": "found", "url": "https://jobs.smartrecruiters.com/acme/abc",
+               "ats": "smartrecruiters", "title": "Revenue Operations Manager",
                "location": "Dublin, Ireland", "candidates": []})
     assert step("/submit") is True
     assert calls["preview"] == 0
     assert state["history"][-1]["outcome"] == "submit-unsupported"
-    assert any("jobs.ashbyhq.com/acme/abc" in m for m in tg.sent), tg.sent
+    assert any("jobs.smartrecruiters.com/acme/abc" in m for m in tg.sent), tg.sent
 
 
 def test_four_cities_sharing_one_title_are_never_guessed_between():
