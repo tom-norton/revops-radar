@@ -34,6 +34,7 @@ import os
 import re
 
 import scan
+import submit
 
 # How close a board title has to be to the posting's title. Word overlap, so 1.0 is the
 # same words in any order.
@@ -51,45 +52,22 @@ SUFFIX_RE = re.compile(r"\b(inc|llc|ltd|limited|gmbh|bv|nv|sa|ag|plc|corp|corpor
                        r"technologies|technology|software|labs|group|holdings|company|"
                        r"the)\b", re.I)
 
-# Where an application actually lives, as opposed to where a job was advertised.
+# Where an application actually lives, as opposed to where a job was advertised, and how
+# far that can be known WITHOUT a network call -- is_apply_host(), known_links() and
+# application_status() all live in submit.py now, because scan.py needs them too (to show
+# which board a role is on, before /submit has ever run) and scan.py cannot import this
+# file: this file already imports scan. submit.py imports neither, so it is the one place
+# both scan.py and findform.py can reach.
 #
-# The distinction is the whole problem. Half the radar's rows are aggregator links --
-# LinkedIn, Adzuna, revopsroles, hiring.cafe -- and none of those is a form. Worse, the
-# dedupe step picks ONE url per role by source rank, so a role seen on both revopsroles and
-# hiring.cafe keeps the revopsroles link and files the real one under `also_seen`, where
-# nothing was looking. Triptease's Revenue Operations Manager was exactly that: the
-# workable.com application was already in the record, one field away, while /submit was
-# reporting there was no form to fill.
-APPLY_HOSTS = re.compile(
-    r"(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|"
-    r"recruitee\.com|teamtailor\.com|personio\.|bamboohr\.|jobvite\.|icims\.com|"
-    r"myworkdayjobs\.com|myworkdaysite\.com|breezy\.hr|join\.com|careerpuck\.com|"
-    r"pinpointhq\.com|rippling\.com|paylocity\.com|eightfold\.ai)", re.I)
-AGGREGATOR_HOSTS = re.compile(
-    r"(linkedin\.com|adzuna\.|indeed\.|revopsroles\.com|hiring\.cafe|reed\.co\.uk|"
-    r"glassdoor\.|ziprecruiter\.|talent\.com|jooble\.|otta\.com|welcometothejungle\.)",
-    re.I)
-
-
-def is_apply_host(url):
-    """True for a URL on a system that actually takes applications."""
-    return bool(APPLY_HOSTS.search(url or "")) and not AGGREGATOR_HOSTS.search(url or "")
-
-
-def known_links(job, fillable=None):
-    """Every URL this job record already carries, most useful first.
-
-    Costs nothing: it is reading the row, not the internet. The order is what matters --
-    a link a driver can fill outranks a link to a real application system, which outranks
-    the aggregator page the role happened to be advertised on."""
-    seen, urls = set(), []
-    for u in [job.get("url")] + [a.get("url") for a in (job.get("also_seen") or [])]:
-        u = (u or "").strip()
-        if u and u not in seen:
-            seen.add(u)
-            urls.append(u)
-    can_fill = fillable or (lambda _u: False)
-    return sorted(urls, key=lambda u: (not can_fill(u), not is_apply_host(u)))
+# The distinction is the whole problem findform.py exists to solve. Half the radar's rows
+# are aggregator links -- LinkedIn, Adzuna, revopsroles, hiring.cafe -- and none of those is
+# a form. Worse, the dedupe step picks ONE url per role by source rank, so a role seen on
+# both revopsroles and hiring.cafe keeps the revopsroles link and files the real one under
+# `also_seen`, where nothing was looking. Triptease's Revenue Operations Manager was
+# exactly that: the workable.com application was already in the record, one field away,
+# while /submit was reporting there was no form to fill.
+is_apply_host = submit.is_apply_host
+known_links = submit.known_links
 
 
 BOARDS = {

@@ -68,6 +68,7 @@ import email, html, imaplib, json, os, re, subprocess, sys, time
 from datetime import datetime, timezone, timedelta
 import requests
 import sponsors as spon
+import submit
 
 # ---------------------------------------------------------------- config
 
@@ -2367,6 +2368,19 @@ def main():
     cutoff = (datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)).isoformat()
     merged = scored + [j for j in existing if j.get("found_at", "") >= cutoff]
     merged.sort(key=lambda j: (j.get("score", 0), j.get("found_at", "")), reverse=True)
+
+    # Which board a role's application actually lives on, and whether /submit can fill it
+    # without being asked -- read off the url and also_seen this run's dedupe already
+    # assembled, never a network call. This is the free half of what findform.find_form()
+    # does: it never guesses a company's board slug, so it costs nothing to compute for
+    # every row on every scan, and it is exactly what the dashboard's checkmark can
+    # promise without ever opening a browser. Applied to the whole merged list, not just
+    # this run's new rows, so a row that has carried an also_seen link since before this
+    # existed gets it filled in on the very next scan rather than staying blank forever.
+    for j in merged:
+        ats, fillable = submit.application_status(j)
+        j["ats"] = ats
+        j["ats_fillable"] = fillable
 
     src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
     if USAGE["in"] or USAGE["cache_read"]:

@@ -329,6 +329,27 @@ remaining 14 are companies running their own careers stack (Google, Salesforce, 
 Deel) where there is nothing public to find. So roughly a quarter of LinkedIn roles become
 one-tap, and another eighth become a direct link instead of a LinkedIn page.
 
+**The record itself is checked before any of that, and it's free.** Dedupe keeps one URL
+per role by source rank and files the rest under `also_seen` — so a role seen on both
+revopsroles and hiring.cafe keeps the revopsroles advert as its `url` and puts the real
+`workable.com` application in a field nothing was reading. `/submit` reads every URL a row
+carries before it looks anything up: a link a driver can fill wins, then a link to a real
+application system (even one without a driver — still worth handing you), then the advert
+it was found on. No network call, and it alone resolves 84 of the 433 rows in the current
+scan whose own link isn't a form. And when none of that lands: **`/submit <link>`** points
+it straight at whatever form you found by hand — a link you paste beats anything a lookup
+can infer, so it's used outright and nothing is searched for.
+
+**The dashboard shows this before you ever tap Apply.** Every card carries a tag naming
+the board the application is actually on — a plain grey tag when it's a real system with
+no driver yet (Ashby, Workday, SmartRecruiters…), a green **✓ Greenhouse** when `/submit`
+can fill it without being asked. Auto-fillable rows sort to the top of each section, and
+"Auto-fillable only" filters down to just those. This is the same free, no-network
+classification `/submit` itself starts from (`submit.application_status()`), computed
+once per row at scan time — so a blank tag means "not known to be fillable from the
+record," never "definitely not." A 9.0 with no checkmark is still worth applying to, by
+hand or with `/submit <link>`.
+
 **Both boards run an invisible reCAPTCHA on submission, and nothing here tries to get past
 it.** Greenhouse loads reCAPTCHA Enterprise into every application page; Ashby loads an
 invisible reCAPTCHA v2 with a hidden response field on the form. That check exists to put a
@@ -344,7 +365,7 @@ Boards it can fill: **Greenhouse**, including the employers whose board URL redi
 their own careers site with the form embedded in it. Ashby and Lever are found and handed
 to you as a direct link, which still beats a LinkedIn page you have to search from. There
 is no Ashby driver, and the reason is not that its form is hard: it was probed and mapped
-(`tools/notes/ashby-form.md`) and it is more tractable than Greenhouse's. It is that a
+(`tools/notes/boards.md`) and it is more tractable than Greenhouse's. It is that a
 driver whose submissions the reCAPTCHA refuses would produce a filled form nobody can send,
 so it waits on the answer above.
 Workday and LinkedIn Easy Apply are left alone entirely: both want an account and a
