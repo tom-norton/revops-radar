@@ -103,6 +103,65 @@ def test_only_boards_with_a_driver_are_claimed():
         assert submit.detect_ats(other) == "", other
 
 
+def test_greenhouses_regional_boards_are_the_same_form():
+    """job-boards.eu.greenhouse.io is a data-residency subdomain, byte-for-byte the same
+    application as the default one. Missed until a real EU-hosted row (Convera) turned up
+    classified "greenhouse" by application_status() but unfillable by detect_ats()."""
+    assert submit.detect_ats(
+        "https://job-boards.eu.greenhouse.io/convera/jobs/1") == "greenhouse"
+    assert submit.detect_ats(
+        "https://boards.eu.greenhouse.io/convera/jobs/1") == "greenhouse"
+
+
+# ---------------------------------------------------------------- which board a role is on
+#
+# What the dashboard's checkmark promises: read off the row scan.py already assembled, no
+# network call, ever. This is the free half of findform.find_form() -- it never guesses a
+# company's board slug -- so it is honest to compute for every row on every scan.
+
+def test_a_fillable_boards_own_name_is_normalised():
+    assert submit.apply_host_name("https://jobs.ashbyhq.com/acme/1") == "ashby"
+    assert submit.apply_host_name("https://acme.wd1.myworkdayjobs.com/x/job/y") == "workday"
+    assert submit.apply_host_name(
+        "https://acme.wd3.myworkdaysite.com/recruiting/x/y/job/z") == "workday"
+    assert submit.apply_host_name("https://job-boards.greenhouse.io/acme/1") == "greenhouse"
+    assert submit.apply_host_name("https://www.linkedin.com/jobs/view/1") == ""
+
+
+def test_application_status_on_a_directly_fillable_role():
+    job = {"url": "https://job-boards.greenhouse.io/acme/jobs/1"}
+    assert submit.application_status(job) == ("greenhouse", True)
+
+
+def test_application_status_on_a_known_but_undriven_board():
+    job = {"url": "https://jobs.ashbyhq.com/acme/1"}
+    assert submit.application_status(job) == ("ashby", False)
+
+
+def test_application_status_finds_the_real_link_under_also_seen():
+    """Triptease's shape: the dashboard link is an advert, and the fillable board is one
+    field away."""
+    job = dict(TRIPTEASE)
+    assert submit.application_status(job) == ("workable", False)
+
+
+def test_application_status_on_a_pure_aggregator_row_is_blank_not_guessed():
+    """No board anywhere in the row. Blank here means "not known without asking", not
+    "definitely not" -- it is the free subset of what findform.find_form() could resolve
+    with a network call, never a claim that no board exists."""
+    job = {"url": "https://www.linkedin.com/jobs/view/1",
+           "also_seen": [{"source": "adzuna", "url": "https://www.adzuna.nl/details/2"}]}
+    assert submit.application_status(job) == ("", False)
+
+
+def test_application_status_prefers_a_fillable_link_over_a_merely_known_one():
+    job = {"url": "https://www.linkedin.com/jobs/view/1",
+           "also_seen": [{"source": "hiring.cafe", "url": "https://jobs.ashbyhq.com/acme/1"},
+                         {"source": "greenhouse",
+                          "url": "https://job-boards.greenhouse.io/acme/jobs/1"}]}
+    assert submit.application_status(job) == ("greenhouse", True)
+
+
 # ---------------------------------------------------------------- who he is
 
 def test_identity_comes_off_the_cv_skeleton():

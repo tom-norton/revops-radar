@@ -57,6 +57,8 @@
   .actions button[data-act="queue"]{border-color:var(--teal); color:var(--teal)}
   .actions button[data-act="queue"]:hover{background:var(--teal); color:#fff}
   .tag.queued{border-color:var(--teal); color:var(--teal)}
+  .tag.fillable{border-color:var(--good); color:var(--good); font-weight:650}
+  .tag.board{color:var(--mut)}
   .actions .status{font-size:11px; padding:3px 8px; border-radius:20px; color:var(--sub)}
   .job.reviewed{opacity:.6}
   details.borderline>summary,details.reviewed>summary,details.excluded>summary{
@@ -78,6 +80,9 @@
   .drop .dr{color:var(--sub); font-size:11.5px; margin-top:2px}
   .empty{color:var(--sub); font-size:14px; padding:14px 0}
   .note{color:var(--mut); font-size:11.5px; margin:-14px 0 20px}
+  .fillfilter{display:flex; align-items:center; gap:6px; font-size:12.5px;
+      color:var(--sub); margin:-2px 0 10px; cursor:pointer; user-select:none}
+  .fillfilter input{accent-color:var(--good); cursor:pointer}
   .sources{margin-top:34px; border-top:1px solid var(--line); padding-top:14px;
         font-size:11.5px; color:var(--mut)}
   .sources div{margin:3px 0}
@@ -91,6 +96,10 @@
 
   <div id="apply-wrap">
     <h2 id="apply-h">Apply — 6.0 and up</h2>
+    <label class="fillfilter">
+      <input type="checkbox" id="fillableOnly">
+      Auto-fillable only <span class="tag fillable" style="margin-left:4px">&check; Greenhouse</span>
+    </label>
     <div id="apply"></div>
   </div>
 
@@ -119,6 +128,9 @@ let appliedIds = loadSet("rr_applied");
 // Queued is not the same as applied: the role stays in its section, tagged, until the
 // application actually goes out.
 let queuedIds = loadSet("rr_queued");
+// Persisted like the others, but local-only on purpose: it changes what's on screen, not
+// what happened to a role, so it never needs to follow you to another device.
+let fillableOnly = localStorage.getItem("rr_fillableOnly") === "1";
 
 // A row that absorbed duplicates carries their ids in dupe_ids. Hide / Mark applied are
 // recorded against whichever id was on screen at the time, so state has to be looked up
@@ -204,6 +216,18 @@ function card(j, reviewed){
   const flags = (j.flags||[]).map(f=>`<span class="tag flag">${esc(f)}</span>`).join("");
   const queued = marked(queuedIds, j);
   const queuedTag = queued ? `<span class="tag queued">in the apply queue</span>` : "";
+  // Which board the application actually lives on, and whether /submit can fill it
+  // without being asked. Read off scan.py's own classification (submit.application_status,
+  // written into ats/ats_fillable at scan time) rather than guessed here: it is the same
+  // read-the-row-first pass /submit itself makes, minus the company-board lookup that
+  // costs a network round trip and only runs when a role is actually queued. So "no badge"
+  // means "not known to be fillable without asking", not "definitely not" -- a 9.0 with no
+  // badge is still worth /submit, and worth applying to by hand either way.
+  const atsTag = j.ats_fillable
+    ? `<span class="tag fillable" title="/submit can fill this one on its own">&check; ${esc(j.ats)}</span>`
+    : j.ats
+      ? `<span class="tag board" title="Real application found, no auto-fill driver yet">${esc(j.ats)}</span>`
+      : "";
   // Score caps were retired: the score is now the weighted rubric total and nothing clamps
   // it. Rows scored before that still carry caps_applied, so they keep rendering here,
   // labelled so it's clear the ceiling no longer applies to anything new. New rows have an
@@ -238,7 +262,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${j.tier?`<span class="tag">${esc(j.tier)}</span>`:""}${queuedTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${j.tier?`<span class="tag">${esc(j.tier)}</span>`:""}${queuedTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
@@ -316,8 +340,15 @@ function renderExcluded(lowScored){
 }
 
 function renderAll(){
-  const jobs = allJobs.filter(j=>!marked(hiddenIds, j) && !marked(appliedIds, j));
+  let jobs = allJobs.filter(j=>!marked(hiddenIds, j) && !marked(appliedIds, j));
   const reviewed = allJobs.filter(j=>marked(hiddenIds, j) || marked(appliedIds, j));
+  if(fillableOnly) jobs = jobs.filter(j=>j.ats_fillable);
+
+  // Auto-fillable roles first within a section, score still decides order inside that --
+  // sort is stable, so this only ever reorders across the fillable/not split, never within
+  // it. The toggle above hides the rest entirely when that's what's wanted; this is the
+  // quieter version for browsing everything with the easy ones surfaced.
+  jobs = [...jobs].sort((a,b)=>(b.ats_fillable?1:0) - (a.ats_fillable?1:0));
 
   const apply = jobs.filter(j=>(j.score??0) >= GATE);
   const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);
@@ -356,6 +387,13 @@ function renderAll(){
     d.appendChild(box); revWrap.appendChild(d);
   }
 }
+
+document.getElementById("fillableOnly").checked = fillableOnly;
+document.getElementById("fillableOnly").addEventListener("change", (e)=>{
+  fillableOnly = e.target.checked;
+  localStorage.setItem("rr_fillableOnly", fillableOnly ? "1" : "0");
+  renderAll();
+});
 
 document.body.addEventListener("click", (e)=>{
   const btn = e.target.closest("button[data-act]");

@@ -56,7 +56,14 @@ PDF_FORMAT = "A4"
 # session, and an automated login is a credential in a runner and a different risk
 # conversation than this one.
 ATS_PATTERNS = (
-    ("greenhouse", re.compile(r"^https?://(?:job-)?boards\.greenhouse\.io/", re.I)),
+    # Greenhouse hosts a regional board for data-residency customers --
+    # job-boards.eu.greenhouse.io -- which is byte-for-byte the same application, react-
+    # select and all, just on a different subdomain. Missed here until a real EU-hosted
+    # row (Convera) turned up scored "greenhouse" by application_status() below but
+    # unfillable, because this pattern required the host to be exactly boards.greenhouse.io
+    # or job-boards.greenhouse.io.
+    ("greenhouse", re.compile(r"^https?://(?:job-)?boards\.(?:[\w-]+\.)?greenhouse\.io/",
+                              re.I)),
 )
 
 
@@ -73,6 +80,86 @@ def detect_ats(url):
 
 def supported_boards():
     return [name for name, _ in ATS_PATTERNS]
+
+
+# Every system out there that actually takes an application, whether or not this file can
+# drive it yet -- ashby, workable and the rest are real applications this cannot fill, and
+# the distinction from ATS_PATTERNS above matters in two places: findform.py ranks a link
+# on one of these over the aggregator it was advertised on even when no driver exists, and
+# the dashboard shows which board a role is on before anyone has run /submit.
+APPLY_HOSTS = re.compile(
+    r"(greenhouse\.io|lever\.co|ashbyhq\.com|workable\.com|smartrecruiters\.com|"
+    r"recruitee\.com|teamtailor\.com|personio\.|bamboohr\.|jobvite\.|icims\.com|"
+    r"myworkdayjobs\.com|myworkdaysite\.com|breezy\.hr|join\.com|careerpuck\.com|"
+    r"pinpointhq\.com|rippling\.com|paylocity\.com|eightfold\.ai)", re.I)
+# Boards and job-search sites that only ever point at an application, never host one.
+# Checked second and always wins the tie: hiring.cafe's own domain never appears in
+# APPLY_HOSTS, but a URL that merely mentions "jobs" near a company's name could in
+# principle collide, and an aggregator mistaken for an application sends a browser
+# somewhere with no form on it.
+AGGREGATOR_HOSTS = re.compile(
+    r"(linkedin\.com|adzuna\.|indeed\.|revopsroles\.com|hiring\.cafe|reed\.co\.uk|"
+    r"glassdoor\.|ziprecruiter\.|talent\.com|jooble\.|otta\.com|welcometothejungle\.)",
+    re.I)
+
+
+def is_apply_host(url):
+    """True for a URL on a system that actually takes applications."""
+    return bool(APPLY_HOSTS.search(url or "")) and not AGGREGATOR_HOSTS.search(url or "")
+
+
+# APPLY_HOSTS' own group text, normalised to the short name used everywhere else in this
+# codebase (findform's `ats` field, ATS_PATTERNS above, the boards.md notes) -- "ashbyhq"
+# is a domain fragment, not a name anyone would recognise.
+_HOST_NAMES = {"ashbyhq": "ashby", "myworkdayjobs": "workday", "myworkdaysite": "workday"}
+
+
+def apply_host_name(url):
+    """A short label for the system a URL applies through -- "greenhouse", "workable" --
+    or "" when it is not an application host at all. Used where the board's name is worth
+    showing even though no driver exists for it yet (the dashboard, findform's messages)."""
+    m = APPLY_HOSTS.search(url or "")
+    if not m or AGGREGATOR_HOSTS.search(url or ""):
+        return ""
+    name = re.sub(r"\..*", "", m.group(1))
+    return _HOST_NAMES.get(name, name)
+
+
+def known_links(job, fillable=None):
+    """Every URL a job record already carries, most useful first.
+
+    Costs nothing: it is reading the row, not the internet. The order is what matters --
+    a link a driver can fill outranks a link to a real application system, which outranks
+    the aggregator page the role happened to be advertised on. `fillable` is a callable
+    like detect_ats; without one this only sorts real applications ahead of adverts."""
+    seen, urls = set(), []
+    for u in [job.get("url")] + [a.get("url") for a in (job.get("also_seen") or [])]:
+        u = (u or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            urls.append(u)
+    can_fill = fillable or (lambda _u: False)
+    return sorted(urls, key=lambda u: (not can_fill(u), not is_apply_host(u)))
+
+
+def application_status(job):
+    """(ats, fillable) for a job record, from what it already carries -- no network call.
+
+    `ats` is the board name worth showing (its own url first, then the best also_seen
+    link), and `fillable` is true only when a driver already exists for it. This is
+    deliberately the free half of findform.find_form(): it never guesses a company's board
+    slug, so it costs nothing to compute for every row on every scan, and it is exactly
+    what a dashboard checkmark can promise without ever opening a browser."""
+    links = known_links(job, fillable=detect_ats)
+    own = job.get("url") or ""
+    ats = detect_ats(own) or apply_host_name(own)
+    if not ats:
+        for u in links:
+            ats = detect_ats(u) or apply_host_name(u)
+            if ats:
+                break
+    fillable = any(detect_ats(u) for u in ([own] + links))
+    return ats, fillable
 
 
 # ---------------------------------------------------------------- the field model
