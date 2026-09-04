@@ -636,18 +636,37 @@ Cloudflare's cron triggers fire on time; `scheduled()` checks whether the firing
 the local time is computed at firing time rather than baked into a UTC expression, 25 Oct
 needs no change — the triggers deliberately cover both offsets and only one matches per day.
 
-**Deploying it** (from `worker/`, which now carries `wrangler.toml`):
+**Redeploying** (the normal case: the Worker already exists, you changed its code or its
+schedule). Run from `worker/`, which is where `wrangler.toml` lives:
 
 ```
-npx wrangler secret put GH_TOKEN         # fine-grained PAT, Actions r/w on revops-radar only
-npx wrangler secret put TELEGRAM_SECRET  # any random string; same one given to setWebhook
-npx wrangler deploy                      # registers the routes AND the cron triggers
-npx wrangler tail                        # watch a firing: logs "scan dispatch <time> ok"
+npx wrangler deploy   # uploads the code AND registers the cron triggers
 ```
+
+That is the whole thing. **Secrets survive a deploy** — they are attached to the Worker by
+name, not to the upload, so `GH_TOKEN` and `TELEGRAM_SECRET` do not need re-entering and
+should not be touched. The Telegram webhook survives too; it points at the URL, which does
+not change.
 
 `wrangler deploy` is what registers the cron triggers, so a schedule change in
 `wrangler.toml` does nothing until you redeploy. To check it took: Cloudflare dashboard →
-Workers → `revops-relay` → Settings → Triggers → Cron Triggers.
+Workers → `revops-relay` → Settings → Triggers → Cron Triggers, which should list
+`15 8,9 * * *` and `0 13,14,18,19 * * *`. Then `npx wrangler tail` and watch a real firing:
+a due one logs `scan dispatch <time> ok`.
+
+**First-time setup only**, if this Worker is ever rebuilt from scratch:
+
+```
+npx wrangler login                       # browser OAuth, once per machine
+npx wrangler secret put GH_TOKEN         # fine-grained PAT, Actions r/w on revops-radar only
+npx wrangler secret put TELEGRAM_SECRET  # any random string; same one given to setWebhook
+npx wrangler deploy
+```
+
+The `name` in `wrangler.toml` must stay `revops-relay`. It is what decides the URL, and the
+Telegram webhook and the dashboard's Apply button are both pointed at
+`revops-relay.tomnorton92.workers.dev`. Deploying under a different name creates a second,
+unreferenced Worker rather than updating this one.
 
 If the Worker is undeployed or broken the scan still happens, just late — that is what the
 GitHub cron is left in place for. `scan.yml` has a `concurrency: scan` group so a backstop
