@@ -1,20 +1,26 @@
 /**
- * Telegram -> GitHub relay. Cloudflare Worker.
+ * GitHub dispatcher for revops-radar. Cloudflare Worker.
  *
- * Why this exists: GitHub's scheduled workflows are best-effort and get dropped under
- * load. Measured on this repo, a once-every-15-minutes cron delivered 4 of an expected 60
- * runs over 15 hours, with gaps of 5h45m. That is fine for a nightly scan and useless for
- * a conversation, because every message Tom sends has to wait for the next firing.
+ * Why this exists: GitHub's scheduled workflows are best-effort and get dropped or delayed
+ * under load, and this repo gets the bad end of it. Measured twice now -- a
+ * once-every-15-minutes cron delivered 4 of an expected 60 runs over 15 hours, and over the
+ * six days to 4 Sep 2026 apply.yml's every-fifteen-minutes cron produced 35 firings of an
+ * expected ~576. The daily scan is on the same scheduler and lands 2 to 5 hours after its
+ * cron, drifting further the longer the repo runs. Nothing in a workflow file can fix
+ * that: the cron expressions in scan.yml are correct and GitHub does not honour them.
  *
- * So instead of the queue polling for work, the work pushes itself in. Telegram delivers
- * each message here within about a second; this asks GitHub to start a run immediately and
- * hands the message text along as an input, so applyq.py never has to poll for it.
+ * So the work is pushed in rather than waited for, and this Worker is the thing that
+ * pushes. Cloudflare's cron triggers fire on time, so the schedule lives here and asks
+ * GitHub to start the run at the minute it is due. Telegram messages arrive the same way,
+ * within about a second, so applyq.py never has to poll for one either.
  *
- * Two routes:
+ * Two routes and a schedule:
  *   POST /telegram   Telegram's webhook. Authenticated by the secret token header.
  *   POST /queue      The dashboard's Apply button. Starts a run; carries no message.
+ *   scheduled()      Cloudflare cron. Starts the daily scan at its three local times.
  *
- * Deploy: see the setup steps in the repo README ("Making it instant").
+ * Deploy: README, "Why the schedule lives in Cloudflare". `wrangler deploy` is what
+ * registers the cron triggers, so a schedule change here does nothing until you redeploy.
  *
  * Secrets (wrangler secret put <NAME>, never in this file):
  *   GH_TOKEN          fine-grained PAT, Actions: read and write on revops-radar only
@@ -23,7 +29,8 @@
 
 const OWNER = "tom-norton";
 const REPO = "revops-radar";
-const WORKFLOW = "apply.yml";
+const APPLY_WORKFLOW = "apply.yml";
+const SCAN_WORKFLOW = "scan.yml";
 const REF = "main";
 const FIREBASE_STATE_URL =
   "https://revops-radar-2822a-default-rtdb.europe-west1.firebasedatabase.app/revops-radar-state.json";
@@ -32,10 +39,24 @@ const FIREBASE_STATE_URL =
 // dispatch that would look to Tom like the bot ignoring him.
 const MAX_MESSAGE = 3000;
 
-/** Ask GitHub to start the apply-queue workflow now. */
-async function dispatch(env, inputs) {
+// When the scan should run, in Tom's own time. A UTC cron cannot express this without
+// being rewritten twice a year, which is the trap scan.yml sat in. Here the local time is
+// worked out at firing time, so the clocks changing moves which UTC trigger matches rather
+// than requiring an edit to this list.
+const TZ = "Europe/Amsterdam";
+// 10:15 is deliberately after the 10am revopsroles.com email, which is the whole reason
+// the morning run's punctuality matters: fire it early and that source is not there yet.
+const SCAN_TIMES = [
+  { hour: 10, minute: 15, weekdaysOnly: false },
+  { hour: 15, minute: 0, weekdaysOnly: true },
+  { hour: 20, minute: 0, weekdaysOnly: true },
+];
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+
+/** Ask GitHub to start one of this repo's workflows now. */
+async function dispatch(env, workflow, inputs) {
   const r = await fetch(
-    `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
+    `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${workflow}/dispatches`,
     {
       method: "POST",
       headers: {
@@ -52,13 +73,60 @@ async function dispatch(env, inputs) {
   // 204 is success. Anything else is worth seeing in `wrangler tail`, because a silent
   // relay failure looks exactly like the slow cron this was built to replace.
   if (r.status !== 204) {
-    console.log("dispatch failed", r.status, (await r.text()).slice(0, 300));
+    console.log("dispatch failed", workflow, r.status, (await r.text()).slice(0, 300));
     return false;
   }
   return true;
 }
 
+/**
+ * Is `at` one of the three moments the scan is due, read in Tom's timezone?
+ *
+ * Exported for tests: the whole point of moving the schedule here is that it stays right
+ * across a DST change, and the only way to know that is to run both sides of one.
+ */
+export function scanDueAt(at) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    hour12: false,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(at);
+  const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+  // hourCycle h23 still renders midnight as "24" in some ICU builds.
+  const hour = Number(get("hour")) % 24;
+  const minute = Number(get("minute"));
+  const weekday = get("weekday");
+  return SCAN_TIMES.some(
+    (t) =>
+      t.hour === hour &&
+      t.minute === minute &&
+      (!t.weekdaysOnly || WEEKDAYS.includes(weekday)),
+  );
+}
+
 export default {
+  /**
+   * Cloudflare cron. wrangler.toml registers every UTC minute that could be one of the
+   * three local times under either of Amsterdam's offsets, so on any given day half of
+   * them return here without doing anything. That slack is the point: it is what lets the
+   * DST decision live in code, where it can be tested, rather than in a cron expression.
+   *
+   * event.scheduledTime is the minute the trigger was *due*, not when it ran, so a firing
+   * Cloudflare delivers a few seconds late still matches. Delivery is at-least-once, so a
+   * duplicate is possible; scan.yml's concurrency group serialises it and the second run
+   * finds nothing new in seen.json to score.
+   */
+  async scheduled(event, env, ctx) {
+    const at = new Date((event && event.scheduledTime) || Date.now());
+    if (!scanDueAt(at)) return;
+    const ok = await dispatch(env, SCAN_WORKFLOW, {});
+    // Visible in `wrangler tail`. A silent failure here looks exactly like the late cron
+    // this was built to replace, which is the one thing worth being loud about.
+    console.log("scan dispatch", at.toISOString(), ok ? "ok" : "FAILED");
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
 
@@ -95,7 +163,7 @@ export default {
       // rather than rejected: a non-text message is nothing to act on, not an error.
       if (!text || !chat) return new Response("ok", { status: 200 });
 
-      await dispatch(env, { message: text, chat_id: chat });
+      await dispatch(env, APPLY_WORKFLOW, { message: text, chat_id: chat });
       return new Response("ok", { status: 200 });
     }
 
@@ -125,7 +193,7 @@ export default {
       if (!queued.filter(Boolean).length) {
         return new Response("queue empty; not dispatching\n", { status: 200, headers: cors });
       }
-      await dispatch(env, {});
+      await dispatch(env, APPLY_WORKFLOW, {});
       return new Response("ok", { status: 200, headers: cors });
     }
 

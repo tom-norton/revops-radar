@@ -2,15 +2,26 @@ name: Daily job scan
 
 on:
   schedule:
-    # Cron here is UTC and has no DST awareness, so these are pinned to CEST (UTC+2)
-    # and are correct as-is through 25 Oct 2026, when the clocks go back.
+    # THESE ARE THE BACKSTOP, NOT THE SCHEDULE. The real schedule lives in the Cloudflare
+    # Worker (worker/wrangler.toml + scanDueAt()), which fires on time; these exist only so
+    # the scan still happens if the Worker is undeployed, broken, or out of its free quota.
     #
-    # TODO(25 Oct 2026): shift each of these back an hour -- "15 9 * * *",
-    # "0 14 * * 1-5", "0 19 * * 1-5" -- or the morning run lands at 9:15am, ahead of
-    # the 10am revopsroles.com email it is meant to pick up.
-    - cron: "15 8 * * *"     # 08:15 UTC every day (10:15am local)
-    - cron: "0 13 * * 1-5"   # 13:00 UTC weekdays only (3pm local)
-    - cron: "0 18 * * 1-5"   # 18:00 UTC weekdays only (8pm local)
+    # The expressions below are correct and GitHub does not honour them. Measured over
+    # 20 Aug - 3 Sep 2026, every firing arrived late and the lateness grew: 19-46 min in the
+    # first week, then 2h12m to 5h13m by 1-3 Sep, with a stretch on 27-28 Aug where the
+    # morning run landed after 19:00. The same scheduler gave apply.yml's every-fifteen-
+    # minutes cron 35 firings of an expected ~576 over six days. Scheduled workflows are
+    # best-effort and this repo is being deprioritised; no cron expression fixes that, which
+    # is why punctuality moved to a scheduler that has some.
+    #
+    # Cron here is UTC with no DST awareness. On 25 Oct 2026 these drift an hour early
+    # relative to Tom's clock, which now costs nothing -- a backstop that fires at 9:15
+    # instead of 10:15 is still hours ahead of when GitHub actually delivers it, and the
+    # Worker is what has to land after the 10am revopsroles.com email. Left as-is
+    # deliberately; the DST handling that matters is in the Worker.
+    - cron: "15 8 * * *"     # 08:15 UTC every day (10:15am local under CEST)
+    - cron: "0 13 * * 1-5"   # 13:00 UTC weekdays only (3pm local under CEST)
+    - cron: "0 18 * * 1-5"   # 18:00 UTC weekdays only (8pm local under CEST)
   workflow_dispatch:
     inputs:
       backfill:
@@ -24,6 +35,14 @@ on:
         description: "Relax the 7-day age filter for this run (pair with backfill)"
         type: boolean
         default: false
+
+# Serial. The Worker and GitHub's own late cron can now both ask for a run, and every run
+# ends by committing and pushing to main -- two overlapping ones would race on that push and
+# one would lose its results. Queue the second rather than cancelling it: by the time it
+# runs, seen.json has the first one's finds and it re-scores nothing.
+concurrency:
+  group: scan
+  cancel-in-progress: false
 
 permissions:
   contents: write
