@@ -10,11 +10,12 @@ over Telegram. Hide/Apply/Applied state syncs across your devices via Firebase.
 **Markets:** Netherlands (anywhere), Belgium (anywhere), UK (London area only), Ireland
 (Dublin). Germany, Spain, and remote-from-anywhere/EMEA roles are deliberately excluded.
 
-**Runs:** 10:15am, 3pm and 8pm local on weekdays, 10:15am only on weekends —
-08:15, 13:00 and 18:00 UTC. GitHub's cron is UTC-only with no DST awareness, so these
-need shifting back an hour when the clocks change on 25 Oct 2026, otherwise the morning
-run drifts to 9:15am and lands ahead of the 10am revopsroles.com email.
-See `.github/workflows/scan.yml`.
+**Runs:** 10:15am, 3pm and 8pm local on weekdays, 10:15am only on weekends. The clock is
+the Cloudflare Worker's (`worker/wrangler.toml`, `scanDueAt()` in
+`worker/telegram-relay.js`), which reads Europe/Amsterdam at firing time and so needs no
+touching when the clocks change. GitHub's own cron in `.github/workflows/scan.yml` is kept
+as a backstop only — it is hours late in practice, see **Why the schedule lives in
+Cloudflare** below.
 
 ## How it works
 
@@ -245,9 +246,10 @@ returns which is neither traceable to your own words nor one of the options you 
 offered gets thrown away.
 
 **Known limit: GitHub's cron is unreliable.** `*/15` is a request, not a promise, and in
-practice it lands every few hours. One round trip per role keeps that to a single wait, but
-the only real fix is pushing work in rather than polling for it — a Telegram webhook into
-`workflow_dispatch`, which drops latency to seconds.
+practice it lands every few hours — 35 firings of an expected ~576 over the six days to
+4 Sep 2026. One round trip per role keeps that to a single wait, and the Telegram webhook
+into `workflow_dispatch` removes the wait entirely by pushing work in rather than polling
+for it. The cron stays as the fallback for when the Worker is down.
 
 **Where things live.** State, answers, bullets and packets all live in the private
 `tom-bullet-bank` repo. This repo is public and `docs/` is served by Pages, so nothing from
@@ -568,7 +570,7 @@ python tests/test_apply.py      # comp gate, answer handling, the apply state ma
 python tests/test_cv.py         # layout policy, the honesty screen, the review gate, bank write-back
 python tests/test_cover.py      # the letter: the two honesty screens, the one-page trim, /cover
 python tests/test_submit.py     # the form: what code fills, what nobody fills, and that nothing sends
-node tests/test_worker.mjs      # the Cloudflare relay's two guards
+node tests/test_worker.mjs      # the Worker: its two guards, and the scan schedule incl. DST
 python tests/preview_messages.py # print every bot message as Telegram renders it (no asserts)
 python tests/test_cv_render.py --install  # the real render: docx -> PDF -> JPEG, measured
 python tests/test_submit_form.py --install  # a real browser filling, printing and submitting a form
@@ -617,6 +619,65 @@ Pages: Settings → Pages → Deploy from a branch → `main` / `/docs`.
 Dashboard: `https://tom-norton.github.io/revops-radar/`.
 Bot commits: Settings → Actions → General → Workflow permissions → "Read and write".
 Run it manually any time: Actions → "Daily job scan" → Run workflow.
+
+### Why the schedule lives in Cloudflare
+
+GitHub does not honour the cron in `scan.yml`. Over 20 Aug – 3 Sep 2026 every scheduled
+firing arrived late and the lateness grew: 19–46 minutes in the first week, 2h12m to 5h13m
+by 1–3 Sep, and a stretch on 27–28 Aug where the morning run landed after 19:00. The same
+scheduler gave `apply.yml`'s 15-minute cron 35 firings of an expected ~576 over six days.
+The expressions are correct; scheduled workflows are best-effort and this repo is being
+deprioritised. What that costs is not a missed source but a wrecked cadence: three runs a
+day spread across the working day becomes three runs bunched into the afternoon and
+evening, and every new role is seen hours later than it was posted. The 10:15 slot has a
+second constraint on top, which is that it must stay *after* the 10am revopsroles.com
+email; lateness never broke that, but the DST drift the old TODO warned about would have.
+
+So the clock moved to the Worker, which already held a GitHub PAT for the Telegram relay.
+Cloudflare's cron triggers fire on time; `scheduled()` checks whether the firing minute is
+10:15, 3pm or 8pm in Europe/Amsterdam and, if so, dispatches `scan.yml` immediately. Because
+the local time is computed at firing time rather than baked into a UTC expression, 25 Oct
+needs no change — the triggers deliberately cover both offsets and only one matches per day.
+
+**Deploying is merging.** `.github/workflows/worker-deploy.yml` uploads `worker/` to
+Cloudflare on any push to `main` that touches it, so a schedule change goes live when the PR
+carrying it is merged. There is nothing to run by hand, which is the point: this project is
+worked on from Claude Code cloud sessions and the GitHub web UI, and a deploy step needing a
+laptop and a local clone is a step that would never get run. It can also be fired on demand
+from Actions → "Deploy relay" → Run workflow.
+
+That upload is the *only* way the schedule changes. Cron triggers are registered as part of
+deploying the Worker, so editing `wrangler.toml` on `main` and not deploying leaves the old
+schedule running with no sign anything is stale.
+
+**One secret makes it work**, added once at Settings → Secrets and variables → Actions:
+
+- `CLOUDFLARE_API_TOKEN` — from Cloudflare → My Profile → API Tokens → Create Token → use
+  the **Edit Cloudflare Workers** template. That template's permissions are what a deploy
+  needs and nothing more.
+- `CLOUDFLARE_ACCOUNT_ID` — only if that Cloudflare login owns more than one account, in
+  which case the deploy will say so. Otherwise skip it.
+
+Until `CLOUDFLARE_API_TOKEN` exists the workflow explains itself and exits **green** rather
+than failing on every push, on the same reasoning as `apply.yml`'s no-secrets no-op: a red
+cross that means "not configured yet" teaches the Actions tab to be ignored.
+
+**What a deploy does not touch.** `GH_TOKEN` and `TELEGRAM_SECRET` are attached to the
+Worker by name rather than to the upload, so they survive and never need re-entering. The
+Telegram webhook survives too, since it points at the URL and the URL does not change. The
+`name` in `wrangler.toml` is what decides that URL and must stay `revops-relay` — the
+webhook and the dashboard's Apply button are both pointed at
+`revops-relay.tomnorton92.workers.dev`, and deploying under a different name would quietly
+create a second Worker that nothing calls.
+
+**Confirming it took:** Cloudflare → Workers → `revops-relay` → Settings → Triggers → Cron
+Triggers should list `15 8,9 * * *` and `0 13,14,18,19 * * *`. The real proof is the next
+morning: the "Daily job scan" run should start at 08:15 UTC rather than four hours later.
+
+If the Worker is undeployed or broken the scan still happens, just late — that is what the
+GitHub cron is left in place for. `scan.yml` has a `concurrency: scan` group so a backstop
+firing that overlaps a Worker-triggered run queues behind it instead of racing it to `git
+push`.
 
 ## The sponsor check: read this
 

@@ -1,0 +1,23 @@
+# Deploy config for the relay. Deployed by .github/workflows/worker-deploy.yml on any push
+# to main that touches this directory, so merging is what ships a change here.
+#
+# This file exists mainly for the cron triggers below. Everything else about the Worker
+# was set up by hand in the dashboard, but a schedule is not a setting -- it is the thing
+# that decides when the scan runs, so it belongs in the repo next to the code that reads
+# it, where a change to one is reviewable against the other.
+name = "revops-relay"
+main = "telegram-relay.js"
+compatibility_date = "2026-09-04"
+
+# GH_TOKEN and TELEGRAM_SECRET are deliberately absent, and are not part of a deploy:
+# secrets attach to the Worker by name and survive every upload. They are set once, in the
+# Cloudflare dashboard under the Worker's Settings -> Variables, and never in a tracked file.
+
+[triggers]
+# These are UTC, like every cron. They are not the schedule -- scanDueAt() is, reading
+# Europe/Amsterdam at firing time. These only have to be a superset: every UTC minute that
+# could possibly be 10:15, 15:00 or 20:00 in Amsterdam, under either offset the country
+# uses. CEST (UTC+2) matches the first of each pair, CET (UTC+1) the second, so exactly one
+# fires for real on any given day and the other returns without doing anything. That is
+# what makes the clocks going back on 25 Oct 2026 a non-event here.
+crons = ["15 8,9 * * *", "0 13,14,18,19 * * *"]
