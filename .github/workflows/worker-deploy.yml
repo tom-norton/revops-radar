@@ -1,0 +1,75 @@
+name: Deploy relay
+
+# Ships worker/ to Cloudflare, which is the only way the scan's schedule ever changes:
+# `wrangler deploy` is what registers the cron triggers, so an edit to wrangler.toml or to
+# scanDueAt() does nothing at all until something uploads it.
+#
+# It runs here rather than from a laptop because there is no laptop. This project is worked
+# on from Claude Code cloud sessions and the GitHub web UI, so a deploy step that needs a
+# terminal and a local clone is a step that never gets run -- and a schedule nobody can
+# deploy is worse than the late cron it replaced, because it looks fixed.
+#
+# So merging to main is the deploy. Nothing else to do and nothing to remember.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - "tests/test_worker.mjs"
+      - ".github/workflows/worker-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Worker tests
+        # Before upload, not after. The schedule is the thing being shipped and a wrong hour
+        # in it is invisible: the Worker deploys clean, reports healthy, and simply does not
+        # fire when it should. That is the exact symptom this whole change exists to fix, so
+        # it does not get to reach Cloudflare untested.
+        run: node tests/test_worker.mjs
+
+      - name: Check the token is set
+        # Without the secret the deploy fails, and a workflow that fails red on every push
+        # to worker/ teaches the Actions tab to be ignored -- same reasoning as apply.yml's
+        # no-secrets no-op. Say what is missing and how to fix it, then stop green.
+        id: token
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "set=false" >> "$GITHUB_OUTPUT"
+            echo "CLOUDFLARE_API_TOKEN is not set, so there is nothing to deploy to."
+            echo "Add it under Settings -> Secrets and variables -> Actions."
+            echo "See the README, 'Why the schedule lives in Cloudflare'."
+            echo "Until then the Worker keeps running whatever was last uploaded to it."
+          else
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy
+        if: steps.token.outputs.set == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # wrangler.toml lives here, and `main` inside it is relative to it.
+          workingDirectory: worker
+        env:
+          # Only needed if the Cloudflare login owns more than one account, in which case
+          # wrangler cannot guess which. Harmless when unset.
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: What just happened
+        if: steps.token.outputs.set == 'true'
+        run: |
+          echo "Deployed. The cron triggers are registered as part of that upload."
+          echo "Confirm at: Cloudflare -> Workers -> revops-relay -> Settings -> Triggers."
+          echo "Expect: 15 8,9 * * *  and  0 13,14,18,19 * * *"

@@ -639,37 +639,40 @@ Cloudflare's cron triggers fire on time; `scheduled()` checks whether the firing
 the local time is computed at firing time rather than baked into a UTC expression, 25 Oct
 needs no change — the triggers deliberately cover both offsets and only one matches per day.
 
-**Redeploying** (the normal case: the Worker already exists, you changed its code or its
-schedule). Run from `worker/`, which is where `wrangler.toml` lives:
+**Deploying is merging.** `.github/workflows/worker-deploy.yml` uploads `worker/` to
+Cloudflare on any push to `main` that touches it, so a schedule change goes live when the PR
+carrying it is merged. There is nothing to run by hand, which is the point: this project is
+worked on from Claude Code cloud sessions and the GitHub web UI, and a deploy step needing a
+laptop and a local clone is a step that would never get run. It can also be fired on demand
+from Actions → "Deploy relay" → Run workflow.
 
-```
-npx wrangler deploy   # uploads the code AND registers the cron triggers
-```
+That upload is the *only* way the schedule changes. Cron triggers are registered as part of
+deploying the Worker, so editing `wrangler.toml` on `main` and not deploying leaves the old
+schedule running with no sign anything is stale.
 
-That is the whole thing. **Secrets survive a deploy** — they are attached to the Worker by
-name, not to the upload, so `GH_TOKEN` and `TELEGRAM_SECRET` do not need re-entering and
-should not be touched. The Telegram webhook survives too; it points at the URL, which does
-not change.
+**One secret makes it work**, added once at Settings → Secrets and variables → Actions:
 
-`wrangler deploy` is what registers the cron triggers, so a schedule change in
-`wrangler.toml` does nothing until you redeploy. To check it took: Cloudflare dashboard →
-Workers → `revops-relay` → Settings → Triggers → Cron Triggers, which should list
-`15 8,9 * * *` and `0 13,14,18,19 * * *`. Then `npx wrangler tail` and watch a real firing:
-a due one logs `scan dispatch <time> ok`.
+- `CLOUDFLARE_API_TOKEN` — from Cloudflare → My Profile → API Tokens → Create Token → use
+  the **Edit Cloudflare Workers** template. That template's permissions are what a deploy
+  needs and nothing more.
+- `CLOUDFLARE_ACCOUNT_ID` — only if that Cloudflare login owns more than one account, in
+  which case the deploy will say so. Otherwise skip it.
 
-**First-time setup only**, if this Worker is ever rebuilt from scratch:
+Until `CLOUDFLARE_API_TOKEN` exists the workflow explains itself and exits **green** rather
+than failing on every push, on the same reasoning as `apply.yml`'s no-secrets no-op: a red
+cross that means "not configured yet" teaches the Actions tab to be ignored.
 
-```
-npx wrangler login                       # browser OAuth, once per machine
-npx wrangler secret put GH_TOKEN         # fine-grained PAT, Actions r/w on revops-radar only
-npx wrangler secret put TELEGRAM_SECRET  # any random string; same one given to setWebhook
-npx wrangler deploy
-```
+**What a deploy does not touch.** `GH_TOKEN` and `TELEGRAM_SECRET` are attached to the
+Worker by name rather than to the upload, so they survive and never need re-entering. The
+Telegram webhook survives too, since it points at the URL and the URL does not change. The
+`name` in `wrangler.toml` is what decides that URL and must stay `revops-relay` — the
+webhook and the dashboard's Apply button are both pointed at
+`revops-relay.tomnorton92.workers.dev`, and deploying under a different name would quietly
+create a second Worker that nothing calls.
 
-The `name` in `wrangler.toml` must stay `revops-relay`. It is what decides the URL, and the
-Telegram webhook and the dashboard's Apply button are both pointed at
-`revops-relay.tomnorton92.workers.dev`. Deploying under a different name creates a second,
-unreferenced Worker rather than updating this one.
+**Confirming it took:** Cloudflare → Workers → `revops-relay` → Settings → Triggers → Cron
+Triggers should list `15 8,9 * * *` and `0 13,14,18,19 * * *`. The real proof is the next
+morning: the "Daily job scan" run should start at 08:15 UTC rather than four hours later.
 
 If the Worker is undeployed or broken the scan still happens, just late — that is what the
 GitHub cron is left in place for. `scan.yml` has a `concurrency: scan` group so a backstop

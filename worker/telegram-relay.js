@@ -19,8 +19,9 @@
  *   POST /queue      The dashboard's Apply button. Starts a run; carries no message.
  *   scheduled()      Cloudflare cron. Starts the daily scan at its three local times.
  *
- * Deploy: README, "Why the schedule lives in Cloudflare". `wrangler deploy` is what
- * registers the cron triggers, so a schedule change here does nothing until you redeploy.
+ * Deploy: merging to main does it, via .github/workflows/worker-deploy.yml. That upload is
+ * what registers the cron triggers, so a schedule change here is inert until it merges.
+ * Details in the README, "Why the schedule lives in Cloudflare".
  *
  * Secrets (wrangler secret put <NAME>, never in this file):
  *   GH_TOKEN          fine-grained PAT, Actions: read and write on revops-radar only

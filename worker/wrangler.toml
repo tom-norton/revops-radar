@@ -1,4 +1,5 @@
-# Deploy config for the relay: `cd worker && npx wrangler deploy`.
+# Deploy config for the relay. Deployed by .github/workflows/worker-deploy.yml on any push
+# to main that touches this directory, so merging is what ships a change here.
 #
 # This file exists mainly for the cron triggers below. Everything else about the Worker
 # was set up by hand in the dashboard, but a schedule is not a setting -- it is the thing
@@ -8,8 +9,9 @@ name = "revops-relay"
 main = "telegram-relay.js"
 compatibility_date = "2026-09-04"
 
-# GH_TOKEN and TELEGRAM_SECRET are deliberately absent. They go in with
-# `npx wrangler secret put <NAME>` and never into a tracked file.
+# GH_TOKEN and TELEGRAM_SECRET are deliberately absent, and are not part of a deploy:
+# secrets attach to the Worker by name and survive every upload. They are set once, in the
+# Cloudflare dashboard under the Worker's Settings -> Variables, and never in a tracked file.
 
 [triggers]
 # These are UTC, like every cron. They are not the schedule -- scanDueAt() is, reading
