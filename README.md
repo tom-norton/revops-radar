@@ -627,8 +627,11 @@ firing arrived late and the lateness grew: 19–46 minutes in the first week, 2h
 by 1–3 Sep, and a stretch on 27–28 Aug where the morning run landed after 19:00. The same
 scheduler gave `apply.yml`'s 15-minute cron 35 firings of an expected ~576 over six days.
 The expressions are correct; scheduled workflows are best-effort and this repo is being
-deprioritised. That matters most for the morning run, which has to land *after* the 10am
-revopsroles.com email and was instead landing at 2pm.
+deprioritised. What that costs is not a missed source but a wrecked cadence: three runs a
+day spread across the working day becomes three runs bunched into the afternoon and
+evening, and every new role is seen hours later than it was posted. The 10:15 slot has a
+second constraint on top, which is that it must stay *after* the 10am revopsroles.com
+email; lateness never broke that, but the DST drift the old TODO warned about would have.
 
 So the clock moved to the Worker, which already held a GitHub PAT for the Telegram relay.
 Cloudflare's cron triggers fire on time; `scheduled()` checks whether the firing minute is
