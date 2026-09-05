@@ -440,8 +440,14 @@ def plan_known(fields, ident, job, files):
             # The paste-it-in twin of a file input. The PDF is going up; this stays empty.
             continue
         if is_demographic(label):
+            # Declined wherever the form offers a way to decline, required or not. This
+            # used to fire only on required fields and leave the rest blank, which is the
+            # same answer in practice but says nothing on the form itself; Tom would
+            # rather it said so. What has not changed is the part that matters: nothing
+            # here ever answers one of these questions, and a form with no decline option
+            # is still left empty rather than answered.
             opt = decline_option(f.get("options")) if kind == SELECT else ""
-            if opt and f.get("required"):
+            if opt:
                 answers[fid] = answer(opt, BY_CODE, "self-identification, declined")
                 notes.append(f"{label[:60]}: declined")
             continue
@@ -607,6 +613,28 @@ def plan_is_current(plan, fields):
     return bool(plan) and plan.get("fingerprint") == fingerprint(fields)
 
 
+def interview_questions(plan):
+    """Every blank worth putting to Tom, in the order he is asked them.
+
+    One list, used by the message that asks, by the reply that answers, and by the refusal
+    that lists what is still open -- because the numbering IS the contract. Ask off one
+    list and map the reply against another and his answer to question two lands in
+    question three's box.
+
+    Required first, since those are what stop the send, then the optional ones that are
+    still real questions somebody could not answer: a salary expectation nothing could
+    source, an answer the honesty screen dropped, a phone number that is not on file.
+
+    Two kinds are deliberately absent. Demographic questions, which are never asked of him
+    or of anything else. And fields whose question could not be read off the page: there is
+    no way to ask a question nobody can state, so those are pointed at on the printed form
+    instead."""
+    out = [b for b in (plan.get("blanks") or [])
+           if not b.get("demographic") and readable_question(b)]
+    return [b for b in out if b.get("required")] + \
+           [b for b in out if not b.get("required")]
+
+
 def apply_replies(plan, replies):
     """Tom's own answers to the questions nothing could source, keyed by the numbers the
     preview showed him. Returns (plan, filled, unmatched).
@@ -615,7 +643,7 @@ def apply_replies(plan, replies):
     inventing his experience and he cannot invent his own. The one thing it will not do is
     put a value on a dropdown that does not carry it: that comes back in `unmatched` and he
     is shown the options again, rather than having a near-miss forced onto the form."""
-    unanswered = [b for b in plan.get("blanks", []) if b["required"]]
+    unanswered = interview_questions(plan)
     filled, unmatched = [], []
     for n, text in sorted((replies or {}).items()):
         idx = int(n) - 1

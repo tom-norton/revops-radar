@@ -228,6 +228,15 @@ show("the filled form (this is the caption on the PDF)",
          [("question_2", "How did you hear about this job?",
            "wording not traceable to the bank")],
          [{"id": "question_4", "why": "no salary expectation on file"}], []))
+show("the interview, asked right after the filled form",
+     applyq.form_interview(dict(FORM_PLAN, blanks=[
+         {"id": "question_4", "label": "What are your salary expectations?",
+          "required": True, "demographic": False, "money": True, "options": []},
+         {"id": "question_2", "label": "How did you hear about this job?",
+          "required": True, "demographic": False, "money": False,
+          "options": ["LinkedIn", "A friend", "Other"]},
+         {"id": "phone", "label": "Phone", "required": False, "demographic": False,
+          "money": False, "options": []}])))
 show("/send while a question is still open", "\n".join(
     ["<b>2 required questions still unanswered</b>, so the form would be rejected. Reply "
      "with the answers, numbered:", ""]

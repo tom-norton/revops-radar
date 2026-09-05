@@ -283,18 +283,30 @@ judgement call. The model is never shown those fields, so it cannot put a wrong 
 one. What it does answer is the rest: "what excites you most about this opportunity", "how
 did you hear about this job", and whatever else that particular form asks.
 
-**Demographic questions are never answered.** Gender, race, ethnicity, veteran status,
-disability: the model never sees them, and the code does not answer them either, beyond
-taking the form's own "prefer not to say" when a required field will not accept a blank.
+**Demographic questions are declined, never answered.** Gender, race, ethnicity, veteran
+status, disability: the model never sees them, and the code does not answer them either.
+Where the form offers a way to decline it takes it, required or not, so the form says so
+rather than just sitting blank. Where it offers none, it stays empty. They are never put to
+you in the interview below either.
 
 **Blank beats invented, and a blank stops the send.** Every written answer goes through the
 same honesty screen as the CV and the letter, against the same sources; one whose claim
 cannot be traced, or that carries a number from nowhere, is dropped and its field left
-empty. A salary expectation you have not given is never guessed at. Anything required and
-still empty is listed back to you, numbered, and `/send` refuses until you answer it —
-reply `1 Dublin`, `2 three months` and it fills them in and prints the form again. Your own
-answers go in as your words, unscreened, because the screen exists to stop a model
+empty. A salary expectation you have not given is never guessed at.
+
+**Anything it couldn't answer, it asks you.** Right after the filled form comes a numbered
+interview, the same shape as the gap interview earlier in the run, covering everything
+nobody could answer: a salary expectation nothing could source, an answer the honesty
+screen dropped, a phone number that isn't on file. Required ones are marked, because only
+those hold up a send. Reply `1 …`, `2 …` and it fills them in and prints the form again.
+Your own answers go in as your words, unscreened, because the screen exists to stop a model
 inventing your experience and you cannot invent your own.
+
+One list does the asking, the reply-mapping and the "still open" listing, because the
+numbering is the contract: ask off one list and map the reply against another and your
+answer to question two lands in question three's box. A field whose question couldn't be
+read off the page isn't in it — there's no way to ask a question nobody can state — but it
+still counts as missing and still stops the send; you read it on the printed form.
 
 **What you approved is what gets sent.** The runner that filled the form is destroyed long
 before you read the PDF, so `/send` opens the form again and replays the plan onto it. If
@@ -352,8 +364,10 @@ same cut.
 **The dashboard shows this before you ever tap Apply.** Every card carries a tag naming
 the board the application is actually on — a plain grey tag when it's a real system with
 no driver yet (Ashby, Workday, SmartRecruiters…), a green **✓** tag when `/submit`
-can fill it without being asked. Auto-fillable rows sort to the top of each section, and
-"Auto-fillable only" filters down to just those. This is the same free, no-network
+can fill it without being asked. The list is ordered by score and nothing else reorders
+it — a checkmark is convenience, and convenience shouldn't outrank fit on the one list
+whose job is to rank by fit — but "Auto-fillable only" filters down to just those when
+that's what you want. This is the same free, no-network
 classification `/submit` itself starts from (`submit.application_status()`), computed
 once per row at scan time — so a blank tag means "not known to be fillable from the
 record," never "definitely not." A 9.0 with no checkmark is still worth applying to, by
