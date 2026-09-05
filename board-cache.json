@@ -1,0 +1,181 @@
+{
+ "_readme": [
+  "Which job board each company posts on, discovered by findform.py and cached",
+  "here so a scan does not re-probe six board APIs for every company every run.",
+  "An empty `ats` is a real answer: nothing public was found, and it will be",
+  "asked again after 30 days in case they move.",
+  "A row records the board found under that company's NAME, which is not proof",
+  "of identity: google.recruitee.com resolves, and is a demo account with one",
+  "'Senior Marketer (Sample)' posting on it. Nothing applies on the strength of",
+  "a row here -- the title still has to match at TITLE_MATCH_MIN, which is what",
+  "keeps a wrong board from becoming a wrong application.",
+  "Delete a row to force a re-check. Delete the file to re-check everything."
+ ],
+ "boards": {
+  "actai": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "adobe": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "amazon": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "arrive": {
+   "ats": "ashby",
+   "slug": "arrive",
+   "at": "2026-09-05"
+  },
+  "booking com": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "bvnk": {
+   "ats": "greenhouse",
+   "slug": "bvnk",
+   "at": "2026-09-05"
+  },
+  "canva": {
+   "ats": "smartrecruiters",
+   "slug": "canva",
+   "at": "2026-09-05"
+  },
+  "carwow": {
+   "ats": "ashby",
+   "slug": "carwow",
+   "at": "2026-09-05"
+  },
+  "deepl": {
+   "ats": "ashby",
+   "slug": "deepl",
+   "at": "2026-09-05"
+  },
+  "elsevier": {
+   "ats": "greenhouse",
+   "slug": "elsevier",
+   "at": "2026-09-05"
+  },
+  "entrust": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "fin": {
+   "ats": "ashby",
+   "slug": "fin",
+   "at": "2026-09-05"
+  },
+  "google": {
+   "ats": "recruitee",
+   "slug": "google",
+   "at": "2026-09-05"
+  },
+  "hansen": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "icon": {
+   "ats": "ashby",
+   "slug": "icon",
+   "at": "2026-09-05"
+  },
+  "jobgether": {
+   "ats": "lever",
+   "slug": "jobgether",
+   "at": "2026-09-05"
+  },
+  "joseph joseph": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "linkedin": {
+   "ats": "greenhouse",
+   "slug": "linkedin",
+   "at": "2026-09-05"
+  },
+  "meltwater": {
+   "ats": "recruitee",
+   "slug": "meltwater",
+   "at": "2026-09-05"
+  },
+  "miro": {
+   "ats": "ashby",
+   "slug": "miro",
+   "at": "2026-09-05"
+  },
+  "motorway": {
+   "ats": "ashby",
+   "slug": "motorway",
+   "at": "2026-09-05"
+  },
+  "onlogic": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "osapiens": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "paymentsense": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "prism digital": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "revelane": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "servicenow": {
+   "ats": "smartrecruiters",
+   "slug": "servicenow",
+   "at": "2026-09-05"
+  },
+  "sierra": {
+   "ats": "ashby",
+   "slug": "sierra",
+   "at": "2026-09-05"
+  },
+  "stepstone uk": {
+   "ats": "smartrecruiters",
+   "slug": "stepstoneuk",
+   "at": "2026-09-05"
+  },
+  "sunrise": {
+   "ats": "greenhouse",
+   "slug": "sunrise",
+   "at": "2026-09-05"
+  },
+  "teya": {
+   "ats": "ashby",
+   "slug": "teya",
+   "at": "2026-09-05"
+  },
+  "upwind security": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  },
+  "wolters kluwer": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-05"
+  }
+ }
+}

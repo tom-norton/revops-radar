@@ -2819,7 +2819,10 @@ def board_link(found):
         return ""
     return {"greenhouse": f"https://job-boards.greenhouse.io/{slug}",
             "ashby": f"https://jobs.ashbyhq.com/{slug}",
-            "lever": f"https://jobs.lever.co/{slug}"}.get(ats, "")
+            "lever": f"https://jobs.lever.co/{slug}",
+            "smartrecruiters": f"https://jobs.smartrecruiters.com/{slug}",
+            "recruitee": f"https://{slug}.recruitee.com/",
+            "workable": f"https://apply.workable.com/{slug}/"}.get(ats, "")
 
 
 def resolve_form(state, job, tg, url):

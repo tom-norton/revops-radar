@@ -65,6 +65,7 @@ ATS_PATTERNS = (
     ("greenhouse", re.compile(r"^https?://(?:job-)?boards\.(?:[\w-]+\.)?greenhouse\.io/",
                               re.I)),
     ("ashby", re.compile(r"^https?://jobs\.ashbyhq\.com/[^/]+/", re.I)),
+    ("lever", re.compile(r"^https?://jobs\.lever\.co/[^/]+/", re.I)),
 )
 
 
@@ -719,8 +720,14 @@ READ_FIELDS_JS = r"""
     const type = (el.type || '').toLowerCase();
     if (type === 'hidden' || type === 'submit' || type === 'button') return;
     const id = el.id || el.name || '';
-    if (!id || seen.has(id)) return;
-    seen.add(id);
+    if (!id) return;
+    // Radios in a group share a name, and a board that gives them no ids (Lever) would
+    // otherwise report the whole group as one field with the first option on it. The value
+    // is what separates them; a reshape() collapses them back into one field afterwards,
+    // by name, with every option it can see.
+    const key = type === 'radio' ? id + '\u0000' + (el.value || '') : id;
+    if (seen.has(key)) return;
+    seen.add(key);
     let kind = 'text';
     if (el.tagName === 'TEXTAREA') kind = 'textarea';
     else if (el.tagName === 'SELECT') kind = 'select';
@@ -792,10 +799,15 @@ def read_fields(page, driver):
     A board whose controls are not plain inputs gets a `reshape` hook: Ashby draws a yes/no
     question as a hidden checkbox behind two buttons, and an EEOC question as a radio group
     where the generic reader sees one field per radio. Reshaping there rather than in the
-    JS keeps one reader for every board and puts each board's oddities in its own class."""
+    JS keeps one reader for every board and puts each board's oddities in its own class.
+
+    reshape() is handed the page as well as the fields, because a board can put the
+    question somewhere no amount of rearranging the field list will reach: Lever writes a
+    custom question once, above the radios that answer it, and the radios carry only their
+    own option text."""
     raw = page.evaluate(READ_FIELDS_JS)
     if hasattr(driver, "reshape"):
-        raw = driver.reshape(raw)
+        raw = driver.reshape(raw, page)
     fields = []
     for r in raw:
         f = field(r["id"], r["kind"], r["label"], r["required"], r.get("options"))
@@ -840,6 +852,14 @@ def fill_form(page, plan, driver, bank_path=""):
         except Exception as e:
             print(f"  could not tick {fid}: {str(e)[:120]}")
             failed.append(fid)
+    # A board whose fields are not finished the moment they are filled gets the last word:
+    # Lever's location is a typeahead that only counts once a suggestion is chosen, and
+    # typing the right city into it leaves the form's own hidden field empty.
+    if hasattr(driver, "settle"):
+        try:
+            driver.settle(page)
+        except Exception as e:
+            print(f"  could not settle the form: {str(e)[:120]}")
     return failed
 
 
@@ -855,8 +875,15 @@ def id_selector(fid):
     An attribute selector rather than `#id`, because Ashby names every custom question
     after a UUID and a CSS id selector cannot start with a digit -- `#4b728746-d0b1` is a
     syntax error, not a miss, so it takes the whole fill down with it. Only the quote
-    needs escaping here, which is the point: no character class to keep up to date."""
-    return '[id="{}"]'.format(str(fid).replace("\\", "\\\\").replace('"', '\\"'))
+    needs escaping here, which is the point: no character class to keep up to date.
+
+    Name as well as id, because READ_FIELDS_JS identifies a control as `el.id || el.name`
+    and this has to address whatever that returned. Lever gives its inputs a name and no
+    id at all, so an id-only selector matched nothing on every field of every Lever form.
+    Where a control has both -- Greenhouse's usual shape -- the two halves select the same
+    element and the list matches it once."""
+    q = str(fid).replace("\\", "\\\\").replace('"', '\\"')
+    return '[id="{0}"], [name="{0}"]'.format(q)
 
 
 # A4 at 96dpi is 794 CSS pixels wide. The fill runs in a 1280px window because that is
@@ -1064,7 +1091,7 @@ class Ashby:
     # A yes/no question: a checkbox that is not visible, whose name is the question's id.
     # The generic reader reports it as a checkbox, which would make it a consent box and
     # get it silently ticked. It is a question, and it is answered by pressing a button.
-    def reshape(self, raw):
+    def reshape(self, raw, page=None):
         out, radios = [], {}
         for r in raw:
             name = (r.get("name") or "").strip()
@@ -1154,7 +1181,184 @@ _EEOC_LABELS = {
 }
 
 
-DRIVERS = {"greenhouse": Greenhouse, "ashby": Ashby}
+# Lever writes each custom question once, in the block above the controls that answer it,
+# and gives the controls themselves nothing but their own option text. So the question has
+# to be read off the page rather than off the field, which is what this returns: the
+# question text for every control inside every question block, keyed the way
+# READ_FIELDS_JS keys a field (its id, or its name when it has none).
+LEVER_QUESTIONS_JS = r"""
+() => {
+  const out = {};
+  document.querySelectorAll('.application-question, .application-additional')
+    .forEach((q) => {
+      const label = q.querySelector('.application-label .text') ||
+                    q.querySelector('.application-label');
+      // U+2731 is Lever's required marker. It is not part of the question and it reads
+      // as one when a model is shown the label.
+      const text = label ? (label.innerText || '').replace(/\u2731/g, ' ').trim() : '';
+      if (!text) return;
+      q.querySelectorAll('input, select, textarea').forEach((el) => {
+        const key = el.id || el.name || '';
+        if (key && !(key in out)) out[key] = text.split('\n')[0].trim();
+      });
+    });
+  return out;
+}
+"""
+
+
+class Lever:
+    """Lever's hosted boards (jobs.lever.co).
+
+    Written against a real posting, dumped with tools/probe_form.py -- the field map is in
+    tools/notes/boards.md. The plainest of the three: server-rendered HTML, no react-select,
+    every control addressed by its `name`. What is different:
+
+      - **The form is a page further on**, like Ashby's. findform hands back the posting
+        (`/<slug>/<id>`); the application is `/<slug>/<id>/apply`.
+      - **No ids anywhere.** `name`, `email`, `phone`, `org` and every custom question have
+        a name and no id at all, which is why id_selector() addresses either.
+      - **A custom question's text is not on its controls.** It is written once above them,
+        so it is read off the page -- see LEVER_QUESTIONS_JS.
+      - **Radio groups have no ids either**, so all four options of one question share the
+        key `cards[<uuid>][field0]`. reshape() collapses them into one dropdown, the same
+        shape Ashby's EEOC groups end up in, so the decline rule and the honesty screen see
+        one field with its options on it.
+      - **Current location is a typeahead** over a hidden `selectedLocation`. Typing the
+        city is not choosing it, so settle() picks the first suggestion once the rest of
+        the form is filled.
+
+    The submit button is behind an invisible hCaptcha rather than reCAPTCHA -- a different
+    vendor, the same rule. Nothing here tries to get past it; anti_bot() names it in the
+    preview so a bounced application is a known risk rather than a mystery."""
+
+    name = "lever"
+    submit_selectors = ("[data-qa=btn-submit]", "#btn-submit",
+                        "button:has-text('Submit application')")
+    confirmation = re.compile(r"(thank you for applying|application (?:has been )?"
+                              r"submitted|we(?:'| ha)ve received your application|"
+                              r"thanks for applying|your application)", re.I)
+    FORM_READY = "[data-qa=name-input], [data-qa=email-input]"
+
+    def open(self, page, url):
+        page.goto(self.application_url(url), wait_until="domcontentloaded",
+                  timeout=BROWSER_TIMEOUT_MS)
+        try:
+            page.wait_for_selector(self.FORM_READY, timeout=BROWSER_TIMEOUT_MS)
+        except Exception:
+            pass
+        page.wait_for_timeout(SETTLE_MS)
+
+    # jobs.lever.co/<slug>/<posting id>, which is what findform's Lever reader hands back
+    # (`hostedUrl`). Matched rather than assumed, so a URL that is already the form, or is
+    # not a Lever posting at all, is left exactly as it is.
+    POSTING_URL = re.compile(r"^https?://jobs\.lever\.co/[^/]+/[^/?#]+/?$", re.I)
+
+    @classmethod
+    def application_url(cls, url):
+        """The apply page for a posting URL, or the URL untouched when it is not one.
+        Idempotent: a URL already pointing at the form has no posting shape."""
+        u = (url or "").strip()
+        return u.rstrip("/") + "/apply" if cls.POSTING_URL.match(u) else u
+
+    def reshape(self, raw, page=None):
+        questions = {}
+        if page is not None:
+            try:
+                questions = page.evaluate(LEVER_QUESTIONS_JS) or {}
+            except Exception as e:
+                print(f"  could not read the questions: {str(e)[:120]}")
+
+        out, groups = [], {}
+        for r in raw:
+            key = r.get("id") or ""
+            asked = questions.get(key) or ""
+            if r["kind"] == CHECKBOX and r.get("type") == "radio" and key:
+                g = groups.get(key)
+                if not g:
+                    g = {"id": key, "kind": SELECT, "label": asked,
+                         "required": r["required"], "options": [], "type": "radio"}
+                    groups[key] = g
+                    out.append(g)
+                if r.get("label") and r["label"] not in g["options"]:
+                    g["options"].append(r["label"])
+                g["required"] = g["required"] or r["required"]
+                continue
+            # Everything else is a plain control. The question above it beats the label on
+            # it: Lever's own label for the resume input is the upload button's caption
+            # ("Resume/CV ATTACH RESUME/CV"), and for a custom textarea there is no label
+            # at all.
+            if asked:
+                r = dict(r, label=asked)
+            out.append(r)
+        return out
+
+    def read_options(self, page, fid):
+        """A reshaped radio group already knows its options, and a real <select> was read
+        by READ_FIELDS_JS. Nothing here opens on click."""
+        return []
+
+    def pick_option(self, page, fid, value):
+        """A <select> is set; a reshaped radio group is clicked by the label that says it."""
+        try:
+            page.select_option(id_selector(fid), label=value, timeout=6000)
+            return
+        except Exception:
+            pass
+        for sel in (f"label:has(input[name='{fid}']):has-text(\"{value}\")",
+                    f"input[name='{fid}'][value='{value}']"):
+            try:
+                page.click(sel, timeout=6000)
+                page.wait_for_timeout(150)
+                return
+            except Exception:
+                continue
+        raise RuntimeError(f"{fid}: could not find anything to press for '{value}'")
+
+    # The typeahead. Filling the visible input is not choosing a location -- the form
+    # submits `selectedLocation`, which stays empty until a suggestion is clicked, and a
+    # required location that submits empty is a bounced application.
+    LOCATION_INPUT = "#location-input"
+    LOCATION_CHOSEN = "#selected-location"
+    LOCATION_RESULTS = ".dropdown-results"
+
+    def settle(self, page):
+        try:
+            typed = page.input_value(self.LOCATION_INPUT, timeout=4000)
+            chosen = page.input_value(self.LOCATION_CHOSEN, timeout=4000)
+        except Exception:
+            return
+        if not typed or chosen:
+            return
+        # Retype the last character: the suggestions are fetched on keystroke, and
+        # page.fill() sets the value without producing one.
+        page.click(self.LOCATION_INPUT, timeout=6000)
+        page.fill(self.LOCATION_INPUT, typed[:-1], timeout=6000)
+        page.type(self.LOCATION_INPUT, typed[-1], delay=60)
+        page.wait_for_timeout(1500)
+        try:
+            page.click(f"{self.LOCATION_RESULTS} > *", timeout=6000)
+        except Exception:
+            print("  location: no suggestion offered; left as typed")
+
+    def submit(self, page):
+        for sel in self.submit_selectors:
+            try:
+                page.click(sel, timeout=8000)
+                return True
+            except Exception:
+                continue
+        return False
+
+    def confirmed(self, page):
+        try:
+            body = page.inner_text("body", timeout=BROWSER_TIMEOUT_MS)
+        except Exception:
+            body = ""
+        return bool(self.confirmation.search(body or "")), (body or "")[:400]
+
+
+DRIVERS = {"greenhouse": Greenhouse, "ashby": Ashby, "lever": Lever}
 
 
 def driver_for(ats):

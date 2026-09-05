@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fixture: Lever-shaped application</title>
+<style>
+ body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 42rem; }
+ .application-question { list-style: none; margin: 1.2rem 0; padding: 0; }
+ .application-label { font-weight: 600; margin-bottom: .3rem; }
+ .application-field input[type=text], .application-field input[type=email],
+ .application-field select { width: 100%; padding: .4rem; }
+ .application-field ul { list-style: none; padding-left: 0; }
+ .dropdown-results { border: 1px solid #ccc; }
+ .dropdown-results > div { padding: .3rem; }
+ #confirmation { padding: 2rem; background: #eef7ee; }
+ .hidden { display: none; }
+</style>
+</head>
+<body>
+<!--
+  A stand-in for a Lever application, built from the field map in tools/notes/boards.md,
+  which came from tools/probe_form.py against a real posting. Deliberately not a copy: it
+  carries the shapes the driver has to handle and nothing else, because this file is in a
+  public repo and a test drives it. Nothing here reaches an employer.
+
+  The shapes that matter, all four of them the reason Lever needed its own class:
+    - NO ids. Every control is addressed by `name`, which is what id_selector() has to
+      cope with. `location` is the single exception and it has both.
+    - a custom question written once, above the radios that answer it, where the radios
+      carry only their own option text
+    - a radio group whose four options therefore share one key, `cards[<uuid>][field0]`
+    - a location typeahead over a hidden `selectedLocation` that stays empty until a
+      suggestion is clicked
+-->
+<h1>Revenue Operations Manager</h1>
+
+<form id="application" onsubmit="return false;">
+<div class="section application-form">
+<ul>
+  <li class="application-question resume">
+    <label>
+      <div class="application-label">Resume/CV <span class="required">&#10033;</span></div>
+      <div class="application-field">
+        <a href="#" class="visible-resume-upload">
+          <span class="default-label">ATTACH RESUME/CV</span>
+          <input id="resume-upload-input" name="resume" type="file" required>
+        </a>
+      </div>
+    </label>
+  </li>
+  <li class="application-question">
+    <label>
+      <div class="application-label">Full name<span class="required">&#10033;</span></div>
+      <div class="application-field"><input type="text" data-qa="name-input" name="name" required></div>
+    </label>
+  </li>
+  <li class="application-question">
+    <label>
+      <div class="application-label">Email<span class="required">&#10033;</span></div>
+      <div class="application-field"><input type="email" data-qa="email-input" name="email" required></div>
+    </label>
+  </li>
+  <li class="application-question">
+    <label>
+      <div class="application-label">Phone <span class="required">&#10033;</span></div>
+      <div class="application-field"><input type="text" data-qa="phone-input" name="phone" required></div>
+    </label>
+  </li>
+  <li class="application-question" data-qa="structured-contact-location-question">
+    <label>
+      <div class="application-label">Current location <span class="required">&#10033;</span></div>
+      <div class="application-field">
+        <input class="location-input" data-qa="location-input" id="location-input"
+               type="text" maxlength="100" name="location" required>
+        <input id="selected-location" type="hidden" name="selectedLocation">
+        <div class="dropdown-container"><div class="dropdown-results"></div></div>
+      </div>
+    </label>
+  </li>
+  <li class="application-question">
+    <label>
+      <div class="application-label">LinkedIn URL</div>
+      <div class="application-field"><input type="text" name="urls[LinkedIn]"></div>
+    </label>
+  </li>
+</ul>
+</div>
+
+<!-- A custom card. The question is written once, here, and the radios below carry only
+     their own option text. -->
+<div class="section application-form">
+  <input type="hidden" name="cards[ad5e3844-aecd-49b5-9a6a-5435d716b25f][baseTemplate]" value="{}">
+  <ul>
+    <li class="application-question custom-question">
+      <div>
+        <div class="application-label multiple-choice">
+          <div class="text">Do you have the right to work in Ireland?<span class="required">&#10033;</span></div>
+        </div>
+        <div class="application-field required-field">
+          <ul data-qa="multiple-choice">
+            <li><label><input type="radio" name="cards[ad5e3844-aecd-49b5-9a6a-5435d716b25f][field0]" value="Yes" required><span>Yes</span></label></li>
+            <li><label><input type="radio" name="cards[ad5e3844-aecd-49b5-9a6a-5435d716b25f][field0]" value="No" required><span>No</span></label></li>
+          </ul>
+        </div>
+      </div>
+    </li>
+  </ul>
+</div>
+
+<div class="section application-form">
+  <input type="hidden" name="cards[1ec307db-810e-459b-8ed8-9d2c310b408e][baseTemplate]" value="{}">
+  <ul>
+    <li class="application-question custom-question">
+      <div>
+        <div class="application-label dropdown">
+          <div class="text">Why do you want to work here?</div>
+        </div>
+        <div class="application-field">
+          <textarea name="cards[1ec307db-810e-459b-8ed8-9d2c310b408e][field0]"></textarea>
+        </div>
+      </div>
+    </li>
+  </ul>
+</div>
+
+<!-- The demographic survey. Its own radio group, optional, with a decline option. -->
+<div class="section application-form eeo-survey">
+  <input type="hidden" name="surveysResponses[a723b959-0a3b-4e61-a9e2-295417eb4c01][baseTemplate]" value="{}">
+  <ul>
+    <li class="application-question custom-question">
+      <div>
+        <div class="application-label multiple-choice">
+          <div class="text">What gender do you identify as?</div>
+        </div>
+        <div class="application-field">
+          <ul data-qa="multiple-choice">
+            <li><label><input type="radio" name="surveysResponses[a723b959-0a3b-4e61-a9e2-295417eb4c01][responses][field0]" value="Woman"><span>Woman</span></label></li>
+            <li><label><input type="radio" name="surveysResponses[a723b959-0a3b-4e61-a9e2-295417eb4c01][responses][field0]" value="Man"><span>Man</span></label></li>
+            <li><label><input type="radio" name="surveysResponses[a723b959-0a3b-4e61-a9e2-295417eb4c01][responses][field0]" value="I'd prefer not to say"><span>I'd prefer not to say</span></label></li>
+          </ul>
+        </div>
+      </div>
+    </li>
+  </ul>
+</div>
+
+<div class="section application-form">
+  <button id="btn-submit" type="button" data-qa="btn-submit">Submit application</button>
+</div>
+</form>
+
+<div id="confirmation" class="hidden">Thank you for applying. We have received your application.</div>
+
+<script>
+ // The typeahead: suggestions arrive on a keystroke, and selectedLocation stays empty
+ // until one is clicked. Filling the visible input is not choosing a location.
+ var loc = document.getElementById('location-input');
+ var chosen = document.getElementById('selected-location');
+ var results = document.querySelector('.dropdown-results');
+ loc.addEventListener('input', function () {
+   results.innerHTML = '';
+   if (!loc.value.trim()) return;
+   var row = document.createElement('div');
+   row.textContent = loc.value + ', Ireland';
+   row.addEventListener('click', function () {
+     loc.value = row.textContent;
+     chosen.value = row.textContent;
+     results.innerHTML = '';
+   });
+   results.appendChild(row);
+ });
+ document.getElementById('btn-submit').addEventListener('click', function () {
+   document.getElementById('application').classList.add('hidden');
+   document.getElementById('confirmation').classList.remove('hidden');
+ });
+</script>
+</body>
+</html>

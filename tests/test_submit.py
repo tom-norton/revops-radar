@@ -31,7 +31,9 @@ import json
 import os
 import sys
 import tempfile
+import time
 import types
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import applyq  # noqa: E402
@@ -97,10 +99,12 @@ def test_only_boards_with_a_driver_are_claimed():
     assert submit.detect_ats("https://job-boards.greenhouse.io/acme/jobs/1") == "greenhouse"
     assert submit.detect_ats("https://boards.greenhouse.io/acme/jobs/1") == "greenhouse"
     assert submit.detect_ats("https://jobs.ashbyhq.com/vanta/abc") == "ashby"
+    assert submit.detect_ats("https://jobs.lever.co/octoenergy/abc") == "lever"
     for other in ("https://acme.wd1.myworkdayjobs.com/x/job/y",
                   "https://www.linkedin.com/jobs/view/123",
-                  "https://jobs.smartrecruiters.com/acme/1",
-                  "https://jobs.lever.co/acme/abc", ""):
+                  # SmartRecruiters serves its apply form from a separate oneclick-ui
+                  # host behind DataDome bot detection, so there is nothing to drive.
+                  "https://jobs.smartrecruiters.com/acme/1", ""):
         assert submit.detect_ats(other) == "", other
 
 
@@ -717,6 +721,222 @@ def test_ashby_and_lever_boards_are_read_too():
         out = findform.find_form({"company": "Acme", "title": "RevOps Manager",
                                   "market": "IE-Dublin"}, [], board(payload))
         assert out["outcome"] == "found" and host in out["url"], (host, out)
+
+
+def test_the_three_boards_added_later_are_read_too():
+    """SmartRecruiters, Recruitee and Workable, added after measuring what the first three
+    were missing. Each one's reader has to hand back the APPLICATION url, not the advert."""
+    boards = {
+        "api.smartrecruiters.com/v1/companies/acme":
+            {"content": [{"id": "abc", "name": "RevOps Manager",
+                          "company": {"identifier": "Acme"},
+                          "location": {"city": "Dublin", "country": "ie"}}]},
+        "acme.recruitee.com":
+            {"offers": [{"title": "RevOps Manager", "location": "Dublin, Ireland",
+                         "careers_url": "https://acme.recruitee.com/o/revops",
+                         "careers_apply_url":
+                             "https://acme.recruitee.com/o/revops/c/new"}]},
+        "widget/accounts/acme":
+            {"jobs": [{"title": "RevOps Manager", "city": "Dublin", "country": "Ireland",
+                       "url": "https://jobs.workable.com/view/xyz/revops",
+                       "application_url": "https://apply.workable.com/j/ABC123/apply"}]},
+    }
+    for key, payload in boards.items():
+        out = findform.find_form({"company": "Acme", "title": "RevOps Manager",
+                                  "market": "IE-Dublin"}, [], board({key: payload}))
+        assert out["outcome"] == "found", (key, out)
+        assert out["url"], (key, out)
+
+
+def test_workable_gives_the_form_and_not_the_board_page():
+    """jobs.workable.com/view/... is Workable's own advert with no fields on it at all;
+    apply.workable.com/j/<code>/apply is the application. Getting this wrong sends the
+    driver at a page it cannot fill -- see tools/notes/boards.md."""
+    _a, _s, jobs = findform.find_board("Acme", [], board({"widget/accounts/acme": {
+        "jobs": [{"title": "RevOps", "url": "https://jobs.workable.com/view/x/revops",
+                  "application_url": "https://apply.workable.com/j/ABC123/apply"}]}}))
+    assert jobs[0]["url"] == "https://apply.workable.com/j/ABC123/apply"
+    assert jobs[0]["linked_from"] == "https://jobs.workable.com/view/x/revops"
+
+
+def test_an_empty_smartrecruiters_answer_is_not_a_board():
+    """SmartRecruiters answers 200 with an empty page for a slug that does not exist, so
+    "board found" and "wrong guess" are indistinguishable from the status line. I read
+    that 200 as nine of nine companies reachable before checking what was in it; they were
+    not. An empty board has to count as no board."""
+    ats, slug, jobs = findform.find_board(
+        "Acme", [], board({"api.smartrecruiters.com": {"content": [], "totalFound": 0}}))
+    assert (ats, slug, jobs) == ("", "", [])
+
+
+# ---- the company cache
+#
+# 281 companies behind the rows with no known application host. The slug guessing is the
+# expensive half and the answer belongs to the company, so it is written down -- including
+# the negatives, which are most of them.
+
+def test_a_cached_board_skips_the_slug_guessing():
+    seen = []
+    cache = {"acme": {"ats": "greenhouse", "slug": "acme", "at": findform._today()}}
+    fetch = board(gh_board(("RevOps", "Dublin, Ireland")), seen=seen)
+    ats, slug, jobs = findform.find_board("Acme Ltd", [], fetch, cache)
+    assert (ats, slug) == ("greenhouse", "acme") and len(jobs) == 1
+    assert seen == ["https://boards-api.greenhouse.io/v1/boards/acme/jobs"], \
+        f"guessed at slugs with an answer on file: {seen}"
+
+
+def test_a_cached_nothing_is_an_answer_too():
+    """The point of the cache. Most of these companies run their own careers stack, and
+    asking six APIs about them again tomorrow finds the same nothing at six times the
+    cost."""
+    seen = []
+    cache = {"acme": {"ats": "", "slug": "", "at": findform._today()}}
+    out = findform.find_board("Acme", [], board({}, seen=seen), cache)
+    assert out == ("", "", [])
+    assert seen == [], f"probed a company already known to have no board: {seen}"
+
+
+def test_an_answer_that_has_gone_stale_is_asked_again():
+    """Companies do migrate boards, and a negative that never expires is a company this
+    can never discover."""
+    old = (datetime.now(timezone.utc).date()
+           - timedelta(days=findform.CACHE_TTL_DAYS + 1)).strftime("%Y-%m-%d")
+    assert not findform.cache_fresh({"at": old})
+    assert findform.cache_fresh({"at": findform._today()})
+    # No date at all, or a date that is not one, is not an answer to trust.
+    assert not findform.cache_fresh({})
+    assert not findform.cache_fresh({"at": "soon"})
+    assert not findform.cache_fresh(None)
+
+    seen = []
+    cache = {"acme": {"ats": "", "slug": "", "at": old}}
+    findform.find_board("Acme", [], board({}, seen=seen), cache)
+    assert seen, "trusted a month-old negative for ever"
+    assert cache["acme"]["at"] == findform._today()
+
+
+def test_a_cached_board_that_has_since_moved_is_looked_up_again():
+    """The slug was right last month and answers nothing now. Falling back to the guesses
+    is the difference between rediscovering the company and writing it off."""
+    cache = {"acme": {"ats": "greenhouse", "slug": "acme", "at": findform._today()}}
+    ats, slug, jobs = findform.find_board("Acme", [], board(
+        {"api.ashbyhq.com/posting-api/job-board/acme":
+         {"jobs": [{"title": "RevOps", "location": "Dublin",
+                    "jobUrl": "https://jobs.ashbyhq.com/acme/1"}]}}), cache)
+    assert (ats, slug) == ("ashby", "acme") and jobs
+    assert cache["acme"]["ats"] == "ashby", "kept the board it had just found empty"
+
+
+def test_the_cache_survives_a_round_trip_to_disk(tmp_path):
+    path = tmp_path / "board-cache.json"
+    boards = {"zeta": {"ats": "", "slug": "", "at": "2026-09-01"},
+              "acme": {"ats": "lever", "slug": "acme", "at": "2026-09-02"}}
+    findform.save_cache(boards, str(path))
+    assert findform.load_cache(str(path)) == boards
+    # Sorted, so a scan that meets one new company produces a one-line diff rather than a
+    # reshuffled file.
+    assert list(json.loads(path.read_text())["boards"]) == ["acme", "zeta"]
+    assert findform.load_cache(str(tmp_path / "nope.json")) == {}
+
+
+def test_a_company_name_is_the_cache_key_however_it_is_spelt():
+    assert findform.cache_key("Acme, Inc.") == findform.cache_key("  acme inc  ")
+    # The same normalisation board_slugs() uses, or a cached answer is filed under a name
+    # the next lookup will not ask for. This test used to pass while the cache was being
+    # missed entirely: "Acme Ltd" keyed as "acme ltd", the guessing path found greenhouse
+    # on its first probe, and one fetch looked exactly like a cache hit.
+    assert findform.cache_key("Acme Ltd") == findform.cache_key("Acme") == "acme"
+
+
+# ---- resolving a batch
+
+def rows_for(*specs):
+    return [{"id": f"r{i}", "company": c, "title": t, "market": "IE-Dublin"}
+            for i, (c, t) in enumerate(specs)]
+
+
+def test_one_board_fetch_serves_every_row_from_that_company():
+    """Half the rows on this dashboard share a company with another row, and the board is
+    a property of the company."""
+    seen = []
+    fetch = board(gh_board(("RevOps Manager", "Dublin, Ireland"),
+                           ("Sales Ops Lead", "Dublin, Ireland")), seen=seen)
+    out = findform.resolve_rows(rows_for(("Acme", "RevOps Manager"),
+                                         ("Acme", "Sales Ops Lead")), [], {}, fetch)
+    assert [out["r0"]["outcome"], out["r1"]["outcome"]] == ["found", "found"]
+    # One probe round for the company, not one per row. The round itself asks every board
+    # at once (see probe_slug), so what this counts is how many times the board that
+    # answered was fetched -- twice would mean the second row paid for the lookup again.
+    assert seen.count("https://boards-api.greenhouse.io/v1/boards/acme/jobs") == 1, seen
+
+
+def test_the_companies_nobody_has_asked_about_go_first():
+    """`limit` keeps one scan from spending ten minutes on two hundred new employers. The
+    ones it spends it on should be the ones that can still change a row."""
+    cache = {"known": {"ats": "", "slug": "", "at": findform._today()}}
+    out = findform.resolve_rows(rows_for(("Known", "RevOps"), ("Fresh", "RevOps")),
+                                [], cache, board({}), limit=1)
+    assert list(out) == ["r1"], out
+
+
+def test_the_lookup_stops_on_the_clock_as_well_as_the_count():
+    """`limit` bounds companies; this bounds time. A company costs 2.8s when every board
+    answers and one PROBE_TIMEOUT per slug when a board host hangs, and which of those a
+    run gets is a property of somebody else's infrastructure. A scan fires every fifteen
+    minutes and ends by pushing to main, so overrunning is a race on that push -- while
+    "some companies waited for the next run" costs nothing, because the cache means each
+    is only ever paid for once."""
+    slow = []
+
+    def fetch(url, **kw):
+        slow.append(url)
+        time.sleep(0.02)
+        return FakeResponse({}, 404)
+
+    # Real-looking names on purpose: board_slugs() strips corporate suffixes and drops
+    # anything shorter than two characters, so "Company 0" yields no slug at all and
+    # never reaches the network the budget is there to bound.
+    rows = rows_for(*[(f"Northwind{i} Holdings", "RevOps") for i in range(12)])
+    out = findform.resolve_rows(rows, [], {}, fetch, budget_s=0.05)
+    assert 0 < len(out) < len(rows), f"budget did nothing: {len(out)} of {len(rows)}"
+    # And a backfill that passes no budget runs the lot.
+    assert len(findform.resolve_rows(rows, [], {}, fetch, budget_s=None)) == len(rows)
+
+
+def test_a_board_lookup_that_explodes_does_not_stop_the_batch():
+    def fetch(url, **kw):
+        if "boom" in url:
+            raise RuntimeError("connection reset")
+        return FakeResponse(gh_board(("RevOps", "Dublin, Ireland"))[
+            "boards-api.greenhouse.io/v1/boards/acme"]) if "/acme" in url \
+            else FakeResponse({}, 404)
+    out = findform.resolve_rows(rows_for(("Boom", "RevOps"), ("Acme", "RevOps")),
+                                [], {}, fetch)
+    assert out["r1"]["outcome"] == "found"
+
+
+def test_resolving_in_bulk_says_the_same_thing_as_resolving_one():
+    """resolve_rows exists for the fetch count, not for a second opinion. Every outcome
+    find_form can reach has to survive the trip through it."""
+    fetch = board(gh_board(("RevOps Manager", "London, England"),
+                           ("RevOps Manager", "Dublin, Ireland"),
+                           ("Head of Marketing", "Dublin, Ireland")))
+    out = findform.resolve_rows(rows_for(("Acme", "RevOps Manager"),
+                                         ("Acme", "Chief of Staff"),
+                                         ("Nowhere", "RevOps Manager")), [], {}, fetch)
+    assert out["r0"]["outcome"] == "found"
+    assert out["r0"]["location"] == "Dublin, Ireland"
+    assert out["r1"]["outcome"] == "gone"
+    assert out["r2"]["outcome"] == "no-board"
+
+
+def test_every_board_that_can_be_found_can_also_be_shown():
+    """A lookup that finds a board and no matching title tells Tom which board to look at.
+    A board findform can read but board_link() cannot name leaves that message with a
+    dangling "see for yourself" and nothing to see."""
+    for ats in findform.BOARDS:
+        assert applyq.board_link({"ats": ats, "slug": "acme"}), ats
+    assert applyq.board_link({"ats": "greenhouse", "slug": ""}) == ""
 
 
 # ---------------------------------------------------------------- the state machine
