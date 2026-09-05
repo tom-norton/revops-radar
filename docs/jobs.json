@@ -194,7 +194,9 @@
   },
   "found_at": "2026-09-04T16:44:28.707401+00:00",
   "ats": "personio",
-  "ats_fillable": false
+  "ats_fillable": false,
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "rr-d5198a97-4812-4cd7-aeb1-afb1951a9f51",
@@ -1875,8 +1877,15 @@
   "found_at": "2026-09-03T16:51:23.208230+00:00",
   "ats": "",
   "ats_fillable": false,
-  "dupe_ids": [],
-  "also_seen": []
+  "dupe_ids": [
+   "az-gb-5871240760"
+  ],
+  "also_seen": [
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.co.uk/jobs/details/5871240760?utm_medium=api&utm_source=7c8a497a"
+   }
+  ]
  },
  {
   "id": "hc-smartrecruiters___servicenow___9a1eca70-ca53-42e8-8a8e-5cc2e",
@@ -3166,6 +3175,50 @@
   "ats_fillable": false
  },
  {
+  "id": "rr-f7d97822-50e3-453f-9c7b-b783b777cc83",
+  "company": "LinkedIn",
+  "title": "Associate, GTM AI Builder \u2013 Sales Strategy & Operations",
+  "location": "Dublin, Ireland",
+  "country": "ie",
+  "market": "IE-Dublin",
+  "url": "https://revopsroles.com/jobs/f7d97822-50e3-453f-9c7b-b783b777cc83",
+  "source": "revopsroles",
+  "salary": "",
+  "posted_at": 1788595228.0,
+  "description": "Category: GTM Engineer; Seniority: Senior; Work mode: Hybrid",
+  "desc_chars": 60,
+  "sponsor_region": "",
+  "sponsor_raw": "n/a",
+  "sponsor": "",
+  "score": 7.1,
+  "score_raw": 7.1,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 6.0,
+   "skills": 6.0,
+   "seniority": 6.0,
+   "domain": 9.0,
+   "location_visa": 9.0,
+   "trajectory": 8.0
+  },
+  "tier": "IE-Dublin",
+  "flags": [
+   "comp not listed, verify vs floor",
+   "Posting detail is minimal \u2014 scope, YoE band and required tooling unver",
+   "'GTM AI Builder' implies hands-on automation/LLM/SQL build work; Tom's",
+   "'Associate' at LinkedIn can screen as mid-level against 11 years + MBA"
+  ],
+  "verdict": "Core GTM ops function at a tier-1 sponsor in Dublin; technical builder bar and Associate level are the real risks.",
+  "comp": {
+   "stated": false,
+   "min_base": 0.0,
+   "currency": ""
+  },
+  "found_at": "2026-09-05T08:25:03.508797+00:00",
+  "ats": "",
+  "ats_fillable": false
+ },
+ {
   "id": "rr-b39557e9-e5cf-4d97-b2bd-8c137cce047f",
   "company": "Sierra",
   "title": "GTM Operations Manager, Agent Development",
@@ -3395,6 +3448,60 @@
   "ats_fillable": false,
   "dupe_ids": [],
   "also_seen": []
+ },
+ {
+  "id": "hc-workday___adobe-wd5-external_experienced___sales-operations-",
+  "company": "Adobe",
+  "title": "Sales Operations Manager",
+  "location": "London or Reading",
+  "country": "",
+  "market": "UK-London",
+  "salary": "",
+  "url": "https://adobe.wd5.myworkdayjobs.com/external_experienced/job/London/Sales-Operations-Manager_R171513",
+  "source": "hiring.cafe",
+  "description": "The Opportunity \nThe Sales Operations Manager, Education EMEA, is a key member of the Global Sales Strategy & Operations organisation. As the primary business lead for EMEA, you will drive operational excellence, provide business performance insights, ensure forecasting accuracy, and maintain execution rigour across the Education business.\nThe ideal candidate is comfortable with influencing senior leaders, combining strong business insight, analytical capability, operational excellence, and customer management skills. They dedicate themselves to prioritizing activities that drive our business goals, spotting bottlenecks, and crafting repeatable processes. They also identify trends, provide the business with growth opportunities, challenge assumptions, and own the outcome through to completion.\n What you will do \nOwn the ope\n[...]\napplication may not move forward in the process.\nAt Adobe, we empower employees to innovate with AI \u2014 and we look for candidates eager to do the same. As part of the hiring experience, we provide clear guidance on where AI is encouraged during the process and where it\u2019s restricted during live interviews. See how we think about AI in the hiring experience .",
+  "posted_at": "2026-09-04T00:00:00.000Z",
+  "dupe_ids": [
+   "li-4462324237"
+  ],
+  "also_seen": [
+   {
+    "source": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/4462324237"
+   }
+  ],
+  "desc_chars": 7479,
+  "sponsor_region": "UK",
+  "sponsor_raw": "on_register",
+  "sponsor": "UK sponsor",
+  "score": 7.0,
+  "score_raw": 7.0,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 5.0,
+   "skills": 6.0,
+   "seniority": 7.0,
+   "domain": 9.0,
+   "location_visa": 8.0,
+   "trajectory": 9.0
+  },
+  "tier": "UK-London",
+  "flags": [
+   "comp not listed, verify vs floor",
+   "Role centres on owning the forecast/operating rhythm end to end \u2014 Tom ",
+   "Requires seasoned sales-ops tenure (pipeline governance, quota/territo",
+   "Adobe sales-ops roles are heavily competed; pipeline/bookings analytic",
+   "Reading listed as alternate location"
+  ],
+  "verdict": "Bullseye function at a tier-1 sponsor, but ownership of forecasting rhythm and sales-ops tenure are real gaps.",
+  "comp": {
+   "stated": false,
+   "min_base": 0.0,
+   "currency": ""
+  },
+  "found_at": "2026-09-05T08:24:39.142287+00:00",
+  "ats": "workday",
+  "ats_fillable": false
  },
  {
   "id": "hc-ashby___sierra___d8baf20a-4c20-496d-9f0c-bc47a25fddb8",
@@ -6112,8 +6219,15 @@
   "found_at": "2026-09-04T13:48:16.079556+00:00",
   "ats": "",
   "ats_fillable": false,
-  "dupe_ids": [],
-  "also_seen": []
+  "dupe_ids": [
+   "hc-ttcportals___meltwatercareers___18203098"
+  ],
+  "also_seen": [
+   {
+    "source": "hiring.cafe",
+    "url": "https://meltwatercareers.ttcportals.com/jobs/18203098"
+   }
+  ]
  },
  {
   "id": "li-4460240190",
@@ -7101,7 +7215,16 @@
   "verdict": "Strong brand and sponsor, but vague business-ops scope and consulting-style bar make this a speculative stretch.",
   "found_at": "2026-08-16T06:54:43.351967+00:00",
   "ats": "",
-  "ats_fillable": false
+  "ats_fillable": false,
+  "dupe_ids": [
+   "az-gb-5871005439"
+  ],
+  "also_seen": [
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.co.uk/jobs/details/5871005439?utm_medium=api&utm_source=7c8a497a"
+   }
+  ]
  },
  {
   "id": "li-4448429438",
@@ -9759,9 +9882,19 @@
   "ats": "smartrecruiters",
   "ats_fillable": false,
   "dupe_ids": [
+   "az-gb-5871005528",
+   "hc-adhoc___servicenow___careers_744000147485112",
    "li-4463610790"
   ],
   "also_seen": [
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.co.uk/jobs/details/5871005528?utm_medium=api&utm_source=7c8a497a"
+   },
+   {
+    "source": "hiring.cafe",
+    "url": "https://careers.servicenow.com/jobs/744000147485112/sales-enablement-manager/"
+   },
    {
     "source": "linkedin",
     "url": "https://www.linkedin.com/jobs/view/4463610790"
@@ -10161,10 +10294,15 @@
   },
   "found_at": "2026-08-31T16:11:40.156326+00:00",
   "dupe_ids": [
+   "az-nl-5871571904",
    "li-4461054946",
    "rr-9d234015-8186-4bf2-b4de-800bc944b1af"
   ],
   "also_seen": [
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.nl/details/5871571904?utm_medium=api&utm_source=7c8a497a"
+   },
    {
     "source": "linkedin",
     "url": "https://www.linkedin.com/jobs/view/4461054946"
@@ -12370,10 +12508,15 @@
   "verdict": "Perfect function and employer, but a team-leading Senior Manager bar the candidate's CS background can't clear.",
   "found_at": "2026-08-07T19:46:33.889763+00:00",
   "dupe_ids": [
+   "az-gb-5871239445",
    "hc-adhoc___amazon___10525813",
    "li-4462713081"
   ],
   "also_seen": [
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.co.uk/jobs/details/5871239445?utm_medium=api&utm_source=7c8a497a"
+   },
    {
     "source": "hiring.cafe",
     "url": "https://www.amazon.jobs/en/jobs/10525813/sr-sales-ops-manager-eu-amazon-shipping"
@@ -17082,6 +17225,95 @@
   "ats_fillable": false
  },
  {
+  "id": "hc-grnhse___trustpilot___8140567",
+  "company": "Trustpilot",
+  "title": "Customer Success Manager",
+  "location": "Denver or Copenhagen or Amsterdam or Edinburgh or Hamburg or London or Melbourne or Milan or New York City",
+  "country": "",
+  "market": "NL",
+  "salary": "65000-77000 USD",
+  "url": "https://corporate.trustpilot.com/careers/job/8140567?gh_jid=8140567",
+  "source": "hiring.cafe",
+  "description": "At Trustpilot, we're on an incredible journey. We're a profitable, high-growth FTSE-250 company with a big vision: to become the universal symbol of trust. We run the world's largest open customer review platform, and while we've come a long way, there's still so much exciting work to do. Come join us at the heart of trust!\nAs an Customer Success Manager, you support a portfolio of customers to ensure they onboard successfully, adopt Trustpilot effectively, and achieve measurable value from the platform.\nYou are accountable for driving strong Business Adoption and Gross Renewal Rate (GRR) within a structured, high-volume portfolio, with Net Promoter Score (NPS) tracked as a key measure of customer experience and satisfaction.\nThis role follows defined playbooks and processes to deliver consistent, repeatable customer succes\n[...]\ne uses and disclosures stated in our Privacy Policy. \n If you have a disability and would like to discuss any adjustments you might need either in submitting your application, or to the recruitment process more generally, please let us know by contacting our Talent Acquisition Team (talent.acquisition@trustpilot.com) quoting the role you wish to apply for.",
+  "posted_at": "2026-09-04T13:16:59.000Z",
+  "desc_chars": 7415,
+  "sponsor_region": "UK",
+  "sponsor_raw": "on_register",
+  "sponsor": "UK sponsor",
+  "score": 4.9,
+  "score_raw": 4.9,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 6.0,
+   "skills": 5.0,
+   "seniority": 3.0,
+   "domain": 7.0,
+   "location_visa": 4.0,
+   "trajectory": 3.0
+  },
+  "tier": "NL",
+  "flags": [
+   "Posting is a mid-level, playbook-driven high-volume CSM role ('develop",
+   "Benefits (401k, US holidays) and USD band indicate this is a US-anchor",
+   "Commercial/billing escalated to Account Manager \u2014 narrower ownership t"
+  ],
+  "verdict": "Junior-leaning, high-volume playbook CSM at a strong brand; US-anchored comp and no pivot value.,verdict:x",
+  "comp": {
+   "stated": true,
+   "min_base": 65000.0,
+   "currency": "USD"
+  },
+  "found_at": "2026-09-05T08:24:52.942673+00:00",
+  "ats": "",
+  "ats_fillable": false
+ },
+ {
+  "id": "az-gb-5871134871",
+  "company": "DIGITEC Financial Technologies and Services GmbH",
+  "title": "Team Lead Customer Success (all genders)",
+  "location": "Liverpool Street, Central London",
+  "country": "gb",
+  "market": "UK-London",
+  "url": "https://www.adzuna.co.uk/jobs/details/5871134871?utm_medium=api&utm_source=7c8a497a",
+  "source": "adzuna",
+  "description": "About the role\nAre you passionate about building high-performing teams, deepening client trust, and turning complex software into a tool people rely on every day?\nAs Team Lead Customer Success, you'll take ownership of our Customer Success function for D3 and OMS clients \u2014 banks, traders and technical teams who depend on our systems to price, manage and distribute FX Forward and Swap prices around the clock. You'll lead a team of four responsible for day-to-day client support, build the processes and product expertise that are shared across the team, and shape a more proactive way of working with clients.\nThis is not a role where you inherit a finished machine. You'll inherit a strong product, demanding expert users, a good team, and a function that needs clear ownership, deep product expertise, strong tooling, and a proact\n[...]\nial mathematics, sales, IT systems, and more. Operating from three key locations\u2014Hamburg (headquarters), London, and Singapore\u2014we champion equal opportunities and foster a culture of respect and collaboration, ensuring a welcoming and supportive work environment for all.\nJoin us as we continue to redefine the landscape of financial technology with DIGITEC.",
+  "salary": "",
+  "posted_at": "2026-09-05T00:57:20Z",
+  "desc_chars": 6779,
+  "sponsor_region": "UK",
+  "sponsor_raw": "on_register",
+  "sponsor": "UK sponsor",
+  "score": 4.9,
+  "score_raw": 4.9,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 4.0,
+   "skills": 4.0,
+   "seniority": 5.0,
+   "domain": 6.0,
+   "location_visa": 7.0,
+   "trajectory": 4.0
+  },
+  "tier": "UK-London",
+  "flags": [
+   "CSM in UK-London at a non-standout company",
+   "comp not listed, verify vs floor",
+   "Requires prior people-management of a CS/support team \u2014 candidate has ",
+   "Heavy technical support/escalation ownership rather than commercial CS",
+   "FX swaps/capital-markets domain knowledge expected; no financial-marke",
+   "Tooling stack is Dynamics/Jira/Confluence, not Salesforce/Gainsight/Hu"
+  ],
+  "verdict": "Support-leadership role in FX trading tech needing people-management and markets knowledge he lacks; doesn't advance the RevOps pivot.",
+  "comp": {
+   "stated": false,
+   "min_base": 0.0,
+   "currency": ""
+  },
+  "found_at": "2026-09-05T08:24:13.979002+00:00",
+  "ats": "",
+  "ats_fillable": false
+ },
+ {
   "id": "az-gb-5836699781",
   "company": "Veeam Software",
   "title": "Lead Customer Success Engineer - Data & AI Security",
@@ -18328,6 +18560,65 @@
   "ats_fillable": false
  },
  {
+  "id": "rr-5958be05-3a5f-447a-bf4e-81312f310d4d",
+  "company": "Geely Technology Europe",
+  "title": "Sales Operations Specialist, Benelux Region",
+  "location": "Amsterdam, Netherlands",
+  "country": "nl",
+  "market": "NL",
+  "url": "https://revopsroles.com/jobs/5958be05-3a5f-447a-bf4e-81312f310d4d",
+  "source": "revopsroles",
+  "salary": "",
+  "posted_at": 1788595228.0,
+  "dupe_ids": [
+   "hc-teamtailor___geelyeurope___8325248",
+   "li-4463395975"
+  ],
+  "also_seen": [
+   {
+    "source": "hiring.cafe",
+    "url": "https://geelyeurope.teamtailor.com/jobs/8325248-sales-operations-specialist-benelux-region"
+   },
+   {
+    "source": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/4463395975"
+   }
+  ],
+  "description": "Category: Sales Ops; Seniority: Junior",
+  "desc_chars": 38,
+  "sponsor_region": "NL",
+  "sponsor_raw": "not_found",
+  "sponsor": "not on NL register",
+  "score": 4.5,
+  "score_raw": 4.5,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 5.0,
+   "skills": 5.0,
+   "seniority": 3.0,
+   "domain": 4.0,
+   "location_visa": 5.0,
+   "trajectory": 5.0
+  },
+  "tier": "NL",
+  "flags": [
+   "title band: specialist -- check the JD for actual scope and comp",
+   "comp not listed, verify vs floor",
+   "Posting flagged junior seniority - likely below Manager/senior IC band",
+   "Automotive OEM, not B2B SaaS - post-sale SaaS retention experience tra",
+   "Employer not on NL sponsor register under this name; sponsorship for a"
+  ],
+  "verdict": "Junior automotive sales-ops specialist role: wrong industry, wrong level, weak sponsorship odds - not worth the application.",
+  "comp": {
+   "stated": false,
+   "min_base": 0.0,
+   "currency": ""
+  },
+  "found_at": "2026-09-05T08:24:24.753884+00:00",
+  "ats": "teamtailor",
+  "ats_fillable": false
+ },
+ {
   "id": "hc-oraclecloud___don.fa.em2___9942",
   "company": "Euroclear",
   "title": "Global Head, Sales Enablement",
@@ -18733,6 +19024,51 @@
   "found_at": "2026-08-19T18:20:24.178102+00:00",
   "dupe_ids": [],
   "also_seen": [],
+  "ats": "",
+  "ats_fillable": false
+ },
+ {
+  "id": "rr-66f49513-b03e-4cb5-9421-0ccfc544f562",
+  "company": "NTT DATA",
+  "title": "Executive Head of Sales Operations & Growth, Europe",
+  "location": "London, United Kingdom",
+  "country": "gb",
+  "market": "UK-London",
+  "url": "https://revopsroles.com/jobs/66f49513-b03e-4cb5-9421-0ccfc544f562",
+  "source": "revopsroles",
+  "salary": "",
+  "posted_at": 1788595228.0,
+  "description": "Category: Sales Ops; Seniority: Director",
+  "desc_chars": 40,
+  "sponsor_region": "UK",
+  "sponsor_raw": "on_register",
+  "sponsor": "UK sponsor",
+  "score": 4.3,
+  "score_raw": 4.3,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 3.0,
+   "skills": 4.0,
+   "seniority": 2.0,
+   "domain": 6.0,
+   "location_visa": 7.0,
+   "trajectory": 5.0
+  },
+  "tier": "UK-London",
+  "flags": [
+   "title band: director_plus -- check the JD for actual scope and comp",
+   "comp not listed, verify vs floor",
+   "Executive/Head-of scope across Europe far beyond candidate's level; no",
+   "IT services/consulting enterprise rather than B2B SaaS post-sale envir",
+   "Likely expects large-team leadership and P&L-level ownership he cannot"
+  ],
+  "verdict": "Right function, wrong altitude: an executive Europe-wide sales ops leadership role he cannot credibly compete for.",
+  "comp": {
+   "stated": false,
+   "min_base": 0.0,
+   "currency": ""
+  },
+  "found_at": "2026-09-05T08:25:11.669141+00:00",
   "ats": "",
   "ats_fillable": false
  },
