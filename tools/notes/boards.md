@@ -121,3 +121,91 @@ without clicking through first.
 So a Workable driver needs one thing the Greenhouse one does not: `open()` has to press
 "Apply now" and wait for the real form before reading any fields. Worth knowing, not worth
 building until the reCAPTCHA question above is settled.
+
+# Lever: built, 5 Sep 2026
+
+Probed against a live Octopus Energy posting
+(`jobs.lever.co/octoenergy/<id>/apply`, 45 controls). The plainest form of the three:
+server-rendered HTML, no react-select, nothing hydrated after load. What it does have is
+one shape neither Greenhouse nor Ashby has, and it broke two things that looked generic.
+
+## The field map
+
+| what | how it is addressed |
+| --- | --- |
+| CV | `input[name=resume]`, `#resume-upload-input`, `data-qa=input-resume` |
+| full name | `input[name=name]`, `data-qa=name-input` |
+| email / phone | `input[name=email]` / `input[name=phone]` |
+| current location | `#location-input` + hidden `#selected-location` |
+| current company | `input[name=org]` |
+| links | `input[name="urls[LinkedIn]"]`, and Twitter / GitHub / Portfolio / Other |
+| custom question | `cards[<uuid>][field<n>]` — text, textarea, select or radio group |
+| demographic survey | `surveysResponses[<uuid>][responses][field<n>]` |
+| submit | `#btn-submit`, `data-qa=btn-submit` |
+
+## The two things that were not board-specific after all
+
+Both were latent bugs in the generic half, not Lever quirks, and both would have silently
+filled nothing rather than raised:
+
+- **`id_selector()` only ever built `[id="..."]`.** `READ_FIELDS_JS` has always identified
+  a control as `el.id || el.name`, so a form whose inputs have names and no ids read
+  perfectly and then matched nothing at fill time. Lever is that form: `name`, `email`,
+  `phone`, `org` and every custom question have no id at all. It now selects on either.
+- **Radios sharing a name collapsed to one option.** The reader deduped on `el.id ||
+  el.name`, which is fine for Ashby (its EEOC radios have distinct ids) and wrong for
+  Lever (its radios have none), where a four-option question read as one option. The
+  dedupe key now includes the radio's value.
+
+## The one that genuinely is Lever's
+
+A custom question's text is written **once**, above the controls that answer it
+(`.application-question .application-label .text`); the radios below carry only their own
+option text. No amount of rearranging the field list reaches it, so `reshape()` is now
+handed the page and `LEVER_QUESTIONS_JS` reads the question block for every control.
+`reshape(raw, page)` is the contract for every driver now; Ashby ignores the page.
+
+And **current location is a typeahead**. Typing the city is not choosing it: Lever submits
+the hidden `selectedLocation`, which stays empty until a suggestion is clicked. Hence the
+`settle()` hook — a last pass after the fill, for a board whose fields are not finished the
+moment they are filled.
+
+## hCaptcha, and the same rule as ever
+
+The apply page loads an invisible hCaptcha (`div#h-captcha[data-sitekey]`, a hidden
+`h-captcha-response` input, `newassets.hcaptcha.com` enclave iframes). A different vendor
+from Greenhouse's reCAPTCHA Enterprise and Ashby's reCAPTCHA v2; the same rule. Nothing
+tries to get past it. `anti_bot()` already matched `hcaptcha`, so it is named in the
+preview before Tom decides to send, and again if a submission goes through unconfirmed.
+
+# SmartRecruiters: read the board, do not drive the form
+
+Worth writing down, because the board API is genuinely useful and the driver is not
+possible, and those two facts look contradictory from the outside.
+
+**The board API is in.** `api.smartrecruiters.com/v1/companies/<slug>/postings` needs no
+key and is how ServiceNow's London and Dublin roles stopped showing as "no board found".
+
+**The form is not.** Two things, found by probing:
+
+1. The apply form is not on the posting page. A probe of
+   `jobs.smartrecruiters.com/<company>/<id>` found **one** control, and it was a WeChat
+   share input. The application lives on a separate host:
+   `jobs.smartrecruiters.com/oneclick-ui/company/<company>/publication/<uuid>?dcr_ci=<company>`,
+   where the uuid is already in the board API response.
+2. That host is behind **DataDome**. A probe of the oneclick URL returned **0 controls**
+   and a `geo.captcha-delivery.com/captcha/` iframe — bot detection that stops the page
+   rendering at all, rather than a captcha at the submit button. There is nothing to read,
+   let alone fill.
+
+So `detect_ats()` deliberately does not claim SmartRecruiters, `application_status()` shows
+it as a board with no tick, and the dashboard link is one Tom opens himself.
+
+## A caution about measuring board coverage
+
+SmartRecruiters answers **200 with `totalFound: 0`** for a slug that does not exist, rather
+than 404. Reading the status line alone, I reported "nine of nine companies reachable" and
+was wrong: most of those 200s were empty. `board_jobs()` treats an empty board as no board
+for exactly this reason, and `test_an_empty_smartrecruiters_answer_is_not_a_board` pins it.
+Recruitee has the same trap in a different shape: `google.recruitee.com` resolves, and is a
+demo account with one "Senior Marketer (Sample)" posting on it.

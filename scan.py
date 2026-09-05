@@ -206,6 +206,12 @@ CLAUDE_ATTEMPTS = 3           # per call, with exponential backoff on 429/5xx/ti
 NTFY_TOPIC = "tom-revops-radar-c16aabb2"   # push notifications for strong matches (ntfy.sh)
 NTFY_SCORE_THRESHOLD = 7.5
 KEEP_DAYS = 45
+# How far back a row is worth a board lookup. Matches what the dashboard shows, because a
+# row he cannot see is a row whose board nobody is waiting to know.
+BOARD_LOOKUP_DAYS = 7
+# New companies looked up per run. The cache makes each one a one-off cost, so this is
+# only about keeping any single scan short.
+BOARD_LOOKUPS_PER_RUN = 40
 MAX_POST_AGE_DAYS = 7    # drop postings older than this when the source gives us a date
 # How much of the posting the scoring model sees. The old 2200 cut a typical 5,000-char ad
 # roughly in half, and the half it threw away was the bottom -- which is exactly where the
@@ -2381,6 +2387,54 @@ def main():
         ats, fillable = submit.application_status(j)
         j["ats"] = ats
         j["ats_fillable"] = fillable
+
+    # Then the half that costs a network call: for the rows that still have no known
+    # application host, go and find the company's own board. 373 of 492 rows were in that
+    # state and the dashboard could only say "unknown" about every one of them, while
+    # /submit would have found a board for a good share the moment one was queued. The
+    # answer belongs on the dashboard, before he picks.
+    #
+    # Bounded four ways, because this is the one part of a scan that talks to six board
+    # APIs, and a scan that overruns its fifteen-minute tick races the next one on the
+    # push to main. Only rows he can actually see are looked up (recent, and at or above
+    # the borderline floor); the answer is cached per COMPANY, negatives included, so the
+    # ~200 employers running their own careers stack are asked once a month rather than
+    # every run; a single run looks up at most BOARD_LOOKUPS_PER_RUN new companies; and
+    # findform.resolve_rows stops on its own wall-clock budget regardless, since how long
+    # a company costs is a property of somebody else's infrastructure rather than of
+    # anything measurable here. Whatever does not fit waits for the next run, which costs
+    # nothing: the cache means each company is only ever paid for once.
+    cutoff_seen = (datetime.now(timezone.utc) - timedelta(days=BOARD_LOOKUP_DAYS)).isoformat()
+    todo = [j for j in merged
+            if not j.get("ats")
+            and j.get("found_at", "") >= cutoff_seen
+            and (j.get("score") or 0) >= FLOOR]
+    if todo:
+        # Imported here, not at the top. findform imports this module -- it needs
+        # market_of() to tell whether a board's posting is in one of Tom's markets -- so a
+        # top-level import either way round is a cycle. It resolves at runtime today
+        # because both sides only touch the other inside functions, which is a thing that
+        # works right up until somebody adds a module-level reference and the whole
+        # pipeline stops importing. One deferred import is cheaper than that failure.
+        import findform
+        cache = findform.load_cache()
+        before = len(cache)
+        found = findform.resolve_rows(todo, companies, cache,
+                                      limit=BOARD_LOOKUPS_PER_RUN)
+        hits = 0
+        for j in todo:
+            r = found.get(j.get("id")) or {}
+            if r.get("outcome") == "found":
+                j["ats"] = submit.detect_ats(r["url"]) or submit.apply_host_name(r["url"])
+                j["ats_fillable"] = bool(submit.detect_ats(r["url"]))
+                # Kept so /submit does not repeat the lookup, and so the dashboard can
+                # link straight at the application rather than the advert.
+                j["apply_url"] = r["url"]
+                hits += 1
+        findform.save_cache(cache)
+        src_status["board lookup"] = (
+            f"{len(todo)} rows with no known board, {hits} resolved; "
+            f"{len(cache) - before} companies newly cached, {len(cache)} known")
 
     src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
     if USAGE["in"] or USAGE["cache_read"]:

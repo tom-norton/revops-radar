@@ -235,6 +235,14 @@ function card(j, reviewed){
   // costs a network round trip and only runs when a role is actually queued. So "no badge"
   // means "not known to be fillable without asking", not "definitely not" -- a 9.0 with no
   // badge is still worth /submit, and worth applying to by hand either way.
+  // Where the application actually is, when scan.py's board lookup found it and the row's
+  // own link is somewhere else. Half these rows arrive through an aggregator -- LinkedIn,
+  // revopsroles, hiring.cafe -- and "View posting" then opens an advert with no form on
+  // it. This is the form, and it is the same URL /submit would fill.
+  const applyLink = (j.apply_url && j.apply_url !== j.url)
+    ? `<a href="${esc(j.apply_url)}" target="_blank" rel="noopener"
+         title="The application form itself, not the advert">Apply &rarr;</a>`
+    : "";
   const atsTag = j.ats_fillable
     ? `<span class="tag fillable" title="/submit can fill this one on its own">&check; ${esc(j.ats)}</span>`
     : j.ats
@@ -278,6 +286,7 @@ function card(j, reviewed){
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
+      ${applyLink}
       <span class="src">${j.source||""}${also} · ${fresh(j.found_at)}</span>
     </div>
     ${actions}`;

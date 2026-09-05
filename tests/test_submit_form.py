@@ -109,8 +109,12 @@ def main():
     ok &= check("work authorisation was answered from nationality and market",
                 plan["answers"]["question_1"]["value"] == "No",
                 plan["answers"].get("question_1"))
-    ok &= check("the gender question was left alone",
-                "question_4" not in plan["answers"])
+    # Declined rather than left empty: Tom asked for every demographic question to be
+    # answered with the form's own decline option where it offers one. What this guards is
+    # that the option chosen is that one and never a real answer.
+    ok &= check("the gender question is declined, never answered",
+                plan["answers"].get("question_4", {}).get("value")
+                == "I don't wish to answer", plan["answers"].get("question_4"))
 
     pdf = os.path.join(OUT, "application-form.pdf")
     with submit.Session() as s:
@@ -235,8 +239,13 @@ def main():
     ok &= check("ashby: the whole name goes in one field",
                 known.get("_systemfield_name", {}).get("value") == "Tom Norton",
                 known.get("_systemfield_name"))
-    ok &= check("ashby: the gender question is left alone",
-                "ef84__systemfield_eeoc_gender" not in known, known.keys())
+    # Not "left blank": Tom asked for every demographic question to be answered with the
+    # form's own decline option, so what is checked here is that the ONE thing chosen is
+    # the decline. Answering it with anything else is the failure this guards.
+    ok &= check("ashby: the gender question is declined, never answered",
+                known.get("ef84__systemfield_eeoc_gender", {}).get("value")
+                == "Decline to self-identify",
+                known.get("ef84__systemfield_eeoc_gender"))
     ok &= check("ashby: sponsorship is answered from nationality and market",
                 known.get("6cff3ad4-d55b", {}).get("value") == "Yes",
                 known.get("6cff3ad4-d55b"))
@@ -251,13 +260,15 @@ def main():
             "() => ({name: document.getElementById('_systemfield_name').value,"
             " spons: document.getElementById('6cff3ad4-d55b').checked,"
             " gender: [...document.querySelectorAll('[name=ef84__systemfield_eeoc_gender]')]"
-            "          .some(r => r.checked),"
+            "          .filter(r => r.checked)"
+            "          .map(r => r.parentElement.innerText.trim()),"
             " resume: document.getElementById('_systemfield_resume').files.length,"
             " autofill: document.querySelectorAll('input[type=file]')[0].files.length})")
         ok &= check("ashby: the name landed", vals["name"] == "Tom Norton", vals)
         ok &= check("ashby: pressing Yes ticked the hidden checkbox behind it",
                     vals["spons"] is True, vals)
-        ok &= check("ashby: no gender radio was selected", vals["gender"] is False, vals)
+        ok &= check("ashby: the only gender radio selected is the decline",
+                    vals["gender"] == ["Decline to self-identify"], vals)
         ok &= check("ashby: the CV went to the resume field", vals["resume"] == 1, vals)
         ok &= check("ashby: the autofill input was never touched",
                     vals["autofill"] == 0, vals)
@@ -265,6 +276,87 @@ def main():
     result = submit.submit_form(aplan, os.path.join(OUT, "ashby-sent.pdf"), tmp)
     ok &= check("ashby: it submits and the page confirms it",
                 result.get("sent") is True, result.get("reason"))
+
+    # ---- the Lever driver, against Lever's own shapes
+    lever_url = fixture_url(os.path.join(HERE, "fixtures", "lever-form.html"))
+    lfields, _ = submit.read_form(lever_url, "lever")
+    lby = {f["id"]: f for f in lfields}
+    # Lever gives its controls a name and no id at all. If id_selector() only ever built
+    # `[id="..."]`, every one of these would read fine and fill nothing.
+    ok &= check("lever: a control with no id is found by its name",
+                lby.get("name", {}).get("label") == "Full name", sorted(lby))
+    rtw = lby.get("cards[ad5e3844-aecd-49b5-9a6a-5435d716b25f][field0]") or {}
+    ok &= check("lever: a radio group collapses into one field with every option",
+                rtw.get("kind") == submit.SELECT and rtw.get("options") == ["Yes", "No"],
+                rtw)
+    ok &= check("lever: the question above the radios is the field's label",
+                "right to work" in (rtw.get("label") or "").lower(), rtw.get("label"))
+    ok &= check("lever: a custom textarea gets the question written above it",
+                (lby.get("cards[1ec307db-810e-459b-8ed8-9d2c310b408e][field0]") or {})
+                .get("label") == "Why do you want to work here?", lby.keys())
+    gender = lby.get("surveysResponses[a723b959-0a3b-4e61-a9e2-295417eb4c01]"
+                     "[responses][field0]") or {}
+    ok &= check("lever: the survey question is recognised as demographic",
+                submit.is_demographic(gender.get("label") or ""), gender.get("label"))
+
+    lident = dict(IDENT, full_name="Tom Norton")
+    lknown, _notes = submit.plan_known(lfields, lident, dict(JOB, market="IE-Dublin"),
+                                       {"resume": "cv.pdf"})
+    ok &= check("lever: the demographic question is declined, never answered",
+                lknown.get(gender["id"], {}).get("value") == "I'd prefer not to say",
+                lknown.get(gender["id"]))
+
+    lplan = submit.build_plan(lever_url, "lever", lfields, lknown, {"resume": "cv.pdf"})
+    a_cv(tmp)
+    with submit.Session() as s:
+        driver = submit.driver_for("lever")
+        driver.open(s.page, lever_url)
+        failed = submit.fill_form(s.page, lplan, driver, tmp)
+        ok &= check("lever: every planned field took its value", not failed, failed)
+        vals = s.page.evaluate(
+            "() => ({name: document.querySelector('[name=name]').value,"
+            " email: document.querySelector('[name=email]').value,"
+            " chosen: document.getElementById('selected-location').value,"
+            " linkedin: document.querySelector('[name=\"urls[LinkedIn]\"]').value,"
+            " rtw: [...document.querySelectorAll('[name^=cards][type=radio]')]"
+            "        .filter(r => r.checked).map(r => r.value),"
+            " gender: [...document.querySelectorAll('[name^=surveysResponses]')]"
+            "        .filter(r => r.checked).map(r => r.value),"
+            " resume: document.querySelector('[name=resume]').files.length})")
+        ok &= check("lever: the name landed in a field with no id", 
+                    vals["name"] == "Tom Norton", vals)
+        ok &= check("lever: so did the bracketed one", vals["linkedin"].endswith("/in/x"),
+                    vals)
+        # The whole point of settle(). Typing "Barcelona, Spain" into the typeahead leaves
+        # selectedLocation empty, and selectedLocation is what Lever submits.
+        ok &= check("lever: the location typeahead had a suggestion chosen",
+                    vals["chosen"] != "", vals)
+        # A US citizen applying to a Dublin role is not already authorised to work there,
+        # and that is a fact on file rather than a judgement call -- so this one IS
+        # answered, from the same nationality-and-market rule as Ashby's sponsorship
+        # question, and the radio behind it is pressed.
+        ok &= check("lever: right-to-work is answered from nationality and market",
+                    lknown.get(rtw["id"], {}).get("value") == "No",
+                    lknown.get(rtw["id"]))
+        ok &= check("lever: pressing that answer selected the radio behind it",
+                    vals["rtw"] == ["No"], vals)
+        ok &= check("lever: the gender question was declined, not answered",
+                    vals["gender"] == ["I'd prefer not to say"], vals)
+        ok &= check("lever: the CV went to the resume field", vals["resume"] == 1, vals)
+
+    result = submit.submit_form(lplan, os.path.join(OUT, "lever-sent.pdf"), tmp)
+    ok &= check("lever: it submits and the page confirms it",
+                result.get("sent") is True, result.get("reason"))
+    # And a required question with nothing in it still stops it here, exactly as it does
+    # on Greenhouse: Lever's driver gets no exemption from the rule that blank beats
+    # invented.
+    thin_lever = submit.build_plan(
+        lever_url, "lever", lfields,
+        {k: v for k, v in lknown.items() if k != rtw["id"]}, {"resume": "cv.pdf"})
+    result = submit.submit_form(thin_lever, os.path.join(OUT, "lever-thin.pdf"), tmp)
+    ok &= check("lever: a required question left blank stops the submission",
+                result.get("sent") is False and result.get("reason") == "incomplete",
+                result)
 
     print("\nall passed" if ok else "\nFAILURES above")
     return 0 if ok else 1

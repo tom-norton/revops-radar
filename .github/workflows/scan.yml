@@ -83,6 +83,10 @@ jobs:
         run: |
           git config user.name "radar-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add seen.json docs/jobs.json docs/status.json docs/excluded.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json docs/jobs.json docs/status.json docs/excluded.json
+          # board-cache.json is here for a reason: every run is a fresh checkout, so a
+          # cache that is not committed is a cache that never survives one run to the
+          # next -- and the whole point of it is that the ~200 companies with no public
+          # board are asked once a month instead of every fifteen minutes.
+          git add seen.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json
           git diff --cached --quiet || git commit -m "scan: $(date -u +%F)"
           git push

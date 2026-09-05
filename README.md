@@ -320,8 +320,9 @@ page did not say so.**
 the radar arrive through LinkedIn or an aggregator, and LinkedIn will not give up the
 "apply on company website" URL to anyone who is not logged in. So it does not chase the
 link: it goes to the company instead, finds their own job board through the public APIs
-Greenhouse, Ashby and Lever publish, and looks for the same role on it. Nine of the first
-ten companies tried this way were found from the company name alone.
+Greenhouse, Ashby, Lever, SmartRecruiters, Recruitee and Workable publish, and looks for
+the same role on it. Nine of the first ten companies tried this way were found from the
+company name alone.
 
 The matching is deliberately strict, because the downside is not a near miss. Three real
 cases from the current scan:
@@ -336,12 +337,35 @@ A title has to match nearly exactly rather than merely closely, and where severa
 share one title the market has to pick exactly one of them. Anything else comes back to you
 as links to choose between.
 
-**What it actually resolves**, measured over 30 distinct LinkedIn-sourced companies in the
-current scan: 12 found, of which 8 are Greenhouse and fill automatically and 4 are Ashby
-and come back as a direct apply link. 4 more have a board with no matching title on it. The
-remaining 14 are companies running their own careers stack (Google, Salesforce, Canva, Box,
-Deel) where there is nothing public to find. So roughly a quarter of LinkedIn roles become
-one-tap, and another eighth become a direct link instead of a LinkedIn page.
+**And it now runs at scan time, not only when you queue a role.** 373 of the 492 rows had
+no known application host, across 281 distinct companies, and the dashboard could say
+nothing but "unknown" about every one of them — while a board existed for a good share the
+moment `/submit` was pointed at them. So the lookup moved forward: each scan resolves the
+recent, above-floor rows whose board is unknown, and writes the answer onto the card.
+
+The cost of that is bounded three ways, because this is the one part of a scan that talks
+to six board APIs:
+
+- **Cached per company, negatives included** (`board-cache.json`, committed by the scan
+  workflow — a cache that isn't committed doesn't survive a fresh runner checkout). The
+  ~200 employers running their own careers stack are asked once a month, not every fifteen
+  minutes.
+- **The six boards are probed together**, not one after another. A typical miss costs 2.8s
+  for all twelve probes; a company whose board host simply *hangs* costs a timeout six
+  times over. Measured on a 35-company backfill: **11 minutes serial, 69 seconds
+  concurrent.** The winner is still the first board in list order that answered, so the
+  answer doesn't depend on which request came back first.
+- **A wall-clock budget and a company cap per run.** A scan fires every fifteen minutes and
+  ends by pushing to main, so two overlapping runs race on that push. Companies that don't
+  fit wait for the next run, which costs nothing — the cache means each is only ever paid
+  for once.
+
+**What that first pass actually found**, over the 40 unresolved rows on the current
+dashboard (35 companies): 10 resolved — 6 Ashby, 1 Greenhouse, 2 Lever, all of which now
+fill automatically, plus 1 SmartRecruiters that comes back as a direct link. 13 more have a
+board with no matching title on it, and you're told that rather than told the role is dead.
+The remaining 17 are companies with nothing public to find. Across the whole file that took
+rows with a known board from 119 to 129, and auto-fillable rows to 59.
 
 **The record itself is checked before any of that, and it's free.** Dedupe keeps one URL
 per role by source rank and files the rest under `also_seen` — so a role seen on both
@@ -363,8 +387,10 @@ same cut.
 
 **The dashboard shows this before you ever tap Apply.** Every card carries a tag naming
 the board the application is actually on — a plain grey tag when it's a real system with
-no driver yet (Ashby, Workday, SmartRecruiters…), a green **✓** tag when `/submit`
-can fill it without being asked. The list is ordered by score and nothing else reorders
+no driver yet (Workday, SmartRecruiters, Workable…), a green **✓** tag when `/submit`
+can fill it without being asked. Where the scan's board lookup found the form itself, the
+card also carries an **Apply →** link straight to it, next to the "View posting" link that
+often opens nothing but an advert. The list is ordered by score and nothing else reorders
 it — a checkmark is convenience, and convenience shouldn't outrank fit on the one list
 whose job is to rank by fit — but "Auto-fillable only" filters down to just those when
 that's what you want. This is the same free, no-network
@@ -373,9 +399,10 @@ once per row at scan time — so a blank tag means "not known to be fillable fro
 record," never "definitely not." A 9.0 with no checkmark is still worth applying to, by
 hand or with `/submit <link>`.
 
-**Both boards run an invisible reCAPTCHA on submission, and nothing here tries to get past
-it.** Greenhouse loads reCAPTCHA Enterprise into every application page; Ashby loads an
-invisible reCAPTCHA v2 with a hidden response field on the form. That check exists to put a
+**Every board it can fill runs an invisible bot check on submission, and nothing here
+tries to get past one.** Greenhouse loads reCAPTCHA Enterprise into every application page;
+Ashby loads an invisible reCAPTCHA v2 with a hidden response field on the form; Lever runs
+hCaptcha. Different vendors, one rule. That check exists to put a
 person behind a submission, and a job application is exactly the kind of submission an
 employer is entitled to want a person behind. So the check is detected and named instead:
 in the preview, while you are still deciding whether to send, and again if a submission
@@ -384,20 +411,41 @@ automated send and points you at the packet, which already has every answer writ
 paste in by hand. Whether a real send clears the check is not knowable by reading, and your
 first live `/send` on a Greenhouse role is what settles it.
 
-Boards it can fill: **Greenhouse** (including regional boards like
-`job-boards.eu.greenhouse.io`, and employers whose board URL redirects to their own careers
-site with the form embedded in it) and **Ashby**. Ashby needed its own handling for four
-things, all mapped in `tools/notes/boards.md`: the form is a page on from the posting
-(`/application`), one field takes the whole name, a yes/no question is two buttons over a
-hidden checkbox rather than a dropdown, and a second id-less file input sits above the real
-one feeding Ashby's resume parser, so the CV goes to `#_systemfield_resume` by id and never
-to `input[type=file]` generally.
+Boards it can fill: **Greenhouse**, **Ashby** and **Lever**. Each needed its own handling,
+all of it mapped in `tools/notes/boards.md`:
 
-Lever, SmartRecruiters and the rest are found and handed to you as a direct link, which
-still beats a LinkedIn page you have to search from. Workday and LinkedIn Easy Apply are
-left alone entirely: both want an account and a logged-in session, which is a credential
-sitting in a runner and a different conversation. Either way the CV and the letter are
-already in the bank and the letter's text is already in the packet for pasting into a box.
+- **Greenhouse**, including regional boards like `job-boards.eu.greenhouse.io` and
+  employers whose board URL redirects to their own careers site with the form embedded in
+  it.
+- **Ashby**: the form is a page on from the posting (`/application`), one field takes the
+  whole name, a yes/no question is two buttons over a hidden checkbox rather than a
+  dropdown, and a second id-less file input sits above the real one feeding Ashby's resume
+  parser, so the CV goes to `#_systemfield_resume` by id and never to `input[type=file]`
+  generally.
+- **Lever**: the plainest markup of the three and the one that exposed two bugs in the
+  shared half. Its inputs have a `name` and no `id` at all, so a fill that only ever
+  addressed fields by id matched nothing on every Lever form; and its radio groups have no
+  ids either, so a four-option question read as one option. Both are fixed for every board.
+  On top of that, a Lever custom question is written once *above* the radios that answer it
+  (so the question is read off the page, not off the field), and "current location" is a
+  typeahead where typing the city is not choosing it — the form submits a hidden
+  `selectedLocation` that stays empty until a suggestion is clicked.
+
+**SmartRecruiters is read but not driven, and that is deliberate.** Its board API is in the
+lookup above — it is how ServiceNow's London and Dublin roles stopped showing as "no board
+found" — but its apply form lives on a separate host behind DataDome bot detection: a probe
+of it returned zero controls and a captcha iframe, so there is nothing to read, let alone
+fill. Workday and LinkedIn Easy Apply are left alone for a different reason: both want an
+account and a logged-in session, which is a credential sitting in a runner and a different
+conversation. All of these are still found and handed to you as a direct link, which beats
+a LinkedIn page you have to search from, and the CV and the letter are already in the bank
+with the letter's text in the packet for pasting into a box.
+
+**A caution about counting boards.** SmartRecruiters answers `200` with `totalFound: 0` for
+a slug that does not exist rather than `404`, and `google.recruitee.com` resolves to a demo
+account with one sample posting on it. Reading status lines alone, it is easy to conclude a
+board was found for nearly every company; the code treats an empty board as no board for
+exactly that reason.
 
 **A question nobody can read is never sent to a model.** Some boards put the question in
 text above the control rather than in a label. Where that text can't be found, the honest
