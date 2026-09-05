@@ -359,11 +359,12 @@ function renderAll(){
   jobs = jobs.filter(j=>isRecent(j.found_at));
   if(fillableOnly) jobs = jobs.filter(j=>j.ats_fillable);
 
-  // Auto-fillable roles first within a section, score still decides order inside that --
-  // sort is stable, so this only ever reorders across the fillable/not split, never within
-  // it. The toggle above hides the rest entirely when that's what's wanted; this is the
-  // quieter version for browsing everything with the easy ones surfaced.
-  jobs = [...jobs].sort((a,b)=>(b.ats_fillable?1:0) - (a.ats_fillable?1:0));
+  // Score order, highest first, and nothing else reorders it. Auto-fillable rows used to
+  // float to the top of each section, which quietly put a 6.5 above an 8.4 because one of
+  // them happened to be on a board with a driver -- convenience outranking fit, on the one
+  // list whose whole job is to rank by fit. The checkmark still says which is which, and
+  // the toggle above filters to them outright when that is what's wanted.
+  jobs = [...jobs].sort((a,b)=>(b.score??0) - (a.score??0));
 
   const apply = jobs.filter(j=>(j.score??0) >= GATE);
   const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);

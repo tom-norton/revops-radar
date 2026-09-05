@@ -2617,9 +2617,10 @@ def finish_submission(state, cur, outcome, extra=None):
 
 
 def numbered_blanks(plan):
-    """The required questions nothing could answer, numbered as Tom will see them. The
-    numbering is the contract: his reply comes back keyed to it."""
-    return [b for b in (plan.get("blanks") or []) if b.get("required")]
+    """The questions to put to Tom, numbered as he will see them. The numbering is the
+    contract: his reply comes back keyed to it, so this is the one list that asks, maps a
+    reply, and lists what is still open. See submit.interview_questions()."""
+    return submit.interview_questions(plan)
 
 
 def blank_line(i, b):
@@ -2649,11 +2650,15 @@ def preview_caption(job, plan, notes, rejected, skipped, failed):
              esc(" \u00b7 ".join([job.get("company") or "?", plan.get("ats", "")] + tally))]
 
     open_qs = numbered_blanks(plan)
+    required = [b for b in open_qs if b.get("required")]
     if open_qs:
-        lines += ["", f"<b>{len(open_qs)} required question"
-                      f"{'' if len(open_qs) == 1 else 's'} I have not answered.</b> "
-                      f"Reply with the answers, numbered:"]
-        lines += [blank_line(i, b) for i, b in enumerate(open_qs, 1)]
+        # Named here, asked in the message that follows. The caption is what he reads over
+        # the PDF; the questions deserve their own message rather than a footnote on one.
+        lines += ["", f"<i>{len(open_qs)} question"
+                      f"{'' if len(open_qs) == 1 else 's'} I couldn't answer"
+                      + (f", {len(required)} of them required" if required else
+                         ", none of them required")
+                      + ". Asking them next.</i>"]
     if rejected:
         lines += ["", f"<i>{len(rejected)} answer"
                       f"{'' if len(rejected) == 1 else 's'} cut by the honesty screen "
@@ -2681,8 +2686,9 @@ def preview_caption(job, plan, notes, rejected, skipped, failed):
                       f"answers above are all in the packet to paste in by hand.</i>"]
     lines += ["", "<b>Nothing has been sent.</b> Read it, then /send to submit it, "
                   "/cancel to drop it."]
-    if open_qs:
-        lines += ["<i>/send will not go through until those questions are answered.</i>"]
+    if required:
+        lines += ["<i>/send will not go through until the required ones are "
+                  "answered.</i>"]
     return "\n".join(lines)
 
 
@@ -2718,6 +2724,40 @@ def application_section_markdown(cur, job, plan, rejected, skipped, notes, outco
     return "\n".join(L) + "\n"
 
 
+def form_interview(plan):
+    """The message that asks him the questions the form still needs.
+
+    Deliberately shaped like the gap interview in the audit stage, because it is the same
+    thing: a numbered list, the options where a dropdown has them, one reply. The required
+    ones are marked, since those are the ones holding up the send and the rest are his to
+    ignore."""
+    qs = numbered_blanks(plan)
+    if not qs:
+        return ""
+    n_req = sum(1 for b in qs if b.get("required"))
+    head = (f"<b>{len(qs)} question{'' if len(qs) == 1 else 's'} on the form I couldn't "
+            f"answer</b>")
+    if n_req:
+        head += (f"\n<i>{n_req} of them {'is' if n_req == 1 else 'are'} required, so the "
+                 f"form won't go until {'it is' if n_req == 1 else 'they are'} "
+                 f"answered.</i>")
+    lines = [head, ""]
+    for i, b in enumerate(qs, 1):
+        line = blank_line(i, b)
+        if not b.get("required"):
+            line += "  <i>(optional)</i>"
+        lines.append(line)
+    # The format, not a worked example: invented answers next to the real questions read
+    # as suggestions, and the one thing this must not do is put an answer in his mouth.
+    lines += ["", "<i>Reply with the number of each one:</i>"]
+    lines += [f"<code>{i} …</code>" for i in range(1, min(len(qs), 2) + 1)]
+    if not n_req:
+        # Only true when nothing required is outstanding, which is exactly when it is
+        # worth saying.
+        lines += ["", "<i>Or /send as it is, if you're happy to leave them.</i>"]
+    return "\n".join(lines)
+
+
 def ship_preview(state, job, bank, tg, plan, notes, rejected, skipped):
     """Fill the form in a browser, print it, and put it in front of Tom.
 
@@ -2745,6 +2785,9 @@ def ship_preview(state, job, bank, tg, plan, notes, rejected, skipped):
     if not tg.send_document(out_pdf, caption):
         tg.send(caption + f"\n\n<i>Telegram would not take the file. It is at "
                           f"<code>{esc(pdf_rel)}</code> in the bank.</i>")
+    interview = form_interview(plan)
+    if interview:
+        tg.send(interview)
     return False
 
 
@@ -3286,13 +3329,18 @@ def handle_commands(texts, state, queue, tg, bank=None):
             if not cur or cur.get("stage") != "approve":
                 tg.send("Nothing waiting to be sent. /submit fills a form first, and I'll "
                         "show it to you before anything goes.")
-            elif numbered_blanks(cur.get("plan") or {}):
+            elif submit.missing_required((cur.get("plan") or {}).get("fields") or [],
+                                         (cur.get("plan") or {}).get("answers") or {}):
+                # Only the required ones hold up a send; the optional ones he is free to
+                # leave. Numbered off the same list he was asked from, so "2" still means
+                # what it meant then.
                 open_qs = numbered_blanks(cur["plan"])
+                need = [(i, b) for i, b in enumerate(open_qs, 1) if b.get("required")]
                 tg.send("\n".join(
-                    [f"<b>{len(open_qs)} required question"
-                     f"{'' if len(open_qs) == 1 else 's'} still unanswered</b>, so the "
-                     f"form would be rejected. Reply with the answers, numbered:", ""]
-                    + [blank_line(i, b) for i, b in enumerate(open_qs, 1)]))
+                    [f"<b>{len(need)} required question"
+                     f"{'' if len(need) == 1 else 's'} still unanswered</b>, so the form "
+                     f"would be rejected. Reply with the answers, numbered:", ""]
+                    + [blank_line(i, b) for i, b in need]))
             else:
                 cur["stage"] = "send"
                 tg.send("<b>Sending it.</b> I'll tell you what the page says.")
@@ -3764,8 +3812,8 @@ def advance(state, job, bank, tg, api_key, answers_text):
         plan = cur.get("plan") or {}
         open_qs = numbered_blanks(plan)
         if not open_qs:
-            tg.send("The form is filled and waiting. /send to submit it, /cancel to drop "
-                    "it.")
+            tg.send("The form is filled and nothing is outstanding. /send to submit it, "
+                    "/cancel to drop it.")
             return False
         replies = submit.parse_numbered(reply, len(open_qs))
         if not replies:

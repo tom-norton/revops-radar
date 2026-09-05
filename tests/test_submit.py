@@ -983,13 +983,69 @@ def test_one_open_question_takes_the_reply_and_shows_him_what_went_in():
     """With a single question left there is nothing to mis-map, so a bare reply is the
     answer to it -- and the message says exactly which box it went into, before anything
     can be sent."""
-    step, state, tg, _b, calls = machine()
+    # A form with no phone field, so the salary question is the only thing open.
+    step, state, tg, _b, calls = machine(
+        fields=[f for f in form() if f["id"] != "phone"])
     step("/submit")
     assert len(applyq.numbered_blanks(state["current"]["plan"])) == 1
     step("around 60k")
     assert calls["submit"] == 0
     assert any("Added" in m and "60k" in m for m in tg.sent), tg.sent
     assert state["current"]["plan"]["answers"]["question_8"]["by"] == submit.BY_TOM
+
+
+def test_he_is_asked_the_questions_rather_than_left_to_find_them():
+    """The questions used to be a footnote on the PDF's caption. They get their own
+    message now, shaped like the gap interview, because that is what it is."""
+    step, state, tg, _b, _c = machine()
+    step("/submit")
+    asked = [m for m in tg.sent if "couldn't answer" in m
+             and "Reply with the number" in m]
+    assert asked, tg.sent
+    msg = asked[0]
+    # Required and optional both asked, and which is which is on the face of it.
+    assert "salary expectations" in msg and "Phone" in msg
+    assert "(optional)" in msg
+    assert "required" in msg
+
+
+def test_the_interview_covers_what_nobody_could_answer_not_just_the_blockers():
+    """"Any questions it couldn't answer" -- a salary nothing could source and a phone
+    number that is not on file are both real questions, and only one of them blocks."""
+    step, state, _tg, _b, _c = machine()
+    step("/submit")
+    qs = applyq.numbered_blanks(state["current"]["plan"])
+    assert [b["id"] for b in qs] == ["question_8", "phone"], qs
+    # Required first, because those are the ones holding up the send.
+    assert qs[0]["required"] and not qs[1]["required"]
+
+
+def test_a_demographic_question_is_never_put_to_him_either():
+    plan = plan_for()
+    ids = {b["id"] for b in applyq.numbered_blanks(plan)}
+    assert "question_6" not in ids and "question_7" not in ids, ids
+
+
+def test_a_question_nobody_can_state_is_not_asked_only_pointed_at():
+    """It is on the printed form where he can read it. There is no way to ask it here."""
+    fields = form() + [F("q_unreadable", submit.SELECT, "", True, ["Yes", "No"])]
+    plan = submit.build_plan("u", "greenhouse", fields,
+                             submit.plan_known(fields, IDENT, JOB, FILES)[0], FILES)
+    assert "q_unreadable" not in {b["id"] for b in applyq.numbered_blanks(plan)}
+    # Still counted as missing, so it still stops the send.
+    assert "q_unreadable" in {b["id"] for b in
+                              submit.missing_required(fields, plan["answers"])}
+
+
+def test_send_is_not_blocked_by_an_optional_question():
+    """He can leave the optional ones. Only the required ones hold up a send."""
+    step, state, tg, _b, calls = machine(
+        fields=[f for f in form() if f["id"] != "question_8"])
+    step("/submit")
+    # Phone is open and optional; nothing required is missing.
+    assert [b["id"] for b in applyq.numbered_blanks(state["current"]["plan"])] == ["phone"]
+    step("/send")
+    assert calls["submit"] == 1, "an optional blank stopped the send"
 
 
 def test_send_submits_once_and_records_it():
