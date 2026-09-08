@@ -806,6 +806,17 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
 
 ## Known limits
 
+- **Secrets must never reach the status footer.** `docs/status.json` is committed and pushed
+  on every run, so anything written into it is published. A failing source writes its
+  exception text there, and `requests` puts the full request URL — query string included —
+  into the text of every exception it raises. On 6 Sep 2026 an Apify 429 did exactly that:
+  the token went into `status.json`, GitHub push protection rejected the push, and the scan
+  then failed at its final step on every run for three days while the scan itself worked
+  perfectly. The dashboard just stopped moving. Two guards now: credentials go in an
+  `Authorization` header rather than a query parameter (`fetch_apify_hiringcafe`), and every
+  status value passes through `redact()` before the file is written. Both are covered by
+  `tests/test_scoring.py`. If you add a source, use header auth — a blocked push is silent
+  from the dashboard's side and looks exactly like a quiet market.
 - **hiring.cafe (Apify)** was silently returning a flat ~30 raw items per run, every run, for
   six-plus weeks, regardless of how the market moved — one combined actor call across all four
   saved searches, apparently starving each other. An Atlassian Amsterdam CSM role Tom found
