@@ -1082,6 +1082,48 @@ def test_strip_html_turns_block_tags_into_line_breaks():
     assert scan.requires_other_language(out) == "You are fluent in French"
 
 
+def test_redact_removes_a_token_from_a_requests_exception_message():
+    """The failure that stopped the radar for three days: an Apify 429 put the request URL,
+    token and all, into the exception text, which was written into docs/status.json and
+    pushed. GitHub push protection rejected the push and every scan after it died at the
+    same step."""
+    os.environ["APIFY_API_TOKEN"] = "apify_api_pretendvalue1234567890"
+    try:
+        msg = ("FAIL: 429 Client Error: Too Many Requests for url: "
+               "https://api.apify.com/v2/acts/memo23~apify-hiring-cafe-scraper/"
+               "run-sync-get-dataset-items?token=apify_api_pretendvalue1234567890")
+        out = scan.redact(msg)
+        assert "apify_api_pretendvalue1234567890" not in out
+        assert "429 Client Error" in out, "the diagnosis has to survive the redaction"
+    finally:
+        del os.environ["APIFY_API_TOKEN"]
+
+
+def test_redact_scrubs_credential_query_params_it_has_no_env_value_for():
+    """A token this process never held -- one Adzuna or a job source hands back inside a
+    URL -- is still a secret GitHub will block the push over."""
+    out = scan.redact("error: connection failed for url: "
+                      "https://api.adzuna.com/v1/api/jobs/gb/search/1?app_id=abc123&app_key=deadbeefcafe&what=revops")
+    assert "deadbeefcafe" not in out
+    assert "abc123" not in out
+    assert "what=revops" in out, "non-credential params carry the diagnosis and stay"
+
+
+def test_redact_leaves_an_ordinary_status_line_alone():
+    """A footer full of <redacted> would hide the thing the footer exists to show."""
+    line = "ok (raw 98 -> kept 82) | revops-broad=raw 30; cs-nl=raw 27"
+    assert scan.redact(line) == line
+
+
+def test_apify_call_keeps_the_token_out_of_the_url():
+    """Guards the call site itself. Header auth is what stops the exception text from ever
+    containing the token; redact() is the backstop, not the fix."""
+    import inspect
+    src = inspect.getsource(scan.fetch_apify_hiringcafe)
+    assert '"Authorization": f"Bearer {token}"' in src
+    assert 'params={"token": token}' not in src
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

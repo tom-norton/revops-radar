@@ -731,6 +731,34 @@ def src_line(source, kept):
     raw = RAW_COUNTS.get(source)
     return f"ok (raw {raw} -> kept {kept})" if raw is not None else f"ok ({kept})"
 
+# Everything in the status footer is written to docs/status.json, which is committed and
+# pushed on every run -- so anything a fetcher's exception text drags in is pushed too.
+# requests puts the full effective URL, query string included, into the text of every
+# exception it raises, which is how an Apify token reached a commit on 6 Sep 2026 and
+# GitHub push protection began rejecting the push, silently stopping every scan after it.
+# Two guards, because the call site alone did not hold: credentials go in headers, and
+# every value on its way into the footer goes through redact().
+SECRET_ENV = ("ANTHROPIC_API_KEY", "ADZUNA_APP_ID", "ADZUNA_APP_KEY", "REED_API_KEY",
+              "APIFY_API_TOKEN", "GMAIL_ADDRESS", "GMAIL_APP_PASSWORD")
+
+# Credential-bearing query parameters, whatever the host: ?token=, &app_key=, &api_key=.
+_SECRET_PARAM = re.compile(
+    r"([?&](?:token|api[-_]?key|app[-_]?key|apikey|app[-_]?id|key|secret|password|passwd|"
+    r"pwd|access[-_]?token|auth)=)[^&\s\"\'<>]+", re.I)
+
+def redact(text):
+    """Scrub credentials out of a status string. Removes the run's own secret values
+    verbatim, then any credential-shaped query parameter -- the second catches a token
+    this process never held, such as one embedded in a URL a source handed back."""
+    out = str(text)
+    for name in SECRET_ENV:
+        value = os.environ.get(name, "")
+        # An 8-char floor: a short or empty secret would otherwise blank out ordinary
+        # words, and a blanked-out status line is its own kind of broken.
+        if len(value) >= 8:
+            out = out.replace(value, f"<{name}>")
+    return _SECRET_PARAM.sub(r"\1<redacted>", out)
+
 # Token usage across the run, surfaced in the status footer. cache_read staying at 0 across
 # a multi-job run means something volatile is leaking into the cached system prefix.
 USAGE = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
@@ -1796,9 +1824,15 @@ def fetch_apify_hiringcafe(token, diag=None):
     per_url_budget = max(1, APIFY_MAX_ITEMS // len(APIFY_HIRINGCAFE_SEARCHES))
     for label, url in zip(APIFY_SEARCH_LABELS, APIFY_HIRINGCAFE_SEARCHES):
         try:
+            # Token goes in the header, never in the query string. requests puts the
+            # full effective URL into the text of every exception it raises -- a 429 from
+            # this endpoint reads "429 Client Error: ... for url: ...?token=apify_api_..."
+            # -- and that text is written straight into docs/status.json, which is
+            # committed and pushed. It leaked the token into a commit on 6 Sep 2026 and
+            # GitHub push protection rejected the push, which stopped every scan since.
             r = requests.post(
                 f"https://api.apify.com/v2/acts/{APIFY_ACTOR}/run-sync-get-dataset-items",
-                params={"token": token},
+                headers={"Authorization": f"Bearer {token}"},
                 json={"startUrls": [url], "maxItems": per_url_budget,
                       "enrichDescription": True},
                 timeout=280)
@@ -2450,6 +2484,8 @@ def main():
     json.dump(merged, open("docs/jobs.json", "w"), indent=1)
     json.dump({"last_run": now_iso(), "counts": DROP_COUNTS, "rows": rows},
               open("docs/excluded.json", "w"), indent=1)
+    # Last line of defence before this dict becomes a committed, pushed file.
+    src_status = {k: redact(v) for k, v in src_status.items()}
     json.dump({"last_run": now_iso(), "new_this_run": len(scored), "sources": src_status,
                "gate": GATE, "floor": FLOOR, "score_model": CLAUDE_SCORE_MODEL,
                "screen_model": CLAUDE_SCREEN_MODEL},
