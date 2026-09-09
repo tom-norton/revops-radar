@@ -827,16 +827,20 @@ def test_a_cached_board_that_has_since_moved_is_looked_up_again():
     assert cache["acme"]["ats"] == "ashby", "kept the board it had just found empty"
 
 
-def test_the_cache_survives_a_round_trip_to_disk(tmp_path):
-    path = tmp_path / "board-cache.json"
+def test_the_cache_survives_a_round_trip_to_disk():
+    # tempfile, not pytest's tmp_path: the runner below calls these with no arguments, so a
+    # fixture parameter is an error on every tick rather than a test.
+    tmp = tempfile.mkdtemp(prefix="applyq-cache-")
+    path = os.path.join(tmp, "board-cache.json")
     boards = {"zeta": {"ats": "", "slug": "", "at": "2026-09-01"},
               "acme": {"ats": "lever", "slug": "acme", "at": "2026-09-02"}}
-    findform.save_cache(boards, str(path))
-    assert findform.load_cache(str(path)) == boards
+    findform.save_cache(boards, path)
+    assert findform.load_cache(path) == boards
     # Sorted, so a scan that meets one new company produces a one-line diff rather than a
     # reshuffled file.
-    assert list(json.loads(path.read_text())["boards"]) == ["acme", "zeta"]
-    assert findform.load_cache(str(tmp_path / "nope.json")) == {}
+    with open(path) as fh:
+        assert list(json.load(fh)["boards"]) == ["acme", "zeta"]
+    assert findform.load_cache(os.path.join(tmp, "nope.json")) == {}
 
 
 def test_a_company_name_is_the_cache_key_however_it_is_spelt():
