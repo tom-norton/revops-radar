@@ -1,11 +1,12 @@
 {
- "last_run": "2026-09-11T20:11:15.524974+00:00",
+ "last_run": "2026-09-12T08:17:27.684265+00:00",
  "counts": {
-  "prefilter:title": 5129,
-  "prefilter:location": 186,
+  "prefilter:title": 5160,
+  "prefilter:location": 184,
   "age": 7,
-  "dedupe": 39,
-  "stage1-kill": 2
+  "dedupe": 38,
+  "stage1-kill": 3,
+  "below-visa-floor": 1
  },
  "rows": [
   {
@@ -16,7 +17,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.498961+00:00"
+   "dropped_at": "2026-09-12T08:16:05.278845+00:00"
   },
   {
    "id": "az-nl-5879953377",
@@ -26,7 +27,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499018+00:00"
+   "dropped_at": "2026-09-12T08:16:05.278917+00:00"
   },
   {
    "id": "az-nl-5879952680",
@@ -36,7 +37,17 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499058+00:00"
+   "dropped_at": "2026-09-12T08:16:05.278971+00:00"
+  },
+  {
+   "id": "az-nl-5879952144",
+   "title": "Women in Supply Chain & Operations \u2014 An Evening with Accenture",
+   "company": "Accenture",
+   "location": "Nederland",
+   "source": "adzuna",
+   "stage": "prefilter:title",
+   "reason": "title: no target-function keyword",
+   "dropped_at": "2026-09-12T08:16:05.279042+00:00"
   },
   {
    "id": "az-nl-5878723847",
@@ -46,7 +57,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499099+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279125+00:00"
   },
   {
    "id": "az-nl-5878721970",
@@ -56,7 +67,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499141+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279183+00:00"
   },
   {
    "id": "az-nl-5878719578",
@@ -66,7 +77,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499186+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279244+00:00"
   },
   {
    "id": "az-nl-5878715340",
@@ -76,7 +87,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499217+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279286+00:00"
   },
   {
    "id": "az-nl-5877340831",
@@ -86,7 +97,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499242+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279319+00:00"
   },
   {
    "id": "az-nl-5877340276",
@@ -96,7 +107,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499286+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279380+00:00"
   },
   {
    "id": "az-nl-5877205435",
@@ -106,7 +117,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499326+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279434+00:00"
   },
   {
    "id": "az-nl-5873227921",
@@ -116,7 +127,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499359+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279475+00:00"
   },
   {
    "id": "az-nl-5873227278",
@@ -126,7 +137,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499412+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279546+00:00"
   },
   {
    "id": "az-nl-5873226431",
@@ -136,7 +147,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499441+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279581+00:00"
   },
   {
    "id": "az-nl-5872161155",
@@ -146,7 +157,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499510+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279654+00:00"
   },
   {
    "id": "az-nl-5872154838",
@@ -156,7 +167,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499561+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279710+00:00"
   },
   {
    "id": "az-nl-5871557766",
@@ -166,67 +177,57 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499681+00:00"
+   "dropped_at": "2026-09-12T08:16:05.279825+00:00"
   },
   {
-   "id": "az-nl-5870806078",
-   "title": "Distribution Sales Manager",
-   "company": "ConnectWise",
-   "location": "Nederland",
+   "id": "az-nl-5880679524",
+   "title": "Senior Commercial Manager EMEA, ProCare Services",
+   "company": "Stryker",
+   "location": "Amsterdam, Noord-Holland",
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499714+00:00"
+   "dropped_at": "2026-09-12T08:16:06.282861+00:00"
   },
   {
-   "id": "az-nl-5870805899",
-   "title": "Technology Delivery Lead \u2013 Health and Public Service",
-   "company": "Accenture",
-   "location": "Nederland",
+   "id": "az-nl-5880679369",
+   "title": "Director Product Data & Operations",
+   "company": "PVH Corp.",
+   "location": "Amsterdam, Noord-Holland",
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499764+00:00"
+   "dropped_at": "2026-09-12T08:16:06.282912+00:00"
   },
   {
-   "id": "az-nl-5870805505",
-   "title": "SAP S/4HANA Data Transformation Advisor",
-   "company": "Accenture",
-   "location": "Nederland",
+   "id": "az-nl-5880561342",
+   "title": "Sales support medewerker",
+   "company": "",
+   "location": "'s-Hertogenbosch, Noord-Brabant",
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499799+00:00"
+   "dropped_at": "2026-09-12T08:16:06.282977+00:00"
   },
   {
-   "id": "az-nl-5870804595",
-   "title": "IT and Technology M&A Consultant - Transaction Advisory",
-   "company": "Accenture",
-   "location": "Nederland",
+   "id": "az-nl-5880480259",
+   "title": "Uitvoeringsco\u00f6rdinator",
+   "company": "Adecco Nederland",
+   "location": "Son, Son en Breugel",
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499841+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283022+00:00"
   },
   {
-   "id": "az-nl-5870804401",
-   "title": "SAP SuccessFactors Manager",
-   "company": "Accenture",
-   "location": "Nederland",
+   "id": "az-nl-5880124577",
+   "title": "Recruitmentmanager Medior",
+   "company": "Start People",
+   "location": "Eindhoven, Noord-Brabant",
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499869+00:00"
-  },
-  {
-   "id": "az-nl-5870127248",
-   "title": "Marketing Demand Performance & Analytics Specialist EMEA",
-   "company": "Veralto",
-   "location": "Leerdam, Zuid-Holland",
-   "source": "adzuna",
-   "stage": "prefilter:title",
-   "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:53.499962+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283051+00:00"
   },
   {
    "id": "az-nl-5879953944",
@@ -236,7 +237,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814496+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283099+00:00"
   },
   {
    "id": "az-nl-5879953061",
@@ -246,7 +247,17 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814568+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283167+00:00"
+  },
+  {
+   "id": "az-nl-5879952396",
+   "title": "Account Executive",
+   "company": "Darktrace",
+   "location": "Nederland",
+   "source": "adzuna",
+   "stage": "prefilter:title",
+   "reason": "title: no target-function keyword",
+   "dropped_at": "2026-09-12T08:16:06.283192+00:00"
   },
   {
    "id": "az-nl-5879952386",
@@ -256,7 +267,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814611+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283238+00:00"
   },
   {
    "id": "az-nl-5879952092",
@@ -266,7 +277,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814661+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283273+00:00"
   },
   {
    "id": "az-nl-5879951490",
@@ -276,7 +287,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814706+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283319+00:00"
   },
   {
    "id": "az-nl-5879950908",
@@ -286,7 +297,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814737+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283353+00:00"
   },
   {
    "id": "az-nl-5879950822",
@@ -296,17 +307,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814781+00:00"
-  },
-  {
-   "id": "az-nl-5879950438",
-   "title": "Director Product Data & Operations",
-   "company": "PVH",
-   "location": "Nederland",
-   "source": "adzuna",
-   "stage": "prefilter:title",
-   "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814813+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283404+00:00"
   },
   {
    "id": "az-nl-5879950232",
@@ -316,7 +317,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814861+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283482+00:00"
   },
   {
    "id": "az-nl-5879843937",
@@ -326,7 +327,17 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.814884+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283505+00:00"
+  },
+  {
+   "id": "az-nl-5879822803",
+   "title": "Technical Sales Support Engineer",
+   "company": "",
+   "location": "Diemen, Noord-Holland",
+   "source": "adzuna",
+   "stage": "prefilter:title",
+   "reason": "title: no target-function keyword",
+   "dropped_at": "2026-09-12T08:16:06.283534+00:00"
   },
   {
    "id": "az-nl-5879374165",
@@ -336,7 +347,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815006+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283660+00:00"
   },
   {
    "id": "az-nl-5879373981",
@@ -346,7 +357,17 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815047+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283700+00:00"
+  },
+  {
+   "id": "az-nl-5879372449",
+   "title": "Meeting & Events Specialist Intern",
+   "company": "Zoku",
+   "location": "Binnenstad, Amsterdam",
+   "source": "adzuna",
+   "stage": "prefilter:title",
+   "reason": "title: no target-function keyword",
+   "dropped_at": "2026-09-12T08:16:06.283731+00:00"
   },
   {
    "id": "az-nl-5879372023",
@@ -356,7 +377,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815078+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283766+00:00"
   },
   {
    "id": "az-nl-5879367413",
@@ -366,7 +387,17 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815133+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283821+00:00"
+  },
+  {
+   "id": "az-nl-5879318785",
+   "title": "Supply Chain Planner",
+   "company": "Werken bij VDL",
+   "location": "Swalmen, Roermond",
+   "source": "adzuna",
+   "stage": "prefilter:title",
+   "reason": "title: no target-function keyword",
+   "dropped_at": "2026-09-12T08:16:06.283855+00:00"
   },
   {
    "id": "az-nl-5879005675",
@@ -376,7 +407,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815156+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283877+00:00"
   },
   {
    "id": "az-nl-5878725666",
@@ -386,7 +417,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815221+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283944+00:00"
   },
   {
    "id": "az-nl-5878725148",
@@ -396,7 +427,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815271+00:00"
+   "dropped_at": "2026-09-12T08:16:06.283994+00:00"
   },
   {
    "id": "az-nl-5878723247",
@@ -406,7 +437,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815295+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437018+00:00"
   },
   {
    "id": "az-nl-5878718188",
@@ -416,7 +447,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815334+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437103+00:00"
   },
   {
    "id": "az-nl-5878714301",
@@ -426,7 +457,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815370+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437149+00:00"
   },
   {
    "id": "az-nl-5878550731",
@@ -436,7 +467,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815471+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437290+00:00"
   },
   {
    "id": "az-nl-5878065140",
@@ -446,7 +477,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815494+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437318+00:00"
   },
   {
    "id": "az-nl-5878064776",
@@ -456,7 +487,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:54.815584+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437426+00:00"
   },
   {
    "id": "az-nl-5877892340",
@@ -466,7 +497,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028218+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437466+00:00"
   },
   {
    "id": "az-nl-5877576387",
@@ -476,17 +507,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028258+00:00"
-  },
-  {
-   "id": "az-nl-5877575404",
-   "title": "Supply Chain Planner",
-   "company": "Michael Page",
-   "location": "Utrecht, Provincie Utrecht",
-   "source": "adzuna",
-   "stage": "prefilter:title",
-   "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028284+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437489+00:00"
   },
   {
    "id": "az-nl-5877339875",
@@ -496,7 +517,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028372+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437602+00:00"
   },
   {
    "id": "az-nl-5877337114",
@@ -506,7 +527,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028407+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437641+00:00"
   },
   {
    "id": "az-nl-5877336166",
@@ -516,7 +537,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028457+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437689+00:00"
   },
   {
    "id": "az-nl-5877334495",
@@ -526,7 +547,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028562+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437778+00:00"
   },
   {
    "id": "az-nl-5877332761",
@@ -536,7 +557,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028595+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437810+00:00"
   },
   {
    "id": "az-nl-5877331184",
@@ -546,7 +567,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028665+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437862+00:00"
   },
   {
    "id": "az-nl-5877328028",
@@ -556,7 +577,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028719+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437919+00:00"
   },
   {
    "id": "az-nl-5876727391",
@@ -566,7 +587,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028773+00:00"
+   "dropped_at": "2026-09-12T08:16:07.437976+00:00"
   },
   {
    "id": "az-nl-5876506848",
@@ -576,7 +597,7 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028823+00:00"
+   "dropped_at": "2026-09-12T08:16:07.438025+00:00"
   },
   {
    "id": "az-nl-5876188493",
@@ -586,27 +607,17 @@
    "source": "adzuna",
    "stage": "prefilter:title",
    "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028851+00:00"
+   "dropped_at": "2026-09-12T08:16:07.438055+00:00"
   },
   {
-   "id": "az-nl-5876123877",
-   "title": "Retail Media Manager (FMCG | Tijdelijk, 4 maanden)",
-   "company": "Independent Recruiters",
-   "location": "Utrecht, Provincie Utrecht",
+   "id": "az-gb-5880114991",
+   "title": "Sales Operations Manager",
+   "company": "Context",
+   "location": "Manchester, Greater Manchester",
    "source": "adzuna",
-   "stage": "prefilter:title",
-   "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028960+00:00"
-  },
-  {
-   "id": "az-nl-5876123676",
-   "title": "Controller Operations",
-   "company": "ROCKWOOL",
-   "location": "Roermond, Limburg",
-   "source": "adzuna",
-   "stage": "prefilter:title",
-   "reason": "title: no target-function keyword",
-   "dropped_at": "2026-09-11T20:09:56.028996+00:00"
+   "stage": "prefilter:location",
+   "reason": "location: outside target markets (Manchester, Greater Manchester)",
+   "dropped_at": "2026-09-12T08:16:15.867477+00:00"
   },
   {
    "id": "az-gb-5879979160",
@@ -616,7 +627,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Manchester Science Park, Manchester)",
-   "dropped_at": "2026-09-11T20:10:04.695425+00:00"
+   "dropped_at": "2026-09-12T08:16:16.895967+00:00"
   },
   {
    "id": "az-gb-5879927368",
@@ -626,37 +637,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-09-11T20:10:04.695740+00:00"
-  },
-  {
-   "id": "az-gb-5879826475",
-   "title": "Sales Operations Manager",
-   "company": "Context",
-   "location": "Manchester, Greater Manchester",
-   "source": "adzuna",
-   "stage": "prefilter:location",
-   "reason": "location: outside target markets (Manchester, Greater Manchester)",
-   "dropped_at": "2026-09-11T20:10:04.695958+00:00"
-  },
-  {
-   "id": "az-gb-5879389419",
-   "title": "Sales Operations & Revenue Specialist",
-   "company": "Stepstone UK",
-   "location": "Cosham, Portsmouth",
-   "source": "adzuna",
-   "stage": "prefilter:location",
-   "reason": "location: outside target markets (Cosham, Portsmouth)",
-   "dropped_at": "2026-09-11T20:10:05.935972+00:00"
-  },
-  {
-   "id": "az-gb-5879923854",
-   "title": "Sales Operations Supervisor",
-   "company": "BDA",
-   "location": "UK",
-   "source": "adzuna",
-   "stage": "prefilter:location",
-   "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-09-11T20:10:12.069516+00:00"
+   "dropped_at": "2026-09-12T08:16:16.896331+00:00"
   },
   {
    "id": "az-gb-5878747448",
@@ -666,7 +647,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-09-11T20:10:14.246442+00:00"
+   "dropped_at": "2026-09-12T08:16:25.247327+00:00"
   },
   {
    "id": "az-gb-5877231708",
@@ -676,7 +657,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-09-11T20:10:15.405564+00:00"
+   "dropped_at": "2026-09-12T08:16:26.252392+00:00"
   },
   {
    "id": "az-gb-5878629655",
@@ -686,7 +667,17 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (UK)",
-   "dropped_at": "2026-09-11T20:10:18.441330+00:00"
+   "dropped_at": "2026-09-12T08:16:28.961320+00:00"
+  },
+  {
+   "id": "az-gb-5880114202",
+   "title": "Business Operations Manager",
+   "company": "E&E Group",
+   "location": "Portsmouth, Hampshire",
+   "source": "adzuna",
+   "stage": "prefilter:location",
+   "reason": "location: outside target markets (Portsmouth, Hampshire)",
+   "dropped_at": "2026-09-12T08:16:30.153793+00:00"
   },
   {
    "id": "az-gb-5879925401",
@@ -696,7 +687,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Manchester, Greater Manchester)",
-   "dropped_at": "2026-09-11T20:10:19.718874+00:00"
+   "dropped_at": "2026-09-12T08:16:31.272812+00:00"
   },
   {
    "id": "az-gb-5879924474",
@@ -706,17 +697,7 @@
    "source": "adzuna",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (York, North Yorkshire)",
-   "dropped_at": "2026-09-11T20:10:19.718926+00:00"
-  },
-  {
-   "id": "reed-57204643",
-   "title": "Associate Director / Business Operations Manager",
-   "company": "Worth Recruiting - Property Industry Recruitment",
-   "location": "NW52AA",
-   "source": "reed",
-   "stage": "prefilter:location",
-   "reason": "location: outside target markets (NW52AA)",
-   "dropped_at": "2026-09-11T20:10:23.747628+00:00"
+   "dropped_at": "2026-09-12T08:16:31.272868+00:00"
   },
   {
    "id": "reed-57322085",
@@ -726,7 +707,17 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (TW94LZ)",
-   "dropped_at": "2026-09-11T20:10:23.747846+00:00"
+   "dropped_at": "2026-09-12T08:16:33.985917+00:00"
+  },
+  {
+   "id": "reed-57204643",
+   "title": "Associate Director / Business Operations Manager",
+   "company": "Worth Recruiting - Property Industry Recruitment",
+   "location": "NW52AA",
+   "source": "reed",
+   "stage": "prefilter:location",
+   "reason": "location: outside target markets (NW52AA)",
+   "dropped_at": "2026-09-12T08:16:33.985963+00:00"
   },
   {
    "id": "reed-57223993",
@@ -736,7 +727,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Ongar)",
-   "dropped_at": "2026-09-11T20:10:23.747925+00:00"
+   "dropped_at": "2026-09-12T08:16:33.986072+00:00"
   },
   {
    "id": "reed-57043566",
@@ -746,7 +737,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (SE18SW)",
-   "dropped_at": "2026-09-11T20:10:23.748011+00:00"
+   "dropped_at": "2026-09-12T08:16:33.986283+00:00"
   },
   {
    "id": "reed-57043573",
@@ -756,7 +747,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (GU227AE)",
-   "dropped_at": "2026-09-11T20:10:23.748216+00:00"
+   "dropped_at": "2026-09-12T08:16:33.986442+00:00"
   },
   {
    "id": "reed-57320608",
@@ -766,7 +757,7 @@
    "source": "reed",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (GU11AG)",
-   "dropped_at": "2026-09-11T20:10:23.748501+00:00"
+   "dropped_at": "2026-09-12T08:16:33.986792+00:00"
   },
   {
    "id": "gh-adyen-7939712",
@@ -776,7 +767,7 @@
    "source": "greenhouse",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (New York)",
-   "dropped_at": "2026-09-11T20:10:28.803077+00:00"
+   "dropped_at": "2026-09-12T08:16:38.964239+00:00"
   },
   {
    "id": "gh-adyen-8167431",
@@ -786,7 +777,7 @@
    "source": "greenhouse",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (San Francisco)",
-   "dropped_at": "2026-09-11T20:10:28.805828+00:00"
+   "dropped_at": "2026-09-12T08:16:38.966983+00:00"
   },
   {
    "id": "gh-mongodb-7943868",
@@ -796,7 +787,7 @@
    "source": "greenhouse",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Gurugram)",
-   "dropped_at": "2026-09-11T20:10:28.925530+00:00"
+   "dropped_at": "2026-09-12T08:16:39.051322+00:00"
   },
   {
    "id": "gh-mongodb-8074078",
@@ -806,7 +797,507 @@
    "source": "greenhouse",
    "stage": "prefilter:location",
    "reason": "location: outside target markets (Milan; Rome)",
-   "dropped_at": "2026-09-11T20:10:28.928015+00:00"
+   "dropped_at": "2026-09-12T08:16:39.053729+00:00"
+  },
+  {
+   "id": "gh-mongodb-8049846",
+   "title": "Manager, Sales Strategy & Planning",
+   "company": "MongoDB",
+   "location": "San Francisco",
+   "source": "greenhouse",
+   "stage": "prefilter:location",
+   "reason": "location: outside target markets (San Francisco)",
+   "dropped_at": "2026-09-12T08:16:39.053914+00:00"
+  },
+  {
+   "id": "az-nl-5871571904",
+   "title": "Senior Sales Operations (SalesOps) Manager",
+   "company": "AIHR",
+   "location": "Provenierswijk, Rotterdam",
+   "source": "adzuna",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-09-05T07:49:38Z)",
+   "dropped_at": "2026-09-12T08:16:59.761748+00:00"
+  },
+  {
+   "id": "reed-57215199",
+   "title": "GTM Engineer",
+   "company": "Matchtech",
+   "location": "London",
+   "source": "reed",
+   "stage": "age",
+   "reason": "posted more than 7d ago (10/08/2026)",
+   "dropped_at": "2026-09-12T08:16:59.761888+00:00"
+  },
+  {
+   "id": "reed-57233965",
+   "title": "Revenue Operations Manager",
+   "company": "Sphere Digital Recruitment",
+   "location": "London",
+   "source": "reed",
+   "stage": "age",
+   "reason": "posted more than 7d ago (13/08/2026)",
+   "dropped_at": "2026-09-12T08:16:59.761901+00:00"
+  },
+  {
+   "id": "reed-57200887",
+   "title": "Sales Operations Assistant",
+   "company": "Morgan Spencer",
+   "location": "City of London",
+   "source": "reed",
+   "stage": "age",
+   "reason": "posted more than 7d ago (05/08/2026)",
+   "dropped_at": "2026-09-12T08:16:59.761912+00:00"
+  },
+  {
+   "id": "gh-adyen-8113927",
+   "title": "Senior Strategy & Business Ops Manager",
+   "company": "Adyen",
+   "location": "Amsterdam; Chicago; New York",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-09-01T10:23:25-04:00)",
+   "dropped_at": "2026-09-12T08:16:59.761941+00:00"
+  },
+  {
+   "id": "gh-lucidsoftware-6026386004",
+   "title": "Sales Enablement Manager, EMEA",
+   "company": "Lucid Software",
+   "location": "Amsterdam, NL",
+   "source": "greenhouse",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-08-24T13:57:46-04:00)",
+   "dropped_at": "2026-09-12T08:16:59.762025+00:00"
+  },
+  {
+   "id": "as-notion-bb0c4e16-ac1b-478c-aa92-ef3c542a9dcd",
+   "title": "GTM Recruiter, EMEA",
+   "company": "Notion",
+   "location": "London, United Kingdom",
+   "source": "ashby",
+   "stage": "age",
+   "reason": "posted more than 7d ago (2026-07-29T09:58:12.639+00:00)",
+   "dropped_at": "2026-09-12T08:16:59.762038+00:00"
+  },
+  {
+   "id": "li-4444506584",
+   "title": "Manager, Commercial Operations, New Markets",
+   "company": "FareHarbor",
+   "location": "Amsterdam, North Holland, Netherlands",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as FareHarbor - Manager, Commercial Operations, New Markets (hiring.cafe), already kept",
+   "dropped_at": "2026-09-12T08:16:59.807981+00:00"
+  },
+  {
+   "id": "az-gb-5877264560",
+   "title": "Customer Success Operations Manager",
+   "company": "Varonis",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Varonis - Customer Success Operations Manager (adzuna), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808001+00:00"
+  },
+  {
+   "id": "li-4456007880",
+   "title": "Revenue Operations Manager",
+   "company": "Energy Exemplar",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as Energy Exemplar - Revenue Operations Manager (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808007+00:00"
+  },
+  {
+   "id": "rr-62ec0194-3f08-471a-b6e0-df1d674214f5",
+   "title": "Revenue Operations and Sales Enablement Project Manager",
+   "company": "QIMA",
+   "location": "London, United Kingdom",
+   "source": "revopsroles",
+   "stage": "dedupe",
+   "reason": "same posting as QIMA - Revenue Operations and Sales Enablement Project Manager (revopsroles), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808011+00:00"
+  },
+  {
+   "id": "li-4456794894",
+   "title": "GTM Operations Analyst",
+   "company": "Heidi",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as Heidi Health - GTM Operations Analyst (revopsroles), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808015+00:00"
+  },
+  {
+   "id": "rr-a7f505bd-1389-4140-a2f8-fd4467aba951",
+   "title": "Sales Operations Analyst",
+   "company": "Canva",
+   "location": "London, United Kingdom",
+   "source": "revopsroles",
+   "stage": "dedupe",
+   "reason": "same posting as Canva - Sales Operations Analyst (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808018+00:00"
+  },
+  {
+   "id": "az-gb-5878698219",
+   "title": "Sr. Sales Operations Manager, EMEA Enterprise Support Strategy & Operations (ESSO)",
+   "company": "Amazon",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Amazon Web Services (AWS) - Sr. Sales Operations Manager, EMEA Enterprise Support Strategy & Operations (ESSO) (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808021+00:00"
+  },
+  {
+   "id": "li-4438820503",
+   "title": "Revenue Operations Manager - Channel Programs (Hybrid)",
+   "company": "Nitro Software",
+   "location": "Dublin, County Dublin, Ireland",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as Nitro Software - Revenue Operations Manager - Channel Programs (Hybrid) (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808025+00:00"
+  },
+  {
+   "id": "li-4438631637",
+   "title": "Sales Operations Senior Lead",
+   "company": "dunnhumby",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as dunnhumby - Sales Operations Senior Lead (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808028+00:00"
+  },
+  {
+   "id": "gh-lucidsoftware-5159168004",
+   "title": "EMEA Customer Success Manager",
+   "company": "Lucid Software",
+   "location": "Amsterdam, NL",
+   "source": "greenhouse",
+   "stage": "dedupe",
+   "reason": "same posting as Lucid Software - EMEA Customer Success Manager (greenhouse), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808032+00:00"
+  },
+  {
+   "id": "li-4456728476",
+   "title": "Lead - Revenue Enablement",
+   "company": "Freshworks",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as Freshworks - Lead - Revenue Enablement (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808035+00:00"
+  },
+  {
+   "id": "gh-udemy-6107984004",
+   "title": "Senior Renewals Manager, EMEA Enterprise",
+   "company": "Udemy",
+   "location": "Dublin, Ireland",
+   "source": "greenhouse",
+   "stage": "dedupe",
+   "reason": "same posting as Udemy - Senior Renewals Manager, EMEA Enterprise (greenhouse), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808039+00:00"
+  },
+  {
+   "id": "az-gb-5878709301",
+   "title": "Head of Customer Success",
+   "company": "Planday from Xero",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Planday from Xero - Head of Customer Success (adzuna), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808042+00:00"
+  },
+  {
+   "id": "az-nl-5878721745",
+   "title": "Manager, Customer Success \u2014 SMB & Mid-Market",
+   "company": "DataSnipper",
+   "location": "Amsterdam, Noord-Holland",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as DataSnipper - Manager, Customer Success \u2014 SMB & Mid-Market (hiring.cafe), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808047+00:00"
+  },
+  {
+   "id": "az-nl-5879953690",
+   "title": "Revenue Operations Manager",
+   "company": "Jobgether",
+   "location": "Veldhoven, Noord-Brabant",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Jobgether - Revenue Operations Manager (adzuna), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808051+00:00"
+  },
+  {
+   "id": "gh-mongodb-7892114",
+   "title": "Senior Sales Operations Analyst",
+   "company": "MongoDB",
+   "location": "Cork, Ireland; Dublin, Ireland",
+   "source": "greenhouse",
+   "stage": "dedupe",
+   "reason": "same posting as MongoDB - Senior Sales Operations Analyst (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808054+00:00"
+  },
+  {
+   "id": "gh-mongodb-8056742",
+   "title": "Senior Manager, Sales Operations",
+   "company": "MongoDB",
+   "location": "Dublin, Ireland",
+   "source": "greenhouse",
+   "stage": "dedupe",
+   "reason": "same posting as MongoDB - Senior Manager, Sales Operations (greenhouse), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808058+00:00"
+  },
+  {
+   "id": "li-4418276300",
+   "title": "Head of Revenue Enablement",
+   "company": "hyperexponential",
+   "location": "London Area, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as hyperexponential - Head of Revenue Enablement (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808062+00:00"
+  },
+  {
+   "id": "az-gb-5879198574",
+   "title": "Revenue Operations Analyst",
+   "company": "Experian",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Experian - Revenue Operations Analyst (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808065+00:00"
+  },
+  {
+   "id": "gh-amplitude-8785256002",
+   "title": "Senior Customer Success Architect",
+   "company": "Amplitude",
+   "location": "London, UK",
+   "source": "greenhouse",
+   "stage": "dedupe",
+   "reason": "same posting as Amplitude - Senior Customer Success Architect (greenhouse), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808068+00:00"
+  },
+  {
+   "id": "li-4466351851",
+   "title": "(Senior) Sales Enablement Manager (m/f/d)",
+   "company": "Chaos",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as Chaos - (Senior) Sales Enablement Manager (m/f/d) (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808071+00:00"
+  },
+  {
+   "id": "li-4456055074",
+   "title": "Senior Manager, Sales Compensation (EMEA & Latin America)",
+   "company": "Stryker",
+   "location": "Amsterdam, North Holland, Netherlands",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as Stryker - Senior Manager, Sales Compensation (revopsroles), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808089+00:00"
+  },
+  {
+   "id": "az-gb-5878704137",
+   "title": "Principal Customer Success Specialist - Gen AI, Customer Success Center of Excellence",
+   "company": "AWS",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as AWS - Principal Customer Success Specialist - Gen AI, Customer Success Center of Excellence (adzuna), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808094+00:00"
+  },
+  {
+   "id": "li-4466300589",
+   "title": "Manager, Sales Compensation",
+   "company": "Tines",
+   "location": "Greater Dublin",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as Tines - Manager, Sales Compensation (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808098+00:00"
+  },
+  {
+   "id": "rr-64ccdb47-4d6b-4c8e-b5da-c7400903ff66",
+   "title": "Manager, Sales Compensation",
+   "company": "Tines",
+   "location": "Dublin, Ireland",
+   "source": "revopsroles",
+   "stage": "dedupe",
+   "reason": "same posting as Tines - Manager, Sales Compensation (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808101+00:00"
+  },
+  {
+   "id": "az-gb-5879460167",
+   "title": "Head of Revenue Operations",
+   "company": "Experian",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Experian - Head of Revenue Operations (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808105+00:00"
+  },
+  {
+   "id": "rr-36369204-73bf-45fb-810c-583ed6c57a26",
+   "title": "Head of Revenue Operations",
+   "company": "Experian",
+   "location": "London, United Kingdom",
+   "source": "revopsroles",
+   "stage": "dedupe",
+   "reason": "same posting as Experian - Head of Revenue Operations (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808108+00:00"
+  },
+  {
+   "id": "az-nl-5878781592",
+   "title": "Sales Operations Coordinator",
+   "company": "Destinus",
+   "location": "Den Haag, Zuid-Holland",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Destinus - Sales Operations Coordinator (revopsroles), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808111+00:00"
+  },
+  {
+   "id": "rr-a4d255a3-4777-48c9-a225-9d9606a67b83",
+   "title": "Sales Operations Coordinator",
+   "company": "Destinus",
+   "location": "The Hague, Netherlands",
+   "source": "revopsroles",
+   "stage": "dedupe",
+   "reason": "same posting as Destinus - Sales Operations Coordinator (revopsroles), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808114+00:00"
+  },
+  {
+   "id": "li-4456717772",
+   "title": "FP&A Expert - Go-To-Market Finance",
+   "company": "Madison Recruitment",
+   "location": "Ghent, Flemish Region, Belgium",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as Madison Recruitment - FP&A Expert - Go-To-Market Finance (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808117+00:00"
+  },
+  {
+   "id": "az-gb-5877815766",
+   "title": "Executive Head of Revenue Operations & Growth, Europe",
+   "company": "NTT America, Inc.",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as NTT DATA, Inc. - Executive Head of Revenue Operations & Growth, Europe (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808120+00:00"
+  },
+  {
+   "id": "az-gb-5877269924",
+   "title": "Executive Head of Revenue Operations & Growth, Europe",
+   "company": "NTT",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as NTT DATA, Inc. - Executive Head of Revenue Operations & Growth, Europe (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808123+00:00"
+  },
+  {
+   "id": "az-gb-5872119187",
+   "title": "Executive Head of Revenue Operations & Growth, Europe",
+   "company": "NTT",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as NTT DATA, Inc. - Executive Head of Revenue Operations & Growth, Europe (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808126+00:00"
+  },
+  {
+   "id": "li-4464895874",
+   "title": "Director, Growth Strategy, Planning + Ops",
+   "company": "TuneCore",
+   "location": "London, England, United Kingdom",
+   "source": "linkedin",
+   "stage": "dedupe",
+   "reason": "same posting as TuneCore - Director, Growth Strategy, Planning + Ops (linkedin), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808130+00:00"
+  },
+  {
+   "id": "gh-mongodb-8122025",
+   "title": "Renewals Manager - French Speaker",
+   "company": "MongoDB",
+   "location": "Dublin, Ireland",
+   "source": "greenhouse",
+   "stage": "dedupe",
+   "reason": "same posting as MongoDB - Renewals Manager - French Speaker (greenhouse), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808133+00:00"
+  },
+  {
+   "id": "az-gb-5880099781",
+   "title": "Revenue Operations Coordinator",
+   "company": "Birchrose Associates",
+   "location": "Farringdon, Central London",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Birchrose Associates - Revenue Operations Coordinator (reed), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808137+00:00"
+  },
+  {
+   "id": "az-gb-5880098126",
+   "title": "Revenue Operations Coordinator",
+   "company": "Birchrose Associates",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Birchrose Associates - Revenue Operations Coordinator (reed), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808140+00:00"
+  },
+  {
+   "id": "az-gb-5875607825",
+   "title": "Sales Enablement Manager",
+   "company": "Sphere Digital Recruitment",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "dedupe",
+   "reason": "same posting as Sphere Digital Recruitment - Sales Enablement Manager (reed), already kept",
+   "dropped_at": "2026-09-12T08:16:59.808143+00:00"
+  },
+  {
+   "id": "az-nl-5879388066",
+   "title": "Commercial Operations Administrator",
+   "company": "Action",
+   "location": "Wervershoof, Medemblik",
+   "source": "adzuna",
+   "stage": "stage1-kill",
+   "reason": "Retail operations, not commercial/revenue operations.",
+   "dropped_at": "2026-09-12T08:17:03.463975+00:00"
+  },
+  {
+   "id": "az-gb-5880667907",
+   "title": "GTM Sr. Analyst, Solution Education, Content Enablement and Solution Partner Launch",
+   "company": "The Opportunity Hub UK",
+   "location": "London, UK",
+   "source": "adzuna",
+   "stage": "below-visa-floor",
+   "reason": "stated salary 50000 GBP below the UK-London visa floor (70000 GBP)",
+   "dropped_at": "2026-09-12T08:17:11.783023+00:00"
+  },
+  {
+   "id": "az-gb-5880118921",
+   "title": "Business Operations & Project Coordinator Italian speaking",
+   "company": "Cv&Coffee Ltd",
+   "location": "The City, Central London",
+   "source": "adzuna",
+   "stage": "stage1-kill",
+   "reason": "Location London City, not commuter belt. Non-B2B tech employer.",
+   "dropped_at": "2026-09-12T08:17:12.993145+00:00"
+  },
+  {
+   "id": "li-4465150114",
+   "title": "Manager, Sales Compensation",
+   "company": "Teli Labs",
+   "location": "Dublin, County Dublin, Ireland",
+   "source": "linkedin",
+   "stage": "stage1-kill",
+   "reason": "Function: Sales Compensation is quota-carrying sales adjacent (deal desk/quote-t",
+   "dropped_at": "2026-09-12T08:17:14.673915+00:00"
   },
   {
    "id": "az-nl-5870198076",
@@ -897,376 +1388,6 @@
    "stage": "dedupe",
    "reason": "same posting as Varonis - Customer Success Operations Manager (adzuna), already kept",
    "dropped_at": "2026-09-11T20:10:58.387266+00:00"
-  },
-  {
-   "id": "li-4464823800",
-   "title": "Revenue Operations Lead",
-   "company": "Borderless Immigration",
-   "location": "London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Borderless Immigration - Revenue Operations Lead (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387271+00:00"
-  },
-  {
-   "id": "li-4456007880",
-   "title": "Revenue Operations Manager",
-   "company": "Energy Exemplar",
-   "location": "London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Energy Exemplar - Revenue Operations Manager (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387275+00:00"
-  },
-  {
-   "id": "rr-62ec0194-3f08-471a-b6e0-df1d674214f5",
-   "title": "Revenue Operations and Sales Enablement Project Manager",
-   "company": "QIMA",
-   "location": "London, United Kingdom",
-   "source": "revopsroles",
-   "stage": "dedupe",
-   "reason": "same posting as QIMA - Revenue Operations and Sales Enablement Project Manager (revopsroles), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387279+00:00"
-  },
-  {
-   "id": "li-4456794894",
-   "title": "GTM Operations Analyst",
-   "company": "Heidi",
-   "location": "London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Heidi Health - GTM Operations Analyst (revopsroles), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387283+00:00"
-  },
-  {
-   "id": "li-4466060174",
-   "title": "Revenue Operations Manager",
-   "company": "GRESB",
-   "location": "Amsterdam, North Holland, Netherlands",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as GRESB - Revenue Operations Manager (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387286+00:00"
-  },
-  {
-   "id": "rr-a7f505bd-1389-4140-a2f8-fd4467aba951",
-   "title": "Sales Operations Analyst",
-   "company": "Canva",
-   "location": "London, United Kingdom",
-   "source": "revopsroles",
-   "stage": "dedupe",
-   "reason": "same posting as Canva - Sales Operations Analyst (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387290+00:00"
-  },
-  {
-   "id": "az-gb-5878698219",
-   "title": "Sr. Sales Operations Manager, EMEA Enterprise Support Strategy & Operations (ESSO)",
-   "company": "Amazon",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Amazon Web Services (AWS) - Sr. Sales Operations Manager, EMEA Enterprise Support Strategy & Operations (ESSO) (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387293+00:00"
-  },
-  {
-   "id": "li-4438820503",
-   "title": "Revenue Operations Manager - Channel Programs (Hybrid)",
-   "company": "Nitro Software",
-   "location": "Dublin, County Dublin, Ireland",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Nitro Software - Revenue Operations Manager - Channel Programs (Hybrid) (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387296+00:00"
-  },
-  {
-   "id": "li-4438631637",
-   "title": "Sales Operations Senior Lead",
-   "company": "dunnhumby",
-   "location": "London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as dunnhumby - Sales Operations Senior Lead (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387300+00:00"
-  },
-  {
-   "id": "gh-lucidsoftware-5159168004",
-   "title": "EMEA Customer Success Manager",
-   "company": "Lucid Software",
-   "location": "Amsterdam, NL",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same posting as Lucid Software - EMEA Customer Success Manager (greenhouse), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387303+00:00"
-  },
-  {
-   "id": "li-4456728476",
-   "title": "Lead - Revenue Enablement",
-   "company": "Freshworks",
-   "location": "London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Freshworks - Lead - Revenue Enablement (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387307+00:00"
-  },
-  {
-   "id": "gh-udemy-6107984004",
-   "title": "Senior Renewals Manager, EMEA Enterprise",
-   "company": "Udemy",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same posting as Udemy - Senior Renewals Manager, EMEA Enterprise (greenhouse), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387311+00:00"
-  },
-  {
-   "id": "az-gb-5878709301",
-   "title": "Head of Customer Success",
-   "company": "Planday from Xero",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Planday from Xero - Head of Customer Success (adzuna), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387314+00:00"
-  },
-  {
-   "id": "az-nl-5878721745",
-   "title": "Manager, Customer Success \u2014 SMB & Mid-Market",
-   "company": "DataSnipper",
-   "location": "Amsterdam, Noord-Holland",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as DataSnipper - Manager, Customer Success \u2014 SMB & Mid-Market (hiring.cafe), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387318+00:00"
-  },
-  {
-   "id": "az-nl-5871571904",
-   "title": "Senior Sales Operations (SalesOps) Manager",
-   "company": "AIHR",
-   "location": "Provenierswijk, Rotterdam",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Academy to Innovate HR (AIHR) - Senior Sales Operations (SalesOps) Manager (hiring.cafe), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387322+00:00"
-  },
-  {
-   "id": "az-nl-5879953690",
-   "title": "Revenue Operations Manager",
-   "company": "Jobgether",
-   "location": "Veldhoven, Noord-Brabant",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Jobgether - Revenue Operations Manager (adzuna), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387325+00:00"
-  },
-  {
-   "id": "gh-mongodb-7892114",
-   "title": "Senior Sales Operations Analyst",
-   "company": "MongoDB",
-   "location": "Cork, Ireland; Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same posting as MongoDB - Senior Sales Operations Analyst (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387329+00:00"
-  },
-  {
-   "id": "gh-mongodb-8056742",
-   "title": "Senior Manager, Sales Operations",
-   "company": "MongoDB",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same posting as MongoDB - Senior Manager, Sales Operations (greenhouse), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387332+00:00"
-  },
-  {
-   "id": "li-4418276300",
-   "title": "Head of Revenue Enablement",
-   "company": "hyperexponential",
-   "location": "London Area, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as hyperexponential - Head of Revenue Enablement (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387336+00:00"
-  },
-  {
-   "id": "az-gb-5879198574",
-   "title": "Revenue Operations Analyst",
-   "company": "Experian",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Experian - Revenue Operations Analyst (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387339+00:00"
-  },
-  {
-   "id": "gh-amplitude-8785256002",
-   "title": "Senior Customer Success Architect",
-   "company": "Amplitude",
-   "location": "London, UK",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same posting as Amplitude - Senior Customer Success Architect (greenhouse), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387343+00:00"
-  },
-  {
-   "id": "li-4466351851",
-   "title": "(Senior) Sales Enablement Manager (m/f/d)",
-   "company": "Chaos",
-   "location": "London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Chaos - (Senior) Sales Enablement Manager (m/f/d) (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387346+00:00"
-  },
-  {
-   "id": "az-gb-5878704137",
-   "title": "Principal Customer Success Specialist - Gen AI, Customer Success Center of Excellence",
-   "company": "AWS",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as AWS - Principal Customer Success Specialist - Gen AI, Customer Success Center of Excellence (adzuna), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387349+00:00"
-  },
-  {
-   "id": "li-4466300589",
-   "title": "Manager, Sales Compensation",
-   "company": "Tines",
-   "location": "Greater Dublin",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Tines - Manager, Sales Compensation (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387353+00:00"
-  },
-  {
-   "id": "az-gb-5879460167",
-   "title": "Head of Revenue Operations",
-   "company": "Experian",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Experian - Head of Revenue Operations (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387356+00:00"
-  },
-  {
-   "id": "rr-36369204-73bf-45fb-810c-583ed6c57a26",
-   "title": "Head of Revenue Operations",
-   "company": "Experian",
-   "location": "London, United Kingdom",
-   "source": "revopsroles",
-   "stage": "dedupe",
-   "reason": "same posting as Experian - Head of Revenue Operations (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387359+00:00"
-  },
-  {
-   "id": "az-nl-5878781592",
-   "title": "Sales Operations Coordinator",
-   "company": "Destinus",
-   "location": "Den Haag, Zuid-Holland",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Destinus - Sales Operations Coordinator (revopsroles), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387362+00:00"
-  },
-  {
-   "id": "rr-a4d255a3-4777-48c9-a225-9d9606a67b83",
-   "title": "Sales Operations Coordinator",
-   "company": "Destinus",
-   "location": "The Hague, Netherlands",
-   "source": "revopsroles",
-   "stage": "dedupe",
-   "reason": "same posting as Destinus - Sales Operations Coordinator (revopsroles), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387365+00:00"
-  },
-  {
-   "id": "li-4456717772",
-   "title": "FP&A Expert - Go-To-Market Finance",
-   "company": "Madison Recruitment",
-   "location": "Ghent, Flemish Region, Belgium",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Madison Recruitment - FP&A Expert - Go-To-Market Finance (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387368+00:00"
-  },
-  {
-   "id": "az-gb-5877815766",
-   "title": "Executive Head of Revenue Operations & Growth, Europe",
-   "company": "NTT America, Inc.",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as NTT DATA, Inc. - Executive Head of Revenue Operations & Growth, Europe (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387372+00:00"
-  },
-  {
-   "id": "az-gb-5877269924",
-   "title": "Executive Head of Revenue Operations & Growth, Europe",
-   "company": "NTT",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as NTT DATA, Inc. - Executive Head of Revenue Operations & Growth, Europe (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387375+00:00"
-  },
-  {
-   "id": "az-gb-5872119187",
-   "title": "Executive Head of Revenue Operations & Growth, Europe",
-   "company": "NTT",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as NTT DATA, Inc. - Executive Head of Revenue Operations & Growth, Europe (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387378+00:00"
-  },
-  {
-   "id": "li-4456078508",
-   "title": "Global GTM Director - Enterprise Simulation",
-   "company": "Siemens",
-   "location": "Leuven, Flemish Region, Belgium",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as Siemens - Global GTM Director - Enterprise Simulation (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387381+00:00"
-  },
-  {
-   "id": "li-4464895874",
-   "title": "Director, Growth Strategy, Planning + Ops",
-   "company": "TuneCore",
-   "location": "London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as TuneCore - Director, Growth Strategy, Planning + Ops (linkedin), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387384+00:00"
-  },
-  {
-   "id": "gh-mongodb-8122025",
-   "title": "Renewals Manager - French Speaker",
-   "company": "MongoDB",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "dedupe",
-   "reason": "same posting as MongoDB - Renewals Manager - French Speaker (greenhouse), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387387+00:00"
-  },
-  {
-   "id": "az-gb-5880099781",
-   "title": "Revenue Operations Coordinator",
-   "company": "Birchrose Associates",
-   "location": "Farringdon, Central London",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Birchrose Associates - Revenue Operations Coordinator (reed), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387391+00:00"
-  },
-  {
-   "id": "az-gb-5875607825",
-   "title": "Sales Enablement Manager",
-   "company": "Sphere Digital Recruitment",
-   "location": "London, UK",
-   "source": "adzuna",
-   "stage": "dedupe",
-   "reason": "same posting as Sphere Digital Recruitment - Sales Enablement Manager (reed), already kept",
-   "dropped_at": "2026-09-11T20:10:58.387394+00:00"
   },
   {
    "id": "az-gb-5878827615",
@@ -1387,16 +1508,6 @@
    "stage": "age",
    "reason": "posted more than 7d ago (2026-07-29T09:58:12.639+00:00)",
    "dropped_at": "2026-09-11T18:01:28.837624+00:00"
-  },
-  {
-   "id": "li-4444506584",
-   "title": "Manager, Commercial Operations, New Markets",
-   "company": "FareHarbor",
-   "location": "Amsterdam, North Holland, Netherlands",
-   "source": "linkedin",
-   "stage": "dedupe",
-   "reason": "same posting as FareHarbor - Manager, Commercial Operations, New Markets (hiring.cafe), already kept",
-   "dropped_at": "2026-09-11T18:01:28.870946+00:00"
   },
   {
    "id": "az-nl-5870198076",
@@ -1599,66 +1710,6 @@
    "dropped_at": "2026-09-11T12:48:51.148280+00:00"
   },
   {
-   "id": "gh-mongodb-8152810",
-   "title": "Marketing Operations Manager",
-   "company": "MongoDB",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-09-01T03:40:27-04:00)",
-   "dropped_at": "2026-09-11T12:48:51.148291+00:00"
-  },
-  {
-   "id": "gh-mongodb-8122025",
-   "title": "Renewals Manager - French Speaker",
-   "company": "MongoDB",
-   "location": "Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-09-01T03:40:27-04:00)",
-   "dropped_at": "2026-09-11T12:48:51.148300+00:00"
-  },
-  {
-   "id": "gh-mongodb-8091796",
-   "title": "Senior Customer Success Manager",
-   "company": "MongoDB",
-   "location": "Dublin, Ireland; London",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-09-01T03:40:27-04:00)",
-   "dropped_at": "2026-09-11T12:48:51.148310+00:00"
-  },
-  {
-   "id": "gh-mongodb-7892114",
-   "title": "Senior Sales Operations Analyst",
-   "company": "MongoDB",
-   "location": "Cork, Ireland; Dublin, Ireland",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-09-01T03:40:27-04:00)",
-   "dropped_at": "2026-09-11T12:48:51.148324+00:00"
-  },
-  {
-   "id": "gh-lucidsoftware-6026386004",
-   "title": "Sales Enablement Manager, EMEA",
-   "company": "Lucid Software",
-   "location": "Amsterdam, NL",
-   "source": "greenhouse",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-08-24T13:57:46-04:00)",
-   "dropped_at": "2026-09-11T12:48:51.148396+00:00"
-  },
-  {
-   "id": "as-notion-bb0c4e16-ac1b-478c-aa92-ef3c542a9dcd",
-   "title": "GTM Recruiter, EMEA",
-   "company": "Notion",
-   "location": "London, United Kingdom",
-   "source": "ashby",
-   "stage": "age",
-   "reason": "posted more than 7d ago (2026-07-29T09:58:12.639+00:00)",
-   "dropped_at": "2026-09-11T12:48:51.148411+00:00"
-  },
-  {
    "id": "az-nl-5879632057",
    "title": "(Junior) Sales Operations Specialist",
    "company": "Olympia",
@@ -1697,16 +1748,6 @@
    "stage": "language-required",
    "reason": "JD: \"You're a Dutch native speaker, with very good knowledge of English\"",
    "dropped_at": "2026-09-11T12:48:58.449107+00:00"
-  },
-  {
-   "id": "reed-57215199",
-   "title": "GTM Engineer",
-   "company": "Matchtech",
-   "location": "London",
-   "source": "reed",
-   "stage": "age",
-   "reason": "posted more than 7d ago (10/08/2026)",
-   "dropped_at": "2026-09-11T08:16:34.826809+00:00"
   },
   {
    "id": "az-gb-5878888446",
@@ -3039,36 +3080,6 @@
    "dropped_at": "2026-09-02T17:00:56.327128+00:00"
   },
   {
-   "id": "li-4462409566",
-   "title": "Senior GTM Finance Analyst \u2013 Commercial & Data Analytics",
-   "company": "Darwin Hawkins",
-   "location": "Dublin, County Dublin, Ireland",
-   "source": "linkedin",
-   "stage": "stage1-kill",
-   "reason": "Finance/accounting function outside target scope",
-   "dropped_at": "2026-09-02T17:00:57.785435+00:00"
-  },
-  {
-   "id": "az-nl-5864029200",
-   "title": "RevOps Specialist - Sales Strategy",
-   "company": "Mercor",
-   "location": "Amsterdam, Noord-Holland",
-   "source": "adzuna",
-   "stage": "stage1-kill",
-   "reason": "Remote role; location filter rejects remote-anywhere positions.",
-   "dropped_at": "2026-09-02T12:49:25.326564+00:00"
-  },
-  {
-   "id": "hc-ashby___plaid___c73b1d9e-e7d8-415e-bbdf-f95696a968db",
-   "title": "Revenue Operations Accountant",
-   "company": "Plaid",
-   "location": "San Francisco or New York City or Seattle or Washington, D.C. or Raleigh or London or Amsterdam",
-   "source": "hiring.cafe",
-   "stage": "stage1-kill",
-   "reason": "Function: deal desk/billing/order management, not RevOps/GTM.",
-   "dropped_at": "2026-09-02T12:49:58.585451+00:00"
-  },
-  {
    "id": "li-4460984170",
    "title": "Revenue Operations Specialist",
    "company": "Aethon.nl",
@@ -3997,16 +4008,6 @@
    "stage": "score-error",
    "reason": "HTTP 529: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"},\"request_id\":\"req_011CdXwu5Qh7ekgdStP19Pkv\"}",
    "dropped_at": "2026-07-30T08:44:56.282695+00:00"
-  },
-  {
-   "id": "li-4444171876",
-   "title": "GTM Program Manager",
-   "company": "Celonis",
-   "location": "Greater London, England, United Kingdom",
-   "source": "linkedin",
-   "stage": "score-error",
-   "reason": "HTTP 529: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"},\"request_id\":\"req_011CdXwz7AzwWY4GpNGWRpQB\"}",
-   "dropped_at": "2026-07-30T08:45:30.608157+00:00"
   }
  ]
 }
