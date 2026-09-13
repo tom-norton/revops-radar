@@ -64,7 +64,7 @@ Usage:
   python scan.py --dedupe    collapse duplicates already on the dashboard, without scanning
 """
 
-import email, html, imaplib, json, os, re, subprocess, sys, time
+import email, html, imaplib, json, os, re, subprocess, sys, time, urllib.parse
 from datetime import datetime, timezone, timedelta
 import requests
 import sponsors as spon
@@ -78,7 +78,14 @@ import submit
 # name in the currency slot ("44231-44231 United Kingdom local"), leaving the scoring model
 # to infer "GBP" from the words -- and salary_floor_flag() checks that inference against the
 # market's currency before deep_score_disqualifier() drops the role on it.
-ADZUNA_COUNTRIES = {"nl": "EUR", "gb": "GBP"}
+ADZUNA_COUNTRIES = {"nl": "EUR", "gb": "GBP", "ca": "CAD", "us": "USD"}
+# Which phrase set each country gets. Europe takes the full list; North America takes the
+# RevOps-proper subset, for two reasons. The narrow one is that the US prefilter gate
+# (REVOPS_CORE) would drop the rest on arrival anyway, so fetching them is paid-for volume
+# thrown away. The wider one is the call budget: Adzuna's nominal free tier is 1,000 calls
+# a month and 2 countries x 9 phrases x 2 pages x 4 runs a day already runs well past it,
+# so doubling the country count on the full phrase list is not something to do casually.
+ADZUNA_CORE_COUNTRIES = ("us", "ca")
 # Targeted phrase queries. A broad word-OR query sorted by date just surfaces the
 # freshest generic "operations/customer/revenue" noise, none of which passes the title
 # filter (that was the original "Adzuna returned nothing" bug). Precise phrases return
@@ -88,6 +95,11 @@ ADZUNA_PHRASES = [
     "go to market strategy", "revenue enablement", "customer success operations",
     "business operations manager", "commercial operations",
 ]
+# The North American subset of ADZUNA_PHRASES. Deliberately a filter over that list rather
+# than a second literal, so a phrase added above cannot be silently missing here.
+ADZUNA_CORE_PHRASES = ["revenue operations", "sales operations", "revenue strategy",
+                       "sales strategy", "go to market strategy",
+                       "customer success operations"]
 ADZUNA_MAX_DAYS = 7      # Tom doesn't want postings older than a week
 ADZUNA_PER_PAGE = 30     # per phrase
 ADZUNA_PAGES = 2         # pages per phrase; page 1 alone capped the feed at 540 results/run
@@ -104,6 +116,10 @@ REED_KEYWORDS = OR_KEYWORDS
 # JobSpy / Indeed for Ireland (Dublin). Best-effort: never breaks the run.
 JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
                 "revenue strategy", "customer success operations"]
+# The US subset, kept as a filter over the list above so a term added there cannot be
+# silently missing here. "customer success operations" survives because it IS core RevOps;
+# plain CSM was never in this list.
+JOBSPY_CORE_TERMS = [t for t in JOBSPY_TERMS if t != "customer success operations"]
 
 # LinkedIn "Jobs based on your preferences" is personalized off account-level preference
 # data, not a literal text search -- replaying that natural-language phrase as a keyword
@@ -115,7 +131,12 @@ JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
 # time. Belgium/Amsterdam results still pass through the same location_ok() gate as
 # every other source, so anything outside NL/UK-London/Dublin gets filtered downstream.
 LINKEDIN_KEYWORDS = OR_KEYWORDS
-LINKEDIN_GEO_IDS = ["90009496", "100565514", "102890719", "103100785", "104738515"]
+# London Area UK, Belgium, Netherlands, Amsterdam, Ireland, then the two new ones:
+# United States and Canada. Queried one geoId at a time (the guest endpoint paginates
+# wrongly when they are combined), and every row still passes through the same
+# prefilter()/market_of() gate, so a US row that is not remote is dropped downstream.
+LINKEDIN_GEO_IDS = ["90009496", "100565514", "102890719", "103100785", "104738515",
+                    "103644278", "101174742"]
 LINKEDIN_PAGES = 3       # 10 results/page per market
 
 INCLUDE_TITLE = re.compile(
@@ -169,9 +190,17 @@ CSM_ANY = re.compile(r"customer success", re.I)
 # volume dies for free rather than at $0.001 a row in stage one.
 REVOPS_CORE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
-    r"|cs operations|customer success operations|marketing operations"
+    r"|cs operations|customer success operations"
     r"|revenue strategy|sales strategy|revenue analytics|revenue systems"
-    r"|revenue technology|revenue enablement|go[- ]to[- ]market|\bgtm\b"
+    r"|revenue technology|revenue enablement"
+    # GTM needs an operations/strategy noun beside it, in either word order. A bare \bgtm\b
+    # admitted "GTM Recruiter, AMER" and "Staff, Analytics Engineer, GTM Data Science" on
+    # the first US run -- a recruiting role and an engineering role. Both would have died
+    # at the Haiku screen, but the whole point of this gate is that US volume dies for
+    # free, before anything is spent on it.
+    r"|(gtm|go[- ]to[- ]market)[ ,&-]{1,3}(strategy|operations|ops|enablement|analytics"
+    r"|systems|planning)"
+    r"|(strategy|operations|ops|enablement|analytics|systems)[ ,&-]{1,3}(gtm|go[- ]to[- ]market)"
     r"|sales compensation|incentive compensation"
     r"|territory (planning|design|management|operations)"
     r"|strategy[ ,&]{1,3}(and[ ,&]{1,3})?(planning|business|revenue|sales|commercial)?[ ,&]{0,3}"
@@ -1649,7 +1678,9 @@ def fetch_adzuna(app_id, app_key, diag):
     for cc in ADZUNA_COUNTRIES:
         raw = kept = 0
         err = None
-        for phrase in ADZUNA_PHRASES:
+        phrases = (ADZUNA_CORE_PHRASES if cc in ADZUNA_CORE_COUNTRIES
+                   else ADZUNA_PHRASES)
+        for phrase in phrases:
             for page in range(1, ADZUNA_PAGES + 1):
                 try:
                     r = get(f"https://api.adzuna.com/v1/api/jobs/{cc}/search/{page}", params={
@@ -1734,50 +1765,82 @@ def fetch_reed(api_key):
 
 # ---------------------------------------------------------------- JobSpy / Indeed (Ireland)
 
-def fetch_jobspy_ireland():
-    """Indeed via JobSpy for Ireland. Best-effort: import + scrape may fail on CI IPs.
+# JobSpy targets, one per market it covers. Ireland is Adzuna's gap (that API has no
+# Ireland endpoint), so Indeed is the only broad feed there. The North American entries add
+# Google Jobs, which is the closest free thing to hiring.cafe's long-tail discovery: Google
+# indexes Greenhouse, Lever and Ashby posting pages directly, so it surfaces the
+# small-company ATS rows the big aggregators miss. Indeed rides along for the US and Canada
+# because the call is already being made.
+JOBSPY_TARGETS = [
+    {"cc": "ie", "location": "Ireland", "country_indeed": "Ireland",
+     "sites": ["indeed"], "currency": "EUR", "terms": None},
+    {"cc": "ca", "location": "Canada", "country_indeed": "Canada",
+     "sites": ["indeed", "google"], "currency": "CAD", "terms": None},
+    # "remote" in the search string does the same job at the source that market_of() does
+    # downstream: a US row that is not remote is dropped, so asking for onsite rows is
+    # paid-for volume thrown away.
+    {"cc": "us", "location": "United States", "country_indeed": "USA",
+     "sites": ["indeed", "google"], "currency": "USD",
+     "terms": [f"{t} remote" for t in JOBSPY_CORE_TERMS]},
+]
 
-    Searches the country, not Dublin. Adzuna has no Ireland endpoint, so this plus the ATS
-    boards, LinkedIn and hiring.cafe is the whole Irish feed -- scoping it to "Dublin,
-    Ireland" made Indeed's own location filter do the same Dublin-only narrowing the
-    location gate used to do, and hid Cork and Galway roles before anything could score
-    them."""
+
+def fetch_jobspy(diag=None):
+    """Indeed (plus Google Jobs in North America) via JobSpy. Best-effort: import and
+    scrape may both fail on CI IPs, and neither is allowed to break the run.
+
+    Searches whole countries, never a single city. Scoping Ireland to "Dublin, Ireland"
+    made Indeed's own location filter do the Dublin-only narrowing the location gate used
+    to do, and hid Cork and Galway roles before anything could score them."""
     from jobspy import scrape_jobs   # imported lazily so a missing dep can't break the run
     out, seen = [], set()
-    for term in JOBSPY_TERMS:
-        try:
-            df = scrape_jobs(site_name=["indeed"], search_term=term,
-                             location="Ireland", results_wanted=20,
-                             country_indeed="Ireland", hours_old=MAX_POST_AGE_DAYS * 24)
-        except Exception:
-            continue
-        if df is None or len(df) == 0:
-            continue
-        bump_raw("indeed", len(df))
-        for _, row in df.iterrows():
-            title = str(row.get("title") or "")
-            loc = str(row.get("location") or "Ireland")
-            jid = "js-" + re.sub(r"\W+", "-", str(row.get("job_url") or title))[-70:]
-            reason = prefilter(title, loc, "ie")
-            if reason:
-                record_drop({"id": jid, "title": title, "location": loc,
-                             "company": str(row.get("company") or ""), "source": "indeed"},
-                            "prefilter", reason)
+    for target in JOBSPY_TARGETS:
+        cc = target["cc"]
+        raw = kept = 0
+        err = None
+        for term in (target["terms"] or JOBSPY_TERMS):
+            try:
+                df = scrape_jobs(site_name=target["sites"], search_term=term,
+                                 location=target["location"], results_wanted=20,
+                                 country_indeed=target["country_indeed"],
+                                 hours_old=MAX_POST_AGE_DAYS * 24)
+            except Exception as e:
+                err = f"error: {e}"
                 continue
-            if jid in seen:
+            if df is None or len(df) == 0:
                 continue
-            seen.add(jid)
-            sal = ""
-            if row.get("min_amount"):
-                sal = f"{int(row['min_amount'])}-{int(row.get('max_amount') or row['min_amount'])} {row.get('currency') or 'EUR'}"
-            out.append({
-                "id": jid, "company": str(row.get("company") or ""),
-                "title": title, "location": loc, "country": "ie",
-                "market": market_of("ie", loc),
-                "url": str(row.get("job_url") or ""), "source": "indeed",
-                "description": strip_html(str(row.get("description") or "")), "salary": sal,
-                "posted_at": str(row.get("date_posted") or ""),
-            })
+            raw += len(df)
+            bump_raw("indeed", len(df))
+            for _, row in df.iterrows():
+                title = str(row.get("title") or "")
+                loc = str(row.get("location") or target["location"])
+                jid = "js-" + re.sub(r"\W+", "-", str(row.get("job_url") or title))[-70:]
+                reason = prefilter(title, loc, cc)
+                if reason:
+                    record_drop({"id": jid, "title": title, "location": loc,
+                                 "company": str(row.get("company") or ""),
+                                 "source": "indeed"}, "prefilter", reason)
+                    continue
+                if jid in seen:
+                    continue
+                seen.add(jid)
+                sal = ""
+                if row.get("min_amount"):
+                    sal = (f"{int(row['min_amount'])}-"
+                           f"{int(row.get('max_amount') or row['min_amount'])} "
+                           f"{row.get('currency') or target['currency']}")
+                out.append({
+                    "id": jid, "company": str(row.get("company") or ""),
+                    "title": title, "location": loc, "country": cc,
+                    "market": market_of(cc, loc),
+                    "url": str(row.get("job_url") or ""), "source": "indeed",
+                    "description": strip_html(str(row.get("description") or "")),
+                    "salary": sal,
+                    "posted_at": str(row.get("date_posted") or ""),
+                })
+                kept += 1
+        if diag is not None:
+            diag[f"jobspy:{cc}"] = err or f"raw {raw}, kept {kept}"
     return out
 
 # ---------------------------------------------------------------- ATS supplements (companies.json)
@@ -2138,20 +2201,159 @@ def fetch_revopsroles(gmail_address, gmail_app_password):
     return out
 
 APIFY_ACTOR = "memo23~apify-hiring-cafe-scraper"
-# Tom's saved hiring.cafe searches (address-bar URLs, each encodes its own location/
-# title/language filters). Add or edit searches here as his targeting evolves.
-APIFY_HIRINGCAFE_SEARCHES = [
+# Tom's hiring.cafe searches, as structured data rather than the percent-encoded
+# searchState blobs that used to live here.
+#
+# Those blobs were four 1-2KB URL-encoded JSON strings. They worked, but editing the
+# targeting meant hand-editing percent-encoded JSON, which is the reason adding a market
+# here has been avoided for as long as it has. hiringcafe_url() rebuilds the exact same
+# URLs from the definitions below -- there is a test that round-trips all four and asserts
+# the decoded searchState is unchanged, so this refactor cannot quietly alter what the
+# actor is asked for.
+#
+# The "id" on each location is hiring.cafe's own opaque geo key, lifted from the URLs its
+# UI produced. They appear to be client-side keys rather than server lookups -- the filter
+# that matters is address_components.short_name -- but the European ones are the real
+# values regardless, and HC_ID_UNVERIFIED marks the two that are not.
+HC_ID_UNVERIFIED = "pending-real-url"
+
+
+def _hc_country(long_name, short_name, population, hc_id, flexible=()):
+    """A whole-country location. `flexible` carries hiring.cafe's flexible_regions, which
+    is how a search opts into remote-from-anywhere rows for that country."""
+    return {"id": hc_id, "types": ["country"],
+            "address_components": [{"long_name": long_name, "short_name": short_name,
+                                    "types": ["country"]}],
+            "formatted_address": long_name, "population": population,
+            "workplace_types": [], "options": {"flexible_regions": list(flexible)}}
+
+
+def _hc_london(radius_miles):
+    """London with a commuter radius. 25 miles for the RevOps search, 50 for the CS ones,
+    which is the asymmetry the original blobs encoded."""
+    return {"id": "xRg1yZQBoEtHp_8UXQ1z", "types": ["locality"],
+            "address_components": [
+                {"long_name": "London", "short_name": "London", "types": ["locality"]},
+                {"long_name": "England", "short_name": "ENG",
+                 "types": ["administrative_area_level_1"]},
+                {"long_name": "United Kingdom", "short_name": "GB", "types": ["country"]}],
+            "geometry": {"location": {"lat": 51.50853, "lon": -0.12574}},
+            "formatted_address": "London, England, GB", "population": 8961989,
+            "workplace_types": [],
+            "options": {"radius": radius_miles, "radius_unit": "miles",
+                        "ignore_radius": False}}
+
+
+def _hc_nl(flexible=()):
+    return _hc_country("The Netherlands", "NL", 17231017, "1BY1yZQBoEtHp_8UEq3V", flexible)
+
+
+def _hc_ie(flexible=()):
+    return _hc_country("Ireland", "IE", 4853506, "kxY1yZQBoEtHp_8UEq3V", flexible)
+
+
+def _hc_be(flexible=()):
+    return _hc_country("Belgium", "BE", 11422068, "QRY1yZQBoEtHp_8UEq3V", flexible)
+
+
+def _hc_us(flexible=()):
+    return _hc_country("United States", "US", 331002651, HC_ID_UNVERIFIED, flexible)
+
+
+def _hc_ca(flexible=()):
+    return _hc_country("Canada", "CA", 38005238, HC_ID_UNVERIFIED, flexible)
+
+
+# The RevOps-proper title query, shared by the European and North American searches so
+# they cannot drift apart on what counts as the target function.
+HC_REVOPS_TITLES = (
+    '"revenue operations" OR "RevOps" OR "sales operations" OR "sales ops" OR '
+    '"CS operations" OR "customer success operations" OR "GTM operations" OR '
+    '"go-to-market operations" OR "GTM strategy" OR "go-to-market strategy" OR '
+    '"revenue strategy" OR "sales enablement" OR "revenue enablement" OR '
+    '"commercial operations" OR "sales strategy" OR "revenue strategy & operations" OR '
+    '"sales strategy & operations" OR "GTM strategy & operations"')
+# The US narrow list: the same shape as REVOPS_CORE in code, so the search asks for what
+# the prefilter would keep anyway rather than paying for rows that die on arrival.
+HC_REVOPS_CORE_TITLES = (
+    '"revenue operations" OR "RevOps" OR "sales operations" OR "sales ops" OR '
+    '"CS operations" OR "customer success operations" OR "GTM operations" OR '
+    '"go-to-market operations" OR "GTM strategy" OR "go-to-market strategy" OR '
+    '"revenue strategy" OR "sales strategy" OR "revenue strategy & operations" OR '
+    '"sales strategy & operations" OR "GTM strategy & operations"')
+
+# label -> searchState. dateFetchedPastNDays is wider than MAX_POST_AGE_DAYS on purpose;
+# the age filter downstream still applies.
+APIFY_HIRINGCAFE_SEARCHES = {
     # revops/gtm ops titles across NL, IE, UK-London, BE
-    "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22kxY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Ireland%22%2C%22short_name%22%3A%22IE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Ireland%22%2C%22population%22%3A4853506%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22xRg1yZQBoEtHp_8UXQ1z%22%2C%22types%22%3A%5B%22locality%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22London%22%2C%22short_name%22%3A%22London%22%2C%22types%22%3A%5B%22locality%22%5D%7D%2C%7B%22long_name%22%3A%22England%22%2C%22short_name%22%3A%22ENG%22%2C%22types%22%3A%5B%22administrative_area_level_1%22%5D%7D%2C%7B%22long_name%22%3A%22United+Kingdom%22%2C%22short_name%22%3A%22GB%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22geometry%22%3A%7B%22location%22%3A%7B%22lat%22%3A51.50853%2C%22lon%22%3A-0.12574%7D%7D%2C%22formatted_address%22%3A%22London%2C+England%2C+GB%22%2C%22population%22%3A8961989%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22radius%22%3A25%2C%22radius_unit%22%3A%22miles%22%2C%22ignore_radius%22%3Afalse%7D%7D%2C%7B%22id%22%3A%22QRY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Belgium%22%2C%22short_name%22%3A%22BE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Belgium%22%2C%22population%22%3A11422068%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%5D%2C%22commitmentTypes%22%3A%5B%22Full+Time%22%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%2C%22spanish%22%2C%22french%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22revenue+operations%5C%22+OR+%5C%22RevOps%5C%22+OR+%5C%22sales+operations%5C%22+OR+%5C%22sales+ops%5C%22+OR+%5C%22CS+operations%5C%22+OR+%5C%22customer+success+operations%5C%22+OR+%5C%22GTM+operations%5C%22+OR+%5C%22go-to-market+operations%5C%22+OR+%5C%22GTM+strategy%5C%22+OR+%5C%22go-to-market+strategy%5C%22+OR+%5C%22revenue+strategy%5C%22+OR+%5C%22sales+enablement%5C%22+OR+%5C%22revenue+enablement%5C%22+OR+%5C%22commercial+operations%5C%22+OR+%5C%22sales+strategy%5C%22+OR+%5C%22revenue+strategy+%26+operations%5C%22+OR+%5C%22sales+strategy+%26+operations%5C%22+OR+%5C%22GTM+strategy+%26+operations%5C%22%22%7D",
+    "revops-broad": {
+        "locations": [_hc_nl(), _hc_ie(), _hc_london(25), _hc_be()],
+        "commitmentTypes": ["Full Time"],
+        "dateFetchedPastNDays": 21,
+        "excludedLanguageRequirements": ["dutch", "german", "spanish", "french"],
+        "sortBy": "date",
+        "jobTitleQuery": HC_REVOPS_TITLES,
+    },
     # CS titles, Netherlands only
-    "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22Customer+success%5C%22%22%7D",
+    "cs-nl": {
+        "locations": [_hc_nl()],
+        "dateFetchedPastNDays": 21,
+        "excludedLanguageRequirements": ["dutch", "german"],
+        "sortBy": "date",
+        "jobTitleQuery": '"Customer success"',
+    },
     # senior/principal/lead/enterprise/strategic CS titles across NL, IE, UK-London
-    "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22kxY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Ireland%22%2C%22short_name%22%3A%22IE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Ireland%22%2C%22population%22%3A4853506%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%22anywhere_in_continent%22%2C%22anywhere_in_world%22%5D%7D%7D%2C%7B%22id%22%3A%22xRg1yZQBoEtHp_8UXQ1z%22%2C%22types%22%3A%5B%22locality%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22London%22%2C%22short_name%22%3A%22London%22%2C%22types%22%3A%5B%22locality%22%5D%7D%2C%7B%22long_name%22%3A%22England%22%2C%22short_name%22%3A%22ENG%22%2C%22types%22%3A%5B%22administrative_area_level_1%22%5D%7D%2C%7B%22long_name%22%3A%22United+Kingdom%22%2C%22short_name%22%3A%22GB%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22geometry%22%3A%7B%22location%22%3A%7B%22lat%22%3A51.50853%2C%22lon%22%3A-0.12574%7D%7D%2C%22formatted_address%22%3A%22London%2C+England%2C+GB%22%2C%22population%22%3A8961989%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22radius%22%3A50%2C%22radius_unit%22%3A%22miles%22%2C%22ignore_radius%22%3Afalse%7D%7D%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%2C%22french%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22Customer+success%5C%22+AND+%28senior+OR+principal+OR+lead+OR+enterprise+OR+strategic%29%22%7D",
+    "cs-senior": {
+        "locations": [_hc_nl(),
+                      _hc_ie(("anywhere_in_continent", "anywhere_in_world")),
+                      _hc_london(50)],
+        "dateFetchedPastNDays": 21,
+        "excludedLanguageRequirements": ["dutch", "german", "french"],
+        "sortBy": "date",
+        "jobTitleQuery": ('"Customer success" AND (senior OR principal OR lead OR '
+                          "enterprise OR strategic)"),
+    },
     # CS titles at GRC/compliance/legaltech companies, NL/IE/UK-London
-    "https://hiringcafe.com/?searchState=%7B%22locations%22%3A%5B%7B%22id%22%3A%221BY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22The+Netherlands%22%2C%22short_name%22%3A%22NL%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22The+Netherlands%22%2C%22population%22%3A17231017%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22kxY1yZQBoEtHp_8UEq3V%22%2C%22types%22%3A%5B%22country%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22Ireland%22%2C%22short_name%22%3A%22IE%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22formatted_address%22%3A%22Ireland%22%2C%22population%22%3A4853506%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22flexible_regions%22%3A%5B%5D%7D%7D%2C%7B%22id%22%3A%22xRg1yZQBoEtHp_8UXQ1z%22%2C%22types%22%3A%5B%22locality%22%5D%2C%22address_components%22%3A%5B%7B%22long_name%22%3A%22London%22%2C%22short_name%22%3A%22London%22%2C%22types%22%3A%5B%22locality%22%5D%7D%2C%7B%22long_name%22%3A%22England%22%2C%22short_name%22%3A%22ENG%22%2C%22types%22%3A%5B%22administrative_area_level_1%22%5D%7D%2C%7B%22long_name%22%3A%22United+Kingdom%22%2C%22short_name%22%3A%22GB%22%2C%22types%22%3A%5B%22country%22%5D%7D%5D%2C%22geometry%22%3A%7B%22location%22%3A%7B%22lat%22%3A51.50853%2C%22lon%22%3A-0.12574%7D%7D%2C%22formatted_address%22%3A%22London%2C+England%2C+GB%22%2C%22population%22%3A8961989%2C%22workplace_types%22%3A%5B%5D%2C%22options%22%3A%7B%22radius%22%3A50%2C%22radius_unit%22%3A%22miles%22%2C%22ignore_radius%22%3Afalse%7D%7D%5D%2C%22dateFetchedPastNDays%22%3A21%2C%22excludedLanguageRequirements%22%3A%5B%22dutch%22%2C%22german%22%5D%2C%22sortBy%22%3A%22date%22%2C%22jobTitleQuery%22%3A%22%5C%22Customer+success%5C%22%22%2C%22jobDescriptionQuery%22%3A%22GRC+OR+compliance+OR+legaltech%22%7D",
-]
-# Short labels for the searches above, same order, used only for the per-search status line.
-APIFY_SEARCH_LABELS = ["revops-broad", "cs-nl", "cs-senior", "cs-grc"]
+    "cs-grc": {
+        "locations": [_hc_nl(), _hc_ie(), _hc_london(50)],
+        "dateFetchedPastNDays": 21,
+        "excludedLanguageRequirements": ["dutch", "german"],
+        "sortBy": "date",
+        "jobTitleQuery": '"Customer success"',
+        "jobDescriptionQuery": "GRC OR compliance OR legaltech",
+    },
+    # Canada, anywhere, broad-ish titles: Tom is a citizen so nothing is gated on remote,
+    # and the same INCLUDE_TITLE breadth Europe gets applies.
+    "revops-ca": {
+        "locations": [_hc_ca()],
+        "commitmentTypes": ["Full Time"],
+        "dateFetchedPastNDays": 21,
+        "sortBy": "date",
+        "jobTitleQuery": HC_REVOPS_TITLES,
+    },
+    # US, remote only, core RevOps only. workplaceTypes does the remote half at the source
+    # so the run is not spent fetching onsite rows that market_of() will drop anyway.
+    "revops-us-remote": {
+        "locations": [_hc_us()],
+        "workplaceTypes": ["Remote"],
+        "commitmentTypes": ["Full Time"],
+        "dateFetchedPastNDays": 21,
+        "sortBy": "date",
+        "jobTitleQuery": HC_REVOPS_CORE_TITLES,
+    },
+}
+
+
+def hiringcafe_url(search_state):
+    """A hiring.cafe address-bar URL for one searchState dict.
+
+    separators= matches what the browser produces (no spaces), and sort_keys is
+    deliberately NOT set: key order follows the dict above, so a diff of the generated URL
+    stays readable and the round-trip test compares decoded JSON rather than bytes."""
+    qs = urllib.parse.urlencode({"searchState": json.dumps(search_state,
+                                                           separators=(",", ":"))},
+                                quote_via=urllib.parse.quote_plus)
+    return f"https://hiringcafe.com/?{qs}"
 APIFY_MAX_ITEMS = 200   # across all four searches combined; ~$0.25/run at $1.25/1000 results
 
 def fetch_apify_hiringcafe(token, diag=None):
@@ -2172,7 +2374,8 @@ def fetch_apify_hiringcafe(token, diag=None):
     opaque total, so a search silently going quiet again is visible in the status footer."""
     out = []
     per_url_budget = max(1, APIFY_MAX_ITEMS // len(APIFY_HIRINGCAFE_SEARCHES))
-    for label, url in zip(APIFY_SEARCH_LABELS, APIFY_HIRINGCAFE_SEARCHES):
+    for label, state in APIFY_HIRINGCAFE_SEARCHES.items():
+        url = hiringcafe_url(state)
         try:
             # Token goes in the header, never in the query string. requests puts the
             # full effective URL into the text of every exception it raises -- a 429 from
@@ -2556,11 +2759,11 @@ def main():
     if aid and akey:
         try:
             jobs = fetch_adzuna(aid, akey, diag); found += jobs
-            src_status["Adzuna (NL+UK)"] = f"{src_line('adzuna', len(jobs))} | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("adzuna:"))
+            src_status["Adzuna (NL+UK+CA+US)"] = f"{src_line('adzuna', len(jobs))} | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("adzuna:"))
         except Exception as e:
-            src_status["Adzuna (NL+UK)"] = f"FAIL: {e}"
+            src_status["Adzuna (NL+UK+CA+US)"] = f"FAIL: {e}"
     else:
-        src_status["Adzuna (NL+UK)"] = "skipped: no ADZUNA_APP_ID/KEY set"
+        src_status["Adzuna (NL+UK+CA+US)"] = "skipped: no ADZUNA_APP_ID/KEY set"
 
     # 2. Reed (UK)
     reed_key = os.environ.get("REED_API_KEY", "")
@@ -2573,12 +2776,16 @@ def main():
     else:
         src_status["Reed (UK)"] = "skipped: no REED_API_KEY set"
 
-    # 3. JobSpy / Indeed (Ireland)
+    # 3. JobSpy: Indeed for Ireland (Adzuna has no Ireland endpoint), Indeed + Google Jobs
+    #    for Canada and the US.
     try:
-        jobs = fetch_jobspy_ireland(); found += jobs
-        src_status["Indeed/JobSpy (Ireland)"] = src_line("indeed", len(jobs))
+        diag = {}
+        jobs = fetch_jobspy(diag); found += jobs
+        src_status["Indeed/JobSpy (IE+CA+US)"] = (
+            f"{src_line('indeed', len(jobs))} | "
+            + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items()))
     except Exception as e:
-        src_status["Indeed/JobSpy (Ireland)"] = f"skipped: {e}"
+        src_status["Indeed/JobSpy (IE+CA+US)"] = f"skipped: {e}"
 
     # 4. Company ATS feeds (Greenhouse/Lever/Ashby)
     ats_n = 0

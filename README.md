@@ -7,8 +7,16 @@ registers, and shows you the good ones on a dashboard. Tap **Apply** and it runs
 half of the job-application-workflow skill for you and asks whatever it genuinely needs
 over Telegram. Hide/Apply/Applied state syncs across your devices via Firebase.
 
-**Markets:** Netherlands (anywhere), Belgium (anywhere), UK (London area only), Ireland
-(anywhere). Germany, Spain, and remote-from-anywhere/EMEA roles are deliberately excluded.
+**Markets, in preference order:** Netherlands (anywhere) · Ireland (anywhere) · UK (London
+area only) · Belgium (anywhere) · Canada (anywhere, remote or on-site) · US (**remote only**,
+anywhere, and core RevOps titles only). Germany, Spain, on-site US roles, and
+remote-from-anywhere/EMEA roles are deliberately excluded.
+
+That ordering is real, not cosmetic. It sets the `location_visa` score band, the dashboard
+sort order, and who gets first claim on the deep-scoring budget. The US is a
+financial-runway backstop rather than a destination, and a US employer that also hires in
+NL/IE/UK/CA scores higher than a US-only one, because an internal transfer later is a route
+abroad without changing employer.
 
 **Runs:** 10:15am, 3pm and 8pm local on weekdays, 10:15am only on weekends. The clock is
 the Cloudflare Worker's (`worker/wrangler.toml`, `scanDueAt()` in
@@ -20,9 +28,13 @@ Cloudflare** below.
 ## How it works
 
 **Data layer (several sources so no single one can break the run):**
-1. **Adzuna API** — Netherlands + UK. (Adzuna's API has no Ireland coverage, hence the others.)
+1. **Adzuna API** — Netherlands, UK, Canada and the US. (No Ireland coverage, hence the
+   others.) North America gets a narrower phrase set: the US title gate would drop the rest
+   on arrival, and the free tier's nominal 1,000 calls/month is already well exceeded.
 2. **Reed API** — extra UK/London depth (free key).
-3. **JobSpy / Indeed** — Ireland coverage, the Adzuna gap (Adzuna has no Ireland endpoint).
+3. **JobSpy** — Indeed for Ireland (the Adzuna gap), plus Indeed and **Google Jobs** for
+   Canada and the US. Google Jobs is the closest free substitute for hiring.cafe's
+   long-tail reach, since it indexes Greenhouse/Lever/Ashby posting pages directly.
 4. **Company ATS feeds** — Greenhouse / Lever / Ashby boards for ~19 named SaaS companies
    that hire in NL/Belgium/London/Ireland (`companies.json`). Clean company names, full
    descriptions, and this is a big part of the Ireland coverage since many US firms hire
@@ -30,9 +42,18 @@ Cloudflare** below.
    guarantee coverage of specific companies Tom wants watched regardless of whether they
    show up via the other sources.
 5. **hiring.cafe** — via the Apify actor `memo23/apify-hiring-cafe-scraper`, run against
-   Tom's saved hiring.cafe searches (the direct API blocks datacenter IPs).
+   Tom's searches. The direct API is no longer an option at all: `hiring.cafe/api/search-jobs`
+   returns 401 and `hiringcafe.com` sits behind a Cloudflare challenge. Worth the $19/mo —
+   of 478 dashboard rows it contributed 99, **55 of them unique to it**, across 55 distinct
+   companies with no overlap with `companies.json`, including the two highest-scoring rows
+   the radar has found. Its value is long-tail discovery of companies not on the watchlist,
+   which is why a watchlist cannot replace it.
+   The searches are **structured dicts** in `scan.py`, not the percent-encoded `searchState`
+   blobs they used to be; `hiringcafe_url()` rebuilds the URLs and a fixture test
+   round-trips the four original European searches to prove the refactor changed nothing.
 6. **LinkedIn** — mirrors "Jobs based on your preferences" via LinkedIn's public,
-   unauthenticated guest job-search endpoint. No login or session cookie.
+   unauthenticated guest job-search endpoint. No login or session cookie. Seven geoIds:
+   London Area, Belgium, Netherlands, Amsterdam, Ireland, United States, Canada.
 7. **revopsroles.com** — parsed from Tom's own daily digest email via Gmail IMAP.
    Direct scraping of the site's location pages broke on 2026-07-31 when the site put
    Vercel's bot/attack-challenge in front of every request, including from GitHub

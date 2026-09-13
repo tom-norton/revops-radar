@@ -1224,7 +1224,7 @@ def test_us_titles_go_through_the_narrow_gate_not_the_broad_one():
         assert scan.prefilter(title, "Remote (US)") is None, title
     for title in ["Senior Customer Success Manager", "Renewals Manager",
                   "Business Operations Manager", "Sales Enablement Manager",
-                  "Manager, Customer Success"]:
+                  "Manager, Customer Success", "Head of Marketing Operations"]:
         reason = scan.prefilter(title, "Remote (US)")
         assert reason and "not core RevOps" in reason, title
     # the same titles are still fine in Europe and Canada, which keep the broad gate
@@ -1452,6 +1452,116 @@ def test_load_deferrals_survives_a_corrupt_or_missing_file():
     mixed = _os.path.join(d, "mixed.json")
     open(mixed, "w").write('{"a": 2, "b": "not a number", "c": null}')
     assert scan.load_deferrals(mixed) == {"a": 2}
+
+
+# ---- hiring.cafe searches
+
+
+def test_the_structured_searches_rebuild_the_original_urls_exactly():
+    """The four European searches used to be percent-encoded searchState blobs pasted from
+    hiring.cafe's address bar. They are structured dicts now, because editing
+    percent-encoded JSON is the reason adding a market here was avoided for so long.
+
+    This pins the refactor against a fixture captured from the blobs before they were
+    replaced: a rebuilt search whose decoded searchState differs from what the actor used
+    to be asked for is a silent change in targeting, and the symptom would be a source
+    quietly going thin rather than an error."""
+    import json as _json
+    import os as _os
+    import urllib.parse as _url
+    fixture = _os.path.join(_os.path.dirname(__file__), "fixtures",
+                            "hiringcafe-searchstate-before-refactor.json")
+    with open(fixture, encoding="utf-8") as f:
+        before = _json.load(f)
+    labels = ["revops-broad", "cs-nl", "cs-senior", "cs-grc"]
+    assert len(before) == len(labels)
+    for label, want in zip(labels, before):
+        url = scan.hiringcafe_url(scan.APIFY_HIRINGCAFE_SEARCHES[label])
+        got = _json.loads(_url.parse_qs(_url.urlparse(url).query)["searchState"][0])
+        assert got == want, label
+
+
+def test_the_north_american_searches_ask_for_what_the_prefilter_would_keep():
+    """A search that asks for rows the prefilter drops on arrival is paid-for volume
+    thrown away, and the Apify budget is per-run and shared across searches."""
+    us = scan.APIFY_HIRINGCAFE_SEARCHES["revops-us-remote"]
+    # remote is filtered at the source, not just in market_of()
+    assert us["workplaceTypes"] == ["Remote"]
+    assert us["locations"][0]["address_components"][0]["short_name"] == "US"
+    # the US title query must not ask for anything REVOPS_CORE would reject
+    for phrase in ["customer success\" OR", "renewals", "sales enablement"]:
+        assert phrase.lower() not in us["jobTitleQuery"].lower(), phrase
+    ca = scan.APIFY_HIRINGCAFE_SEARCHES["revops-ca"]
+    assert ca["locations"][0]["address_components"][0]["short_name"] == "CA"
+    # Canada is not gated on remote -- Tom is a citizen and can work anywhere in it
+    assert "workplaceTypes" not in ca
+
+
+def test_every_hiringcafe_search_produces_a_usable_url():
+    for label, state in scan.APIFY_HIRINGCAFE_SEARCHES.items():
+        url = scan.hiringcafe_url(state)
+        assert url.startswith("https://hiringcafe.com/?searchState="), label
+        assert " " not in url, label
+
+
+def test_gtm_alone_is_not_enough_for_the_us_gate():
+    """A bare \\bgtm\\b admitted "GTM Recruiter, AMER" and "Staff, Analytics Engineer, GTM
+    Data Science" on the first US run -- a recruiting role and an engineering role. Both
+    would have died at the Haiku screen, but the point of this gate is that US volume dies
+    for free, before anything is spent on it. GTM now needs an ops/strategy noun beside
+    it, in either word order."""
+    for title in ["GTM Recruiter, AMER (Fixed Term)",
+                  "Staff, Analytics Engineer, GTM Data Science",
+                  "GTM Data Scientist", "Program Manager, GTM Strategic Programs"]:
+        assert not scan.REVOPS_CORE.search(title), title
+    for title in ["GTM Operations Process Architect", "GTM Strategy Manager",
+                  "Go-to-Market Operations Lead", "Operations, GTM",
+                  "GTM Systems Manager", "GTM Enablement Lead"]:
+        assert scan.REVOPS_CORE.search(title), title
+
+
+def test_marketing_ops_is_off_target_and_so_is_out_of_the_us_gate():
+    """profile.md lists Marketing Ops as off-target for Domain. It stays in INCLUDE_TITLE
+    for Europe, where the deep scorer weighs it, but the US gate is the pivot proper."""
+    assert not scan.REVOPS_CORE.search("Head of Marketing Operations")
+    assert scan.INCLUDE_TITLE.search("Head of Marketing Operations")
+    assert scan.prefilter("Head of Marketing Operations", "Amsterdam") is None
+
+
+def test_the_north_american_source_subsets_are_filters_over_the_full_lists():
+    """Each North American subset is derived from the European list rather than written
+    out again, so a term added to the main list cannot be silently missing from the
+    narrow one."""
+    assert set(scan.ADZUNA_CORE_PHRASES) <= set(scan.ADZUNA_PHRASES)
+    assert set(scan.JOBSPY_CORE_TERMS) <= set(scan.JOBSPY_TERMS)
+    assert scan.ADZUNA_CORE_PHRASES and scan.JOBSPY_CORE_TERMS
+
+
+def test_every_adzuna_country_has_a_currency_because_the_api_reports_none():
+    """Adzuna returns pay with no currency at all, so the code has to supply it, and
+    salary_floor_flag() compares the stated currency against the market's before it will
+    drop anything. A country with no entry here produces figures the floor check silently
+    ignores."""
+    for cc in ["nl", "gb", "ca", "us"]:
+        assert scan.ADZUNA_COUNTRIES.get(cc), cc
+    for cc in scan.ADZUNA_CORE_COUNTRIES:
+        assert cc in scan.ADZUNA_COUNTRIES, cc
+
+
+def test_jobspy_targets_are_whole_countries_not_cities():
+    """Scoping Ireland to "Dublin, Ireland" made Indeed's own location filter do the
+    Dublin-only narrowing the location gate used to do."""
+    for t in scan.JOBSPY_TARGETS:
+        assert "," not in t["location"], t["location"]
+        assert t["cc"] in ("ie", "ca", "us")
+        assert t["sites"] and t["currency"]
+    # Google Jobs is what replaces hiring.cafe's long-tail reach in North America: it
+    # indexes Greenhouse/Lever/Ashby posting pages directly.
+    na = [t for t in scan.JOBSPY_TARGETS if t["cc"] in ("ca", "us")]
+    assert na and all("google" in t["sites"] for t in na)
+    # the US search asks for remote at the source, since market_of() drops the rest
+    us = [t for t in scan.JOBSPY_TARGETS if t["cc"] == "us"][0]
+    assert all("remote" in term for term in us["terms"])
 
 
 def _run():
