@@ -158,6 +158,26 @@ INCLUDE_TITLE = re.compile(
 # asymmetry into the deep score, and score_flags() notes it on the row.
 CSM_ANY = re.compile(r"customer success", re.I)
 
+# The narrow gate for US roles. The US is a financial-runway backstop, not a place Tom wants
+# to move to, so it is only worth the radar's attention when the role is squarely the pivot
+# he is making -- RevOps proper, not the adjacent-and-arguable end of INCLUDE_TITLE. This
+# deliberately drops CSM (every band of it), renewals, enablement, and generic "business
+# operations", all of which are legitimate European targets.
+#
+# It also does most of the cost control for this whole change. The US is a far bigger market
+# than the four European ones combined, and this regex runs before any model call, so the
+# volume dies for free rather than at $0.001 a row in stage one.
+REVOPS_CORE = re.compile(
+    r"revenue operations|revops|rev ops|sales operations|sales ops"
+    r"|cs operations|customer success operations|marketing operations"
+    r"|revenue strategy|sales strategy|revenue analytics|revenue systems"
+    r"|revenue technology|revenue enablement|go[- ]to[- ]market|\bgtm\b"
+    r"|sales compensation|incentive compensation"
+    r"|territory (planning|design|management|operations)"
+    r"|strategy[ ,&]{1,3}(and[ ,&]{1,3})?(planning|business|revenue|sales|commercial)?[ ,&]{0,3}"
+    r"(op(eration)?s)\b"
+    r"|\bs ?& ?o\b", re.I)
+
 EXCLUDE_TITLE = re.compile(
     r"deal desk|quote[- ]to[- ]cash|order management|billing specialist"
     r"|intern\b|internship|working student|apprentice|graduate scheme"
@@ -216,6 +236,83 @@ IE_COUNTRY = re.compile(r"ireland|ierland|\beire\b", re.I)
 # reject pure-remote and EMEA-wide postings that aren't anchored to a target city
 REMOTE_ONLY = re.compile(r"\b(remote|anywhere|work from home|wfh|emea|europe)\b", re.I)
 
+# ---------------------------------------------------------------- North America
+# Canada and the US are in scope on different terms from Europe, and they bring three name
+# collisions that have to be resolved before the European city anchors run, not after:
+#
+#   "London, ON"     is Canada, and UK_LONDON would otherwise claim it.
+#   "Ontario, CA"    is California, so CA_PROVINCE must NOT contain a bare "CA".
+#   "Amsterdam, NY"  is not the Netherlands, and NL_CITY would otherwise claim it.
+#
+# So market_of() resolves a North American context first and only falls through to Europe
+# when there is none. Full province and state names are matched anywhere in the string;
+# the two-letter codes only count after a comma, which is the "City, ST" shape the feeds
+# actually emit and which stops "ON"/"IN"/"OR"/"ME" matching ordinary English.
+CA_PROVINCE = re.compile(
+    r"\b(?:ontario|quebec|qu\u00e9bec|british columbia|alberta|manitoba|saskatchewan"
+    r"|nova scotia|new brunswick|newfoundland|labrador|prince edward island|yukon"
+    r"|nunavut|northwest territories)\b"
+    r"|,\s*(?:ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU)\b", re.I)
+CA_CITY = re.compile(
+    r"\b(?:toronto|vancouver|montreal|montr\u00e9al|calgary|edmonton|ottawa|winnipeg"
+    r"|quebec city|hamilton|kitchener|waterloo|mississauga|brampton|burnaby|richmond hill"
+    r"|markham|vaughan|oakville|burlington ontario|halifax|victoria bc|saskatoon|regina"
+    r"|windsor ontario|kelowna|gatineau|laval|longueuil|oshawa|barrie|guelph|kingston "
+    r"ontario|sherbrooke|moncton|st\. john\u2019s|st\. johns|saint john)\b", re.I)
+CA_COUNTRY = re.compile(r"\bcanada\b|\bcanadian\b", re.I)
+
+US_STATE = re.compile(
+    r"\b(?:alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware"
+    r"|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana"
+    r"|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana"
+    r"|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina"
+    r"|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina"
+    r"|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia"
+    r"|wisconsin|wyoming|district of columbia)\b"
+    r"|,\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|MD|MA|MI|MN|MS"
+    r"|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC"
+    r"|ME|OR)\b", re.I)
+# "united states" and "u.s." are safe case-insensitively. A bare "US"/"USA" is not -- "us"
+# is an ordinary English word -- so that alternative is matched case-sensitively.
+US_COUNTRY = re.compile(r"united states|u\.s\.a?\.?|\bstateside\b", re.I)
+US_COUNTRY_ABBR = re.compile(r"\b(?:US|USA)\b")
+# What counts as remote for a US row. Deliberately separate from REMOTE_ONLY, which exists
+# to REJECT unanchored European postings; here remote is the requirement, so this is a
+# whitelist rather than a blacklist. "anywhere" alone is not enough: "anywhere in EMEA" is
+# not a US remote role.
+US_REMOTE = re.compile(
+    r"\bremote\b|\bwork from home\b|\bwfh\b|\bdistributed\b|\btelecommute\b"
+    r"|\bhome[- ]based\b|\banywhere in the u", re.I)
+# A remote scope that is explicitly somewhere else, so a "Remote - EMEA" req carrying a US
+# country code is not read as a US remote role.
+REMOTE_ELSEWHERE = re.compile(r"\bemea\b|\beurope\b|\bapac\b|\blatam\b|\bglobal\b", re.I)
+
+
+def north_america_of(loc, cc):
+    """'CA' / 'US-Remote' / None for a row that looks North American, before Europe is
+    considered. Returns None both for "not North America" and for a US row that fails the
+    remote requirement -- the caller cannot act differently on those two, because a US
+    onsite role is as out of scope as a German one."""
+    ca_ctx = bool(CA_COUNTRY.search(loc) or CA_PROVINCE.search(loc) or CA_CITY.search(loc)
+                  or cc == "ca")
+    us_ctx = bool(US_COUNTRY.search(loc) or US_COUNTRY_ABBR.search(loc)
+                  or US_STATE.search(loc) or cc == "us")
+
+    # Canada wins a tie: "Vancouver, WA" and "Ontario, CA" both carry a US state code, and
+    # the state code is the more specific signal, so only treat the row as Canadian when
+    # there is no US context alongside it.
+    if ca_ctx and not us_ctx:
+        return "CA"                      # anywhere in Canada, remote or not
+    if us_ctx:
+        # Remote is a hard requirement, and it is the only US requirement about place: a
+        # remote role anchored to another state is fine, an onsite role is not.
+        if US_REMOTE.search(loc) and not REMOTE_ELSEWHERE.search(loc):
+            return "US-Remote"
+        return None
+    return None
+
+
+
 CLAUDE_SCREEN_MODEL = "claude-haiku-4-5"        # stage 1: cheap kill/keep
 CLAUDE_SCORE_MODEL = "claude-opus-5"            # stage 2: deep weighted rubric
 API_URL = "https://api.anthropic.com/v1/messages"
@@ -265,8 +362,35 @@ VISA_FLOORS = {
     "NL": (71304, "EUR"),          # HSM, 30+ bracket
     "BE": (56976, "EUR"),          # EU Blue Card, Brussels
     "UK-London": (70000, "GBP"),   # Skilled Worker
-    "IE": (68911, "EUR"),   # Critical Skills / General permit
+    "IE": (68911, "EUR"),          # Critical Skills / General permit, nationwide
 }
+
+# Tom's own floor, which is a different kind of thing from a visa floor and so lives in its
+# own table rather than being smuggled into that one. There is no legal minimum for a US
+# role -- he is a citizen -- but the US is only worth taking if it pays enough to make
+# staying somewhere he does not want to live comfortable for his family. Below this it is
+# not a trade worth making, so the role is dropped rather than scored.
+#
+# Canada has no entry, deliberately: no visa floor applies (citizen) and he has set no comp
+# floor for it.
+COMP_FLOORS = {
+    "US-Remote": (130000, "USD"),
+}
+
+
+def floor_for(market):
+    """(amount, currency, kind) for a market's salary floor, or (0, "", "") if it has none.
+
+    Two tables, one lookup, because salary_floor_flag() needs to word the drop differently:
+    a visa floor is a legal fact about what Tom can be hired at, a comp floor is his own
+    decision about what is worth taking."""
+    if market in VISA_FLOORS:
+        amount, cur = VISA_FLOORS[market]
+        return amount, cur, "visa"
+    if market in COMP_FLOORS:
+        amount, cur = COMP_FLOORS[market]
+        return amount, cur, "comp"
+    return 0, "", ""
 
 # ---------------------------------------------------------------- hard disqualifiers
 # Two facts that end an application before it starts, both stated in plain English in the
@@ -500,31 +624,42 @@ def is_csm_title(title):
     return bool(re.search(r"customer success", title or "", re.I))
 
 def salary_floor_flag(market, obs):
-    """A note when a salary is actually stated, in the market's own currency, and below its
-    visa floor; "" otherwise. No FX guessing: a GBP figure is never compared to a EUR floor.
+    """A note when a salary is actually stated, in the market's own currency, and below that
+    market's floor; "" otherwise. No FX guessing: a GBP figure is never compared to a EUR
+    floor.
 
     Despite the name this is no longer a dashboard flag -- deep_score_disqualifier() below
     uses it to drop the job outright, the same way says_no_sponsorship() and
     requires_other_language() drop on a regex match before the model ever runs. A role that
-    cannot clear the visa floor on its own stated salary is not one Tom can take, so there
-    is nothing to show a flag on; the name stays because the function itself -- find the
-    note, or don't -- hasn't changed. Most EU postings state no salary at all, and the ones
-    that do often state a range whose bottom is a negotiating position rather than the
-    offer, which is exactly why this only fires on a real, market-matched, stated figure."""
+    cannot clear the floor on its own stated salary is not one Tom can take, so there is
+    nothing to show a flag on; the name stays because the function itself -- find the note,
+    or don't -- hasn't changed. Most EU postings state no salary at all, and the ones that
+    do often state a range whose bottom is a negotiating position rather than the offer,
+    which is exactly why this only fires on a real, market-matched, stated figure.
+
+    "Stated" means stated in the posting. The figure reaching this function comes from the
+    deep scorer reading the JD, which is the only salary source in the pipeline that can be
+    trusted to gate on: Adzuna reports an ESTIMATE for most rows, and adzuna_salary()
+    already discards anything flagged salary_is_predicted precisely so a guessed number can
+    never reach here and drop a real role."""
     if not market or not obs.get("salary_stated"):
         return ""
     try:
         low = float(obs.get("salary_min_base") or 0)
     except (TypeError, ValueError):
         return ""
-    floor, cur = VISA_FLOORS.get(market, (0, ""))
+    floor, cur, kind = floor_for(market)
     if low <= 0 or not floor:
         return ""
     stated = (obs.get("salary_currency") or "").upper()
     if stated and stated != cur:
         return ""
     if low < floor:
-        return f"stated salary {int(low)} {cur} below the {market} visa floor ({floor} {cur})"
+        if kind == "visa":
+            return (f"stated salary {int(low)} {cur} below the {market} visa floor "
+                    f"({floor} {cur})")
+        return (f"stated salary {int(low)} {cur} below the {floor} {cur} floor for taking "
+                f"a {market} role at all")
     return ""
 
 def deep_score_disqualifier(job, obs):
@@ -545,7 +680,13 @@ def deep_score_disqualifier(job, obs):
                                       "(missed by the wording-based check)")
     note = salary_floor_flag(job.get("market"), obs)
     if note:
-        return "below-visa-floor", note
+        # Two stage names for one check, because they mean different things and both are
+        # worth being able to read separately in the drop log: a visa floor is a legal
+        # fact about what Tom can be hired at in Europe, a comp floor is his own decision
+        # that a US role below it is not worth leaving Europe on the table for. The old
+        # name is kept for the visa case so historical rows keep rendering.
+        _amt, _cur, kind = floor_for(job.get("market"))
+        return ("below-visa-floor" if kind == "visa" else "below-comp-floor"), note
     return None, None
 
 def score_flags(job, obs):
@@ -571,7 +712,7 @@ def score_flags(job, obs):
     # CSM track: a primary target in NL, a weaker one elsewhere unless the company is a
     # genuine standout (see the CSM track weighting section of profile.md). The model is
     # told this in the profile and reflects it in the dimensions; this is just the note.
-    if market in ("UK-London", "IE", "BE") and is_csm_title(title) \
+    if market in ("UK-London", "IE", "BE", "CA") and is_csm_title(title) \
             and not obs.get("company_standout"):
         flags.append(f"CSM in {market} at a non-standout company")
 
@@ -702,7 +843,7 @@ DROP_MAX_ROWS = 400
 DROP_KEEP_PER_STAGE = {"prefilter": 80, "age": 40, "dedupe": 40,
                        "stage1-kill": 120, "score-error": 40, "sponsor-required": 40,
                        "no-sponsorship": 60, "language-required": 60,
-                       "below-visa-floor": 60}
+                       "below-visa-floor": 60, "below-comp-floor": 60}
 DROP_KEEP_DEFAULT = 40
 
 _DROP_SEEN = set()
@@ -1202,13 +1343,26 @@ def merge_found_into_dashboard(existing, found):
     return kept_existing, kept_found, drops
 
 def market_of(country, location):
-    """Which target market a row belongs to ('NL' / 'BE' / 'UK-London' / 'IE'),
-    or None if it's outside all of them. This is the single source of truth for location:
-    location_ok() and the deep score's location cap both read it, so the code and the
-    rubric can no longer disagree (a Staines role used to pass the gate here and then get
-    capped at 2 by the model for being 'outside the London commuter belt')."""
+    """Which target market a row belongs to ('NL' / 'BE' / 'UK-London' / 'IE' / 'CA' /
+    'US-Remote'), or None if it's outside all of them. This is the single source of truth
+    for location: location_ok() and the deep score's location cap both read it, so the code
+    and the rubric can no longer disagree (a Staines role used to pass the gate here and
+    then get capped at 2 by the model for being 'outside the London commuter belt').
+
+    North America is resolved FIRST, before the European city anchors, because the two
+    halves disagree about remote and because the place names collide. Europe rejects an
+    unanchored remote posting; the US requires one. And "London, ON" is Canadian while
+    UK_LONDON would happily claim it. See north_america_of()."""
     loc = location or ""
     cc = (country or "").lower()
+
+    # North America first. A row with a Canadian or US signal never falls through to the
+    # European branches, so a US onsite role is out here rather than being misread as a
+    # European city match ("Amsterdam, NY" is not the Netherlands).
+    if (CA_COUNTRY.search(loc) or CA_PROVINCE.search(loc) or CA_CITY.search(loc)
+            or US_COUNTRY.search(loc) or US_COUNTRY_ABBR.search(loc) or US_STATE.search(loc)
+            or cc in ("ca", "us")):
+        return north_america_of(loc, cc)
 
     # An explicitly named city we don't want, with no target city alongside it, is out --
     # checked first so "Cambridge, UK" can't slip through on the strength of the country
@@ -1250,18 +1404,41 @@ def market_of(country, location):
         return "UK-London"
     return None
 
+
+# Where each market sits in Tom's own ordering, which is not the same thing as how feasible
+# it is. The Netherlands is the goal and gets a tier to itself. Ireland and London are the
+# realistic strong options. Belgium and Canada are the two backups that keep a door open --
+# Belgium into the EU, Canada via a citizenship certificate that is still unproven. The US
+# is a financial-runway backstop Tom does not want to move to, so it sits alone at the
+# bottom. Tiers decide dashboard order and who gets first claim on the deep-scoring budget;
+# the fit score itself is untouched by them.
+MARKET_TIER = {"NL": 1, "IE": 2, "UK-London": 2, "BE": 3, "CA": 3, "US-Remote": 4}
+TIER_UNKNOWN = 9        # a market the table forgot sorts last rather than first
+
+
+def market_tier(market):
+    return MARKET_TIER.get(market or "", TIER_UNKNOWN)
+
 def location_ok(country, location):
     return market_of(country, location) is not None
 
 def prefilter(title, location, country=""):
     """None if the row passes the free filters; otherwise a short reason for the drop log.
 
-    The title half of this gate is market-aware, not purely textual: a plain "Customer Success
-    Manager" is admitted in the Netherlands and nowhere else (see CSM_ANY). The market is
-    resolved once here and reused for the location check below."""
+    The title half of this gate is market-aware, not purely textual, in both directions: a
+    plain "Customer Success Manager" is admitted in the Netherlands and nowhere else (see
+    CSM_ANY), and a US role has to clear the much narrower REVOPS_CORE instead of
+    INCLUDE_TITLE. The market is resolved once here and reused for the location check
+    below."""
     t = title or ""
     market = market_of(country, location)
-    if not (INCLUDE_TITLE.search(t) or (market == "NL" and CSM_ANY.search(t))):
+    if market == "US-Remote":
+        # The US gets the narrow gate, not the broad one. Checked before the generic branch
+        # so a US "Senior Customer Success Manager" is dropped here rather than admitted by
+        # INCLUDE_TITLE's seniority clause.
+        if not REVOPS_CORE.search(t):
+            return "title: not core RevOps (US roles use the narrow gate)"
+    elif not (INCLUDE_TITLE.search(t) or (market == "NL" and CSM_ANY.search(t))):
         return "title: no target-function keyword"
     m = EXCLUDE_TITLE.search(t)
     if m:

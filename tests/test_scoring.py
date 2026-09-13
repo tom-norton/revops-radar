@@ -1147,6 +1147,163 @@ def test_apify_call_keeps_the_token_out_of_the_url():
     assert 'params={"token": token}' not in src
 
 
+# ---- North America: Canada and the US
+
+
+def test_canada_resolves_anywhere_in_the_country():
+    """Tom is a Canadian citizen by descent, so no part of Canada is out of scope and a
+    remote-in-Canada role counts too."""
+    for loc in ["Toronto, ON", "Vancouver, British Columbia", "Montreal, QC, Canada",
+                "Ottawa, Ontario", "Calgary, AB", "Remote - Canada", "Halifax, NS"]:
+        assert scan.market_of("", loc) == "CA", loc
+    assert scan.market_of("ca", "") == "CA"
+
+
+def test_us_roles_need_to_be_remote_and_that_is_the_only_place_rule():
+    """Remote is a hard US requirement; WHERE in the US is not. A remote role anchored to
+    another state is fine, an onsite role is not."""
+    for loc in ["Remote (US)", "Remote - United States", "US Remote", "Remote, Michigan",
+                "Grand Rapids, MI (remote)", "Work from home, Texas",
+                "Home-based, Colorado"]:
+        assert scan.market_of("", loc) == "US-Remote", loc
+    assert scan.market_of("us", "Remote") == "US-Remote"
+    for loc in ["Austin, TX", "Grand Rapids, MI", "New York, NY",
+                "San Francisco, California"]:
+        assert scan.market_of("", loc) is None, loc
+    assert scan.market_of("us", "") is None
+
+
+def test_north_american_place_names_do_not_collide_with_european_ones():
+    """Three collisions that all resolve the wrong way if North America is checked after
+    the European city anchors instead of before:
+
+      "London, ON"    is Canadian, and UK_LONDON would claim it.
+      "Ontario, CA"   is California, so a bare "CA" must never mean Canada.
+      "Amsterdam, NY" is not the Netherlands.
+    """
+    assert scan.market_of("", "London, ON") == "CA"
+    assert scan.market_of("", "London, Ontario") == "CA"
+    # California and Washington State, both onsite, so both out -- and emphatically not
+    # Canada on the strength of "Ontario" or "Vancouver".
+    assert scan.market_of("", "Ontario, CA") is None
+    assert scan.market_of("", "Vancouver, WA") is None
+    assert scan.market_of("", "Amsterdam, NY") is None
+    # ...while the European originals are untouched
+    assert scan.market_of("", "London") == "UK-London"
+    assert scan.market_of("", "Amsterdam") == "NL"
+
+
+def test_a_remote_role_scoped_to_another_region_is_not_a_us_remote_role():
+    """A req carrying a US country code but an EMEA-wide remote scope is the remote-EMEA
+    posting profile.md rejects, not a US role."""
+    assert scan.market_of("us", "Remote - EMEA") is None
+    assert scan.market_of("us", "Remote, Europe") is None
+    assert scan.market_of("", "Remote - Global") is None
+
+
+def test_market_tier_orders_the_six_markets_and_fails_safe():
+    assert scan.market_tier("NL") == 1
+    assert scan.market_tier("IE") == scan.market_tier("UK-London") == 2
+    assert scan.market_tier("BE") == scan.market_tier("CA") == 3
+    assert scan.market_tier("US-Remote") == 4
+    # a market the table forgot sorts last, never first
+    assert scan.market_tier("XX") == scan.market_tier("") == scan.TIER_UNKNOWN
+    assert scan.TIER_UNKNOWN > max(scan.MARKET_TIER.values())
+    # every market market_of() can return has a tier
+    for m in ["NL", "BE", "UK-London", "IE", "CA", "US-Remote"]:
+        assert m in scan.MARKET_TIER, m
+
+
+def test_us_titles_go_through_the_narrow_gate_not_the_broad_one():
+    """The US is a runway backstop, so it is only worth attention for the pivot proper.
+    CSM, renewals, enablement and generic business operations are all legitimate European
+    targets and all out in the US."""
+    for title in ["Revenue Operations Manager", "Senior RevOps Analyst",
+                  "GTM Strategy Manager", "Manager, Sales Strategy & Operations",
+                  "Sales Compensation Manager"]:
+        assert scan.prefilter(title, "Remote (US)") is None, title
+    for title in ["Senior Customer Success Manager", "Renewals Manager",
+                  "Business Operations Manager", "Sales Enablement Manager",
+                  "Manager, Customer Success"]:
+        reason = scan.prefilter(title, "Remote (US)")
+        assert reason and "not core RevOps" in reason, title
+    # the same titles are still fine in Europe and Canada, which keep the broad gate
+    for title in ["Senior Customer Success Manager", "Renewals Manager",
+                  "Business Operations Manager"]:
+        assert scan.prefilter(title, "Toronto, ON") is None, title
+        assert scan.prefilter(title, "London") is None, title
+
+
+def test_a_core_revops_us_role_that_is_not_remote_is_dropped_on_location():
+    reason = scan.prefilter("Revenue Operations Manager", "Austin, TX")
+    assert reason and reason.startswith("location:")
+
+
+def test_plain_csm_is_still_netherlands_only():
+    """Widening the map must not quietly widen the CSM_ANY exception."""
+    assert scan.prefilter("Customer Success Manager", "Amsterdam") is None
+    for loc in ["Toronto, ON", "London", "Cork, Ireland", "Brussels", "Remote (US)"]:
+        assert scan.prefilter("Customer Success Manager", loc) is not None, loc
+
+
+# ---- salary floors
+
+
+def _obs(stated, low, cur):
+    return {"salary_stated": stated, "salary_min_base": low, "salary_currency": cur,
+            "language_hard_requirement": False}
+
+
+def test_us_comp_floor_drops_a_role_only_on_a_figure_stated_in_the_ad():
+    """The US floor is Tom's own, not a legal one, and it fires on the same terms as the
+    visa floors: a real, market-matched, stated figure."""
+    stage, reason = scan.deep_score_disqualifier(
+        {"market": "US-Remote"}, _obs(True, 110000, "USD"))
+    assert stage == "below-comp-floor" and "130000 USD" in reason
+    # at or above the floor, and not stated at all, both survive
+    for o in [_obs(True, 130000, "USD"), _obs(True, 145000, "USD"), _obs(False, 0, "")]:
+        assert scan.deep_score_disqualifier({"market": "US-Remote"}, o) == (None, None)
+
+
+def test_no_salary_floor_guesses_across_currencies_or_from_an_estimate():
+    """A USD floor is never compared to a EUR figure, and Adzuna's predicted salaries are
+    discarded upstream by adzuna_salary() so they can never reach the floor check at all."""
+    assert scan.salary_floor_flag("US-Remote", _obs(True, 110000, "EUR")) == ""
+    assert scan.salary_floor_flag("NL", _obs(True, 50000, "USD")) == ""
+    # the upstream guard: a predicted figure produces no salary string to begin with
+    predicted = {"salary_min": 40000, "salary_max": 40000, "salary_is_predicted": "1"}
+    assert scan.adzuna_salary(predicted, "us") == ""
+
+
+def test_canada_has_no_salary_floor_because_tom_is_a_citizen():
+    for o in [_obs(True, 60000, "CAD"), _obs(True, 40000, "CAD")]:
+        assert scan.deep_score_disqualifier({"market": "CA"}, o) == (None, None)
+    assert scan.floor_for("CA") == (0, "", "")
+
+
+def test_floor_for_reports_which_kind_of_floor_a_market_has():
+    assert scan.floor_for("NL") == (71304, "EUR", "visa")
+    assert scan.floor_for("IE") == (68911, "EUR", "visa")
+    assert scan.floor_for("US-Remote") == (130000, "USD", "comp")
+    assert scan.floor_for("") == (0, "", "")
+    # the two tables must not both claim a market, or the drop would be mislabelled
+    assert not (set(scan.VISA_FLOORS) & set(scan.COMP_FLOORS))
+
+
+def test_every_drop_stage_the_floor_check_emits_has_a_retention_budget():
+    """A stage missing from DROP_KEEP_PER_STAGE silently falls back to the default, which
+    is how a new disqualifier stage becomes invisible in the committed drop log."""
+    for stage in ["below-visa-floor", "below-comp-floor"]:
+        assert stage in scan.DROP_KEEP_PER_STAGE, stage
+
+
+def test_csm_note_covers_canada_too():
+    plain = dict(NO_OBS, company_standout=False)
+    flags = scan.score_flags({"title": "Senior Customer Success Manager",
+                              "market": "CA"}, plain)
+    assert any("CA" in f and "non-standout" in f for f in flags)
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
