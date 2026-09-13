@@ -382,7 +382,7 @@ def work_status(label, market, nationality):
     us = bool(re.search(r"united states|u\.?s\.?a?\b|american", nationality or "", re.I))
     if not us:
         return "", ""
-    # Which market the posting is in. The profile's markets are "IE-Dublin", "US-Remote"
+    # Which market the posting is in. The profile's markets are "IE", "US-Remote"
     # and the like, so the country is the part before the dash.
     country = (market or "").split("-")[0].strip().upper()
     if not country:

@@ -374,7 +374,7 @@ def same_market(market, location):
     """True when a board's location string lands in the posting's own market.
 
     market_of() is scan.py's single source of truth for location, so "Dublin, Ireland" and
-    "IE-Dublin" agree here for the same reason they agree in the location gate."""
+    "IE" agree here for the same reason they agree in the location gate."""
     if not market:
         return False
     return scan.market_of("", location or "") == market

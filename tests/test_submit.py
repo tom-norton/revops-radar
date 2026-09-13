@@ -90,7 +90,7 @@ def form():
 FILES = {"resume": "cv/2026-09-02-acme.pdf", "cover_letter": "cv/2026-09-02-acme-cover.pdf"}
 
 # The same role as everywhere else, on a board that has a driver.
-GH_JOB = dict(JOB, url="https://job-boards.greenhouse.io/acme/jobs/1", market="IE-Dublin")
+GH_JOB = dict(JOB, url="https://job-boards.greenhouse.io/acme/jobs/1", market="IE")
 
 
 # ---------------------------------------------------------------- which boards
@@ -288,7 +288,7 @@ def test_work_authorisation_is_answered_from_nationality_and_market():
     """A US citizen applying to a Dublin role is not authorised there and does need
     sponsorship. That is legal status, not a judgement, and it is not a model's to
     infer."""
-    answers, _ = submit.plan_known(form(), IDENT, dict(JOB, market="IE-Dublin"), FILES)
+    answers, _ = submit.plan_known(form(), IDENT, dict(JOB, market="IE"), FILES)
     assert answers["question_1"]["value"] == "No"      # authorised in Ireland
     assert answers["question_2"]["value"] == "Yes"     # needs sponsorship
 
@@ -406,7 +406,7 @@ def test_best_option_never_guesses():
 
 def plan_for(job=None, answers=None):
     fields = form()
-    known, notes = submit.plan_known(fields, IDENT, job or dict(JOB, market="IE-Dublin"),
+    known, notes = submit.plan_known(fields, IDENT, job or dict(JOB, market="IE"),
                                      FILES)
     known.update(answers or {})
     return submit.build_plan("https://job-boards.greenhouse.io/acme/jobs/1", "greenhouse",
@@ -667,7 +667,7 @@ def test_the_market_separates_two_roles_with_the_same_title():
     """Intercom, in the real scan: "Senior Customer Success Manager" in London and in
     Dublin, both exact."""
     job = {"company": "Acme", "title": "Senior Customer Success Manager",
-           "market": "IE-Dublin"}
+           "market": "IE"}
     out = findform.find_form(job, [], board(gh_board(
         ("Senior Customer Success Manager", "London, England"),
         ("Senior Customer Success Manager", "Dublin, Ireland"))))
@@ -688,7 +688,7 @@ def test_a_role_that_has_come_off_the_board_is_gone_not_the_nearest_thing():
     """Vanta, in the real scan: 109 roles on the board and the closest to the posting was
     "Strategic Channel Manager - EMEA" at 0.33."""
     job = {"company": "Acme", "title": "Revenue Operations Manager, Post Sales (EMEA)",
-           "market": "IE-Dublin"}
+           "market": "IE"}
     out = findform.find_form(job, [], board(gh_board(
         ("Strategic Channel Manager - EMEA", "London, UK"),
         ("Solutions Engineer (Upmarket, Pre-Sales) - EMEA", "Dublin, Ireland"))))
@@ -719,7 +719,7 @@ def test_ashby_and_lever_boards_are_read_too():
                "hostedUrl": "https://jobs.lever.co/acme/1"}]}
     for payload, host in ((ashby, "ashbyhq"), (lever, "lever")):
         out = findform.find_form({"company": "Acme", "title": "RevOps Manager",
-                                  "market": "IE-Dublin"}, [], board(payload))
+                                  "market": "IE"}, [], board(payload))
         assert out["outcome"] == "found" and host in out["url"], (host, out)
 
 
@@ -743,7 +743,7 @@ def test_the_three_boards_added_later_are_read_too():
     }
     for key, payload in boards.items():
         out = findform.find_form({"company": "Acme", "title": "RevOps Manager",
-                                  "market": "IE-Dublin"}, [], board({key: payload}))
+                                  "market": "IE"}, [], board({key: payload}))
         assert out["outcome"] == "found", (key, out)
         assert out["url"], (key, out)
 
@@ -855,7 +855,7 @@ def test_a_company_name_is_the_cache_key_however_it_is_spelt():
 # ---- resolving a batch
 
 def rows_for(*specs):
-    return [{"id": f"r{i}", "company": c, "title": t, "market": "IE-Dublin"}
+    return [{"id": f"r{i}", "company": c, "title": t, "market": "IE"}
             for i, (c, t) in enumerate(specs)]
 
 

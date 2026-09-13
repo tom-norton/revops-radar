@@ -37,7 +37,7 @@ IDENT = {"first_name": "Tom", "last_name": "Norton", "full_name": "Tom Norton",
          "location": "Barcelona, Spain", "linkedin": "https://www.linkedin.com/in/x",
          "nationality": "United States"}
 JOB = {"title": "Revenue Operations Manager", "company": "Northwind Tax",
-       "market": "IE-Dublin"}
+       "market": "IE"}
 
 
 def fixture_url(path=FIXTURE):
@@ -234,7 +234,7 @@ def main():
 
     aident = dict(IDENT, full_name="Tom Norton")
     aplan, _ = plan_against(ashby_url, tmp, answers=None) if False else (None, None)
-    known, _notes = submit.plan_known(afields, aident, dict(JOB, market="IE-Dublin"),
+    known, _notes = submit.plan_known(afields, aident, dict(JOB, market="IE"),
                                      {"resume": a_cv(tmp)})
     ok &= check("ashby: the whole name goes in one field",
                 known.get("_systemfield_name", {}).get("value") == "Tom Norton",
@@ -300,7 +300,7 @@ def main():
                 submit.is_demographic(gender.get("label") or ""), gender.get("label"))
 
     lident = dict(IDENT, full_name="Tom Norton")
-    lknown, _notes = submit.plan_known(lfields, lident, dict(JOB, market="IE-Dublin"),
+    lknown, _notes = submit.plan_known(lfields, lident, dict(JOB, market="IE"),
                                        {"resume": "cv.pdf"})
     ok &= check("lever: the demographic question is declined, never answered",
                 lknown.get(gender["id"], {}).get("value") == "I'd prefer not to say",

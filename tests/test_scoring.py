@@ -158,7 +158,7 @@ def test_flag_csm_track_by_market():
     title = "Senior Customer Success Manager"
     assert scan.score_flags({"title": title, "market": "NL"}, NO_OBS) == []
     plain = dict(NO_OBS, company_standout=False)
-    for market in ["UK-London", "IE-Dublin", "BE"]:
+    for market in ["UK-London", "IE", "BE"]:
         flags = scan.score_flags({"title": title, "market": market}, plain)
         assert any(market in f and "non-standout" in f for f in flags), market
         # a genuine standout gets no note
@@ -190,12 +190,35 @@ def test_market_of_uk_london_vs_rest_of_uk():
     assert scan.market_of("gb", "South East England") is None
 
 
-def test_market_of_ireland_dublin_only():
-    assert scan.market_of("ie", "Dublin") == "IE-Dublin"
-    assert scan.market_of("ie", "Ireland") == "IE-Dublin"
-    assert scan.market_of("", "Dublin, Ireland") == "IE-Dublin"
-    for city in ["Cork, Ireland", "Galway", "Limerick"]:
-        assert scan.market_of("ie", city) is None, city
+def test_market_of_covers_all_of_ireland_not_just_dublin():
+    """Ireland is in scope country-wide. This used to be a Dublin-only gate, with an
+    IE_OTHER_CITY regex that rejected Cork, Galway, Limerick and Waterford outright; the
+    drop log shows "Burnfoot, County Donegal" and "Dunshaughlin, County Meath" being
+    thrown away as "not Dublin commuter". Outside Dublin the cost of living is lower
+    against the same permit threshold, so these are better outcomes, not worse."""
+    assert scan.market_of("ie", "Dublin") == "IE"
+    assert scan.market_of("ie", "Ireland") == "IE"
+    assert scan.market_of("", "Dublin, Ireland") == "IE"
+    for loc in ["Cork, Ireland", "Galway", "Limerick", "Waterford", "Letterkenny",
+                "Dun Laoghaire, Ireland", "Dublin 8, County Dublin, Ireland",
+                "Dublin, Leinster, Ireland", "County Clare",
+                "Burnfoot, County Donegal, Ireland",
+                "Dunshaughlin, County Meath, Ireland"]:
+        assert scan.market_of("", loc) == "IE", loc
+
+
+def test_irish_county_names_that_are_also_british_places_do_not_leak():
+    """Louth, Clare, Bray, Meath and Mayo are Irish counties and also British place names.
+    A bare match on those would do two wrong things at once: route a UK row to Ireland,
+    and bypass the London-only rule, because UK_OTHER_CITY does not list them. So a county
+    only counts with the "County"/"Co." prefix the Irish feeds actually emit."""
+    for loc in ["Louth, Lincolnshire, UK", "Clare, Suffolk, UK", "Bray, Wiltshire"]:
+        assert scan.market_of("", loc) is None, loc
+    # a commuter-belt row keeps its own market rather than being pulled to Ireland
+    assert scan.market_of("", "Mayo, Kent") == "UK-London"
+    # ...and with the prefix, they resolve
+    for loc in ["County Louth", "Co. Clare, Ireland", "County Mayo"]:
+        assert scan.market_of("", loc) == "IE", loc
 
 
 def test_market_of_rejects_remote_and_off_target_countries():
@@ -214,7 +237,7 @@ def test_market_of_rejects_remote_and_off_target_countries():
 def test_market_of_named_city_beats_remote_wording():
     """A real Amsterdam job that mentions remote working is still an Amsterdam job."""
     assert scan.market_of("", "Amsterdam (remote-friendly)") == "NL"
-    assert scan.market_of("", "Dublin or remote in Europe") == "IE-Dublin"
+    assert scan.market_of("", "Dublin or remote in Europe") == "IE"
     assert scan.market_of("", "London, hybrid remote") == "UK-London"
     assert scan.market_of("", "Brussels, remote 2 days") == "BE"
 

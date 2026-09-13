@@ -123,7 +123,10 @@ Target markets ONLY:
 - United Kingdom: London and the surrounding commuter area ONLY (exclude Manchester,
   Edinburgh, Leeds, Bristol, Glasgow, Birmingham, and other UK cities). Skilled Worker visa
   floor ~GBP 70,000.
-- Ireland: Dublin. Critical Skills / General employment permit; comp floor ~EUR 68,911.
+- Ireland: anywhere in the country, Dublin and outside it alike. Critical Skills / General
+  employment permit; comp floor ~EUR 68,911 (a nationwide threshold, not a Dublin one).
+  Dublin carries most of the RevOps market but is also where cost of living eats the
+  salary, so a role in Cork, Galway or a commutable county is not a worse outcome.
 
 Reject entirely: Germany, Spain, remote-from-anywhere, and remote-EMEA roles.
 
@@ -149,7 +152,7 @@ CSM role in the Netherlands is a primary target and should not be penalized as "
 ## CSM track weighting (important)
 - Netherlands: Senior/Principal CSM at an established company = primary target, score on par
   with RevOps roles.
-- UK (London), Ireland (Dublin), and Belgium: a CSM role only scores highly if the company
+- UK (London), Ireland, and Belgium: a CSM role only scores highly if the company
   is a genuine standout (tier-1 SaaS, strong brand, clear sponsor) or the fit is unusually
   strong. Otherwise keep CSM in these markets modest, because the pivot and relocation bar
   is higher there. Weight this inside the dimension scores; nothing downstream adjusts the

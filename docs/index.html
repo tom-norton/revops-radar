@@ -382,7 +382,7 @@ function renderAll(){
   const lr = allStatus.last_run ? new Date(allStatus.last_run).toLocaleString("en-GB",
       {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
   document.getElementById("meta").textContent =
-      `Netherlands · Belgium · London · Dublin  ·  ${apply.length} to apply, ${border.length} borderline`
+      `Netherlands · Belgium · London · Ireland  ·  ${apply.length} to apply, ${border.length} borderline`
       + (staleCount ? `  ·  ${staleCount} older than ${MAX_AGE_DAYS}d hidden` : "")
       + `  ·  last run ${lr}`;
 

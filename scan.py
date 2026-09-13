@@ -187,9 +187,32 @@ BE_CITY = re.compile(
     r"|bruges|brugge|leuven|louvain|liege|luik|namur|mechelen|kortrijk|flemish|wallonia"
     r"|flanders", re.I)
 BE_COUNTRY = re.compile(r"belgium|belgie|belgique", re.I)
-IE_CITY = re.compile(r"dublin", re.I)
-IE_COUNTRY = re.compile(r"ireland|ierland", re.I)
-IE_OTHER_CITY = re.compile(r"cork|galway|limerick|waterford", re.I)
+# All of Ireland, not just Dublin. Dublin dominates the RevOps market, but Dublin is also
+# where the cost of living eats the salary advantage, so a role in Cork or Galway is more
+# attractive rather than less. There used to be an IE_OTHER_CITY here that rejected Cork,
+# Galway, Limerick and Waterford outright, and the stage-1 prompt said "Ireland/Dublin" to
+# match, so Haiku killed the rest: "Burnfoot, County Donegal" and "Dunshaughlin, County
+# Meath" were both dropped as "not Dublin commuter". Both the regex and both prompts now
+# treat the whole country as in scope.
+#
+# The county forms matter as much as the city names: the feeds emit "County Donegal",
+# "Dublin 8, County Dublin" and "Dublin, Leinster, Ireland", so bare city names alone miss
+# a real share of Irish rows.
+IE_CITY = re.compile(
+    r"\b(?:dublin|cork|galway|limerick|waterford|kilkenny|sligo|drogheda|dundalk"
+    r"|athlone|wexford|tralee|maynooth|letterkenny|killarney|ennistymon|dun laoghaire"
+    r"|leinster|munster|connacht)\b", re.I)
+# Irish counties, but only where the text says so. "Louth", "Clare", "Bray" and "Meath" are
+# British place names as well (Louth in Lincolnshire, Clare in Suffolk, Bray in Berkshire),
+# and a bare match on those would route a UK row to Ireland AND bypass the London-only
+# rule, because UK_OTHER_CITY does not list them. Requiring the "County"/"Co." prefix makes
+# the match safe; the far more common "<town>, County X, Ireland" shape is already caught by
+# IE_COUNTRY on the country half of the string.
+IE_COUNTY = re.compile(
+    r"\b(?:county|co\.?)\s+(?:dublin|cork|galway|limerick|waterford|kilkenny|sligo"
+    r"|wexford|kildare|wicklow|louth|meath|donegal|mayo|kerry|clare|tipperary|westmeath"
+    r"|laois|offaly|cavan|monaghan|leitrim|roscommon|longford|carlow)\b", re.I)
+IE_COUNTRY = re.compile(r"ireland|ierland|\beire\b", re.I)
 # reject pure-remote and EMEA-wide postings that aren't anchored to a target city
 REMOTE_ONLY = re.compile(r"\b(remote|anywhere|work from home|wfh|emea|europe)\b", re.I)
 
@@ -242,7 +265,7 @@ VISA_FLOORS = {
     "NL": (71304, "EUR"),          # HSM, 30+ bracket
     "BE": (56976, "EUR"),          # EU Blue Card, Brussels
     "UK-London": (70000, "GBP"),   # Skilled Worker
-    "IE-Dublin": (68911, "EUR"),   # Critical Skills / General permit
+    "IE": (68911, "EUR"),   # Critical Skills / General permit
 }
 
 # ---------------------------------------------------------------- hard disqualifiers
@@ -548,7 +571,7 @@ def score_flags(job, obs):
     # CSM track: a primary target in NL, a weaker one elsewhere unless the company is a
     # genuine standout (see the CSM track weighting section of profile.md). The model is
     # told this in the profile and reflects it in the dimensions; this is just the note.
-    if market in ("UK-London", "IE-Dublin", "BE") and is_csm_title(title) \
+    if market in ("UK-London", "IE", "BE") and is_csm_title(title) \
             and not obs.get("company_standout"):
         flags.append(f"CSM in {market} at a non-standout company")
 
@@ -586,8 +609,8 @@ SCORE_SCHEMA = {
 # screen prompt had already drifted (it listed Belgium as a target but omitted it from the
 # reject clause).
 MARKETS_SENTENCE = ("Netherlands (anywhere), Belgium (anywhere), UK London area and commuter "
-                    "belt only, Ireland/Dublin")
-REJECT_SENTENCE = ("Germany, Spain, other UK cities, non-Dublin Ireland, remote-from-anywhere, "
+                    "belt only, Ireland (anywhere in the country, not just Dublin)")
+REJECT_SENTENCE = ("Germany, Spain, other UK cities, remote-from-anywhere, "
                    "and remote-EMEA roles")
 
 SCREEN_SYSTEM = f"""You are a fast pre-screen for a job-search pipeline. Decide if a role is worth a full evaluation for this candidate:
@@ -1179,7 +1202,7 @@ def merge_found_into_dashboard(existing, found):
     return kept_existing, kept_found, drops
 
 def market_of(country, location):
-    """Which target market a row belongs to ('NL' / 'BE' / 'UK-London' / 'IE-Dublin'),
+    """Which target market a row belongs to ('NL' / 'BE' / 'UK-London' / 'IE'),
     or None if it's outside all of them. This is the single source of truth for location:
     location_ok() and the deep score's location cap both read it, so the code and the
     rubric can no longer disagree (a Staines role used to pass the gate here and then get
@@ -1188,10 +1211,8 @@ def market_of(country, location):
     cc = (country or "").lower()
 
     # An explicitly named city we don't want, with no target city alongside it, is out --
-    # checked first so "Cork, Ireland" and "Cambridge, UK" can't slip through on the
-    # strength of the country half of the string.
-    if IE_OTHER_CITY.search(loc) and not IE_CITY.search(loc):
-        return None
+    # checked first so "Cambridge, UK" can't slip through on the strength of the country
+    # half of the string. Ireland has no such list any more: the whole country is in scope.
     if UK_OTHER_CITY.search(loc) and not UK_LONDON.search(loc):
         return None
 
@@ -1200,8 +1221,8 @@ def market_of(country, location):
         return "NL"
     if BE_CITY.search(loc):
         return "BE"
-    if IE_CITY.search(loc):
-        return "IE-Dublin"
+    if IE_CITY.search(loc) or IE_COUNTY.search(loc):
+        return "IE"
     if UK_LONDON.search(loc):
         return "UK-London"
 
@@ -1218,13 +1239,13 @@ def market_of(country, location):
     if BE_COUNTRY.search(loc):
         return "BE"
     if IE_COUNTRY.search(loc):
-        return "IE-Dublin"
+        return "IE"
 
     # Fall back to the source's own country field. The NL/BE/IE feeds are country-scoped so
     # the code alone is enough. A GB feed spans the whole UK, so an unrecognised UK location
     # is not assumed to be London -- only a bare/empty one is.
     if cc in ("nl", "be", "ie"):
-        return {"nl": "NL", "be": "BE", "ie": "IE-Dublin"}[cc]
+        return {"nl": "NL", "be": "BE", "ie": "IE"}[cc]
     if cc == "gb" and not loc:
         return "UK-London"
     return None
@@ -1391,13 +1412,19 @@ def fetch_reed(api_key):
 # ---------------------------------------------------------------- JobSpy / Indeed (Ireland)
 
 def fetch_jobspy_ireland():
-    """Indeed via JobSpy for Dublin. Best-effort: import + scrape may fail on CI IPs."""
+    """Indeed via JobSpy for Ireland. Best-effort: import + scrape may fail on CI IPs.
+
+    Searches the country, not Dublin. Adzuna has no Ireland endpoint, so this plus the ATS
+    boards, LinkedIn and hiring.cafe is the whole Irish feed -- scoping it to "Dublin,
+    Ireland" made Indeed's own location filter do the same Dublin-only narrowing the
+    location gate used to do, and hid Cork and Galway roles before anything could score
+    them."""
     from jobspy import scrape_jobs   # imported lazily so a missing dep can't break the run
     out, seen = [], set()
     for term in JOBSPY_TERMS:
         try:
             df = scrape_jobs(site_name=["indeed"], search_term=term,
-                             location="Dublin, Ireland", results_wanted=20,
+                             location="Ireland", results_wanted=20,
                              country_indeed="Ireland", hours_old=MAX_POST_AGE_DAYS * 24)
         except Exception:
             continue
@@ -1406,7 +1433,7 @@ def fetch_jobspy_ireland():
         bump_raw("indeed", len(df))
         for _, row in df.iterrows():
             title = str(row.get("title") or "")
-            loc = str(row.get("location") or "Dublin")
+            loc = str(row.get("location") or "Ireland")
             jid = "js-" + re.sub(r"\W+", "-", str(row.get("job_url") or title))[-70:]
             reason = prefilter(title, loc, "ie")
             if reason:

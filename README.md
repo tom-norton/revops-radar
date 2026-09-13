@@ -8,7 +8,7 @@ half of the job-application-workflow skill for you and asks whatever it genuinel
 over Telegram. Hide/Apply/Applied state syncs across your devices via Firebase.
 
 **Markets:** Netherlands (anywhere), Belgium (anywhere), UK (London area only), Ireland
-(Dublin). Germany, Spain, and remote-from-anywhere/EMEA roles are deliberately excluded.
+(anywhere). Germany, Spain, and remote-from-anywhere/EMEA roles are deliberately excluded.
 
 **Runs:** 10:15am, 3pm and 8pm local on weekdays, 10:15am only on weekends. The clock is
 the Cloudflare Worker's (`worker/wrangler.toml`, `scanDueAt()` in
@@ -22,11 +22,11 @@ Cloudflare** below.
 **Data layer (several sources so no single one can break the run):**
 1. **Adzuna API** — Netherlands + UK. (Adzuna's API has no Ireland coverage, hence the others.)
 2. **Reed API** — extra UK/London depth (free key).
-3. **JobSpy / Indeed** — Dublin coverage, the Adzuna gap.
+3. **JobSpy / Indeed** — Ireland coverage, the Adzuna gap (Adzuna has no Ireland endpoint).
 4. **Company ATS feeds** — Greenhouse / Lever / Ashby boards for ~19 named SaaS companies
-   that hire in NL/Belgium/London/Dublin (`companies.json`). Clean company names, full
+   that hire in NL/Belgium/London/Ireland (`companies.json`). Clean company names, full
    descriptions, and this is a big part of the Ireland coverage since many US firms hire
-   in Dublin this way. Optional — the rest of the pipeline works without it; it exists to
+   there this way. Optional — the rest of the pipeline works without it; it exists to
    guarantee coverage of specific companies Tom wants watched regardless of whether they
    show up via the other sources.
 5. **hiring.cafe** — via the Apify actor `memo23/apify-hiring-cafe-scraper`, run against
@@ -748,7 +748,7 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   mismatch. It's a caution flag, not a delete, and the deep score treats it as a small penalty.
 - **UK** is reliable (daily CSV, ~126k sponsors). **NL** is best-effort (IND monthly register);
   add companies you care about to `nl_sponsors_extra.txt` (one per line) to firm it up.
-- **Ireland** has no sponsor register (it uses employment permits), so Dublin roles show no
+- **Ireland** has no sponsor register (it uses employment permits), so Irish roles show no
   badge — verify sponsorship directly.
 
 ## Tuning
