@@ -1444,6 +1444,127 @@ TIER_UNKNOWN = 9        # a market the table forgot sorts last rather than first
 def market_tier(market):
     return MARKET_TIER.get(market or "", TIER_UNKNOWN)
 
+
+# ---------------------------------------------------------------- the scoring queue
+#
+# MAX_SCORED_PER_RUN caps what the deep scorer costs. What it did NOT do, until this
+# existed, is decide WHICH roles get those slots: the loop walked new_jobs in fetcher order
+# (Adzuna first, LinkedIn and hiring.cafe last) and broke at the cap. With only the four
+# European markets the cap never bound -- 478 scored rows over 45 days is about 2.7 a run
+# against a cap of 30 -- so the arbitrary order never showed. Adding the US, which is
+# bigger than all four European markets combined, is exactly the change that makes it bind,
+# and then Adzuna would win every run and hiring.cafe would lose every run. hiring.cafe is
+# the source that found the two highest-scoring roles the radar has ever seen.
+#
+# So the survivors of stage one are sorted before the budget is spent. Every term here is
+# free to compute: no model call, no network.
+#
+# Nothing is discarded by losing. A job past the cap is deliberately not added to seen.json
+# (that predates this change and is the reason it works), so it comes back next run -- at
+# four runs a day inside a 7-day age window, up to 28 more chances. The queue decides
+# latency, not inclusion.
+#
+# The one way latency could turn into loss is a job waiting until MAX_POST_AGE_DAYS expires
+# it unscored. That is what DEFER_FILE and the first term of the sort key are for: a job
+# that has been passed over climbs every run, and after DEFER_ESCALATES_AFTER runs it
+# outranks fresh arrivals regardless of market. "Maybe never" becomes "within a few runs".
+DEFER_FILE = "deferred.json"
+# Deferrals above this count as equal, so a job that has waited a long time cannot keep
+# climbing past one that has waited slightly less and starve IT instead. Past this point
+# they tie and the rest of the key decides.
+DEFER_CAP = 6
+# After this many deferrals a job is promoted ahead of every never-deferred row, whatever
+# its market. Three runs is under a day at the current schedule, well inside the 7-day age
+# window, so a US role cannot sit behind European arrivals until it expires.
+DEFER_ESCALATES_AFTER = 3
+
+
+def load_deferrals(path=DEFER_FILE):
+    """{job id: runs it has been passed over}. Missing or corrupt reads as empty -- a lost
+    counter costs some ordering fairness for a run, and is not worth failing a scan over."""
+    raw = load_json(path, {})
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for k, v in raw.items():
+        try:
+            out[str(k)] = int(v)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def save_deferrals(deferrals, ids_still_pending, path=DEFER_FILE):
+    """Write back only the counters for jobs still waiting.
+
+    Pruning against the live pending set is what stops this growing without bound: a job
+    that got scored, got dropped, or aged out has no counter worth keeping, and seen.json
+    is already the record that it is done with."""
+    keep = {k: min(v, DEFER_CAP) for k, v in deferrals.items()
+            if k in ids_still_pending and v > 0}
+    json.dump(dict(sorted(keep.items())), open(path, "w"), indent=0)
+    return keep
+
+
+def revops_core_title(title):
+    """True for the RevOps-proper end of the funnel, as opposed to the adjacent-and-arguable
+    end (CSM, renewals, enablement, generic business operations). Same regex the US gate
+    uses, reused here as a quality signal for every market rather than a filter."""
+    return bool(REVOPS_CORE.search(title or ""))
+
+
+def priority(job, deferrals=None):
+    """Sort key for the deep-scoring budget, highest first. Free to compute.
+
+    Returned as a tuple of descending-sorted numbers, so `sorted(jobs, key=priority,
+    reverse=True)` reads in the same order as the terms are described here."""
+    deferrals = deferrals or {}
+    waited = min(int(deferrals.get(job.get("id"), 0)), DEFER_CAP)
+    market = job.get("market") or ""
+    title = job.get("title") or ""
+
+    # 1. Starvation guard, and deliberately the first term. A job that has been passed over
+    #    DEFER_ESCALATES_AFTER times jumps every fresh row; below that it is a tiebreak.
+    escalated = 1 if waited >= DEFER_ESCALATES_AFTER else 0
+
+    # 2. Tom's market ordering. Negated because lower tier means more wanted.
+    tier = -market_tier(market)
+
+    # 3. Is this the pivot proper, or the adjacent end of the funnel?
+    core = 1 if revops_core_title(title) else 0
+
+    # 4. Title band. The bands that used to be auto-buried are not penalised here either,
+    #    but a plainly off-function title sorts below everything else.
+    band = {"wrong_function": -2, "director_plus": -1}.get(title_band(title), 0)
+
+    # 5. A company we can already see can sponsor is materially more actionable than one we
+    #    cannot. Only meaningful for NL and UK; the others have no register and score 0.
+    sponsor = {"sponsor": 2, "sponsor (likely)": 1}.get(job.get("sponsor") or "", 0)
+
+    # 6. A US employer with a route to a market Tom actually wants.
+    transfer = 1 if job.get("transfer_markets") else 0
+
+    # 7. A stated salary is a real signal in a feed where most rows have none. Adzuna's
+    #    estimates never reach here -- adzuna_salary() discards predicted figures -- so a
+    #    salary string on a row means someone published a number.
+    stated_salary = 1 if job.get("salary") else 0
+
+    # 8. A real posting rather than a page of marketing furniture. A stub scores badly for
+    #    reasons that are not the role's fault, so it should not consume a slot ahead of a
+    #    row the scorer can actually read.
+    real_desc = 1 if len(job.get("description") or "") >= MIN_DESC_CHARS else 0
+
+    # 9. On the watchlist Tom curated by hand.
+    watched = 1 if job.get("_watched") else 0
+
+    # 10. Freshness, as the tiebreak.
+    posted = parse_date_loose(job.get("posted_at"))
+    fresh = posted.timestamp() if posted else 0.0
+
+    return (escalated, tier, core, band, sponsor, transfer, stated_salary, real_desc,
+            watched, waited, fresh)
+
+
 def location_ok(country, location):
     return market_of(country, location) is not None
 
@@ -2455,9 +2576,9 @@ def main():
     # 3. JobSpy / Indeed (Ireland)
     try:
         jobs = fetch_jobspy_ireland(); found += jobs
-        src_status["Indeed/JobSpy (Dublin)"] = src_line("indeed", len(jobs))
+        src_status["Indeed/JobSpy (Ireland)"] = src_line("indeed", len(jobs))
     except Exception as e:
-        src_status["Indeed/JobSpy (Dublin)"] = f"skipped: {e}"
+        src_status["Indeed/JobSpy (Ireland)"] = f"skipped: {e}"
 
     # 4. Company ATS feeds (Greenhouse/Lever/Ashby)
     ats_n = 0
@@ -2560,6 +2681,21 @@ def main():
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     system_score = score_system()
     scored, kept, killed = [], 0, 0
+    deferrals = load_deferrals()
+    # Reuses the list already read for the ATS fetchers above, rather than re-reading the
+    # file (which is a dict with a "companies" key, not a bare list).
+    watched_names = {(c.get("name") or "").strip().lower() for c in companies}
+
+    # PASS A: screen. Everything up to and including the Haiku kill/keep, for up to
+    # MAX_SCREENED_PER_RUN rows. Survivors are collected rather than scored immediately,
+    # so that pass B can spend the expensive budget on the best of them instead of on
+    # whichever source happened to be fetched first. See priority().
+    #
+    # Ordering pass A matters too, because it has its own cap: the rows most likely to
+    # deserve a slot should be the ones that get screened at all. The same key is used,
+    # minus the signals that only exist after the description is fetched.
+    new_jobs.sort(key=lambda j: priority(j, deferrals), reverse=True)
+    survivors = []
 
     for j in new_jobs[:MAX_SCREENED_PER_RUN]:
         # Get the real posting text before anything reads it -- only for survivors of the
@@ -2607,10 +2743,17 @@ def main():
             print(f"  kill  {j['title']} @ {j.get('company') or j['source']} ({reason})")
             continue
         kept += 1
+        j["_watched"] = (j.get("company") or "").strip().lower() in watched_names
+        survivors.append(j)
 
-        # STAGE 2: deep score (only survivors, capped)
+    # PASS B: deep score, best first, until the budget runs out.
+    survivors.sort(key=lambda j: priority(j, deferrals), reverse=True)
+    for j in survivors:
         if len(scored) >= MAX_SCORED_PER_RUN:
-            break
+            # Out of budget. NOT added to seen, so this row comes back next run, and its
+            # deferral counter goes up so it climbs the queue when it does.
+            deferrals[j["id"]] = min(deferrals.get(j["id"], 0) + 1, DEFER_CAP)
+            continue
         try:
             result = score_job(api_key, system_score, j)
         except Exception as e:
@@ -2631,6 +2774,7 @@ def main():
                   f"({result['stage']}: {result['reason']})")
             continue
         j.update(result)
+        j.pop("_watched", None)      # queue-only signal; never belongs in docs/jobs.json
         # Stored head + tail, matching what the scorer read, so a surprising score can be
         # checked against the part of the ad that decided it.
         j["description"] = sample_desc(j.get("description"), DESC_STORE_CAP)
@@ -2706,6 +2850,20 @@ def main():
             f"{len(cache) - before} companies newly cached, {len(cache)} known")
 
     src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
+    # Everything that cleared stage one but did not get a deep-scoring slot. Prune the
+    # counters against this set so the file cannot grow without bound, then say out loud
+    # how deep the queue is: a backlog that never drains is the one way this design turns
+    # latency into a role Tom never sees, and it should not be silent.
+    pending = {j["id"] for j in survivors if j["id"] not in seen}
+    deferrals = save_deferrals(deferrals, pending)
+    if deferrals:
+        longest = max(deferrals.values())
+        src_status["queue"] = (f"{len(deferrals)} waiting for a scoring slot, longest "
+                               f"{longest} run{'s' if longest != 1 else ''}"
+                               + (" (escalated past fresh rows)"
+                                  if longest >= DEFER_ESCALATES_AFTER else ""))
+    elif survivors:
+        src_status["queue"] = "empty; every screened role was scored this run"
     if USAGE["in"] or USAGE["cache_read"]:
         src_status["tokens"] = (f"in {USAGE['in']}, out {USAGE['out']}, "
                                f"cache read {USAGE['cache_read']}, written {USAGE['cache_write']}")

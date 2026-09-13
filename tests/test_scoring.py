@@ -1345,6 +1345,115 @@ def test_the_us_transfer_case_is_reachable_from_the_prompt():
          "market": "NL", "description": "x" * 40})
 
 
+# ---- the scoring queue
+
+
+def _qjob(jid, market, title, **kw):
+    job = {"id": jid, "market": market, "title": title, "company": "Acme",
+           "description": "x" * 1000, "posted_at": "2026-09-13T00:00:00Z"}
+    job.update(kw)
+    return job
+
+
+def _order(jobs, deferrals=None):
+    return [j["id"] for j in sorted(jobs, key=lambda j: scan.priority(j, deferrals or {}),
+                                    reverse=True)]
+
+
+def test_the_queue_spends_the_budget_in_market_order():
+    """At equal title quality the deep-scoring slots go down Tom's ordering. Before this
+    existed the loop walked new_jobs in fetcher order and broke at the cap, so Adzuna --
+    which runs first -- would have won every run once the US made the cap bind."""
+    jobs = [_qjob(m.lower(), m, "Revenue Operations Manager")
+            for m in ["US-Remote", "NL", "UK-London", "CA", "IE", "BE"]]
+    order = _order(jobs)
+    assert order[0] == "nl"
+    assert set(order[1:3]) == {"ie", "uk-london"}
+    assert set(order[3:5]) == {"be", "ca"}
+    assert order[5] == "us-remote"
+
+
+def test_a_repeatedly_deferred_role_escalates_past_fresh_arrivals():
+    """The starvation guard, and the whole reason the queue cannot lose a role. A job past
+    the cap is not marked seen, so it returns next run; the risk is that it waits until
+    MAX_POST_AGE_DAYS expires it. After DEFER_ESCALATES_AFTER runs it outranks every fresh
+    row whatever its market, which turns "maybe never" into "within a few runs"."""
+    us = _qjob("us", "US-Remote", "Revenue Operations Manager")
+    nl = _qjob("nl", "NL", "Revenue Operations Manager")
+    assert _order([us, nl], {"us": scan.DEFER_ESCALATES_AFTER}) == ["us", "nl"]
+    # one run short of the threshold it must NOT jump, or the guard would invert the
+    # ordering on the first deferral and the market tiers would mean nothing
+    assert _order([us, nl], {"us": scan.DEFER_ESCALATES_AFTER - 1}) == ["nl", "us"]
+    assert scan.DEFER_ESCALATES_AFTER < scan.DEFER_CAP <= scan.MAX_POST_AGE_DAYS * 4
+
+
+def test_waiting_longer_than_the_cap_does_not_keep_climbing():
+    """Deferrals above DEFER_CAP tie, so the longest-waiting row cannot starve the
+    second-longest in turn."""
+    a = _qjob("a", "US-Remote", "Revenue Operations Manager")
+    assert scan.priority(a, {"a": 50}) == scan.priority(a, {"a": scan.DEFER_CAP})
+
+
+def test_the_queue_prefers_core_revops_and_a_readable_posting():
+    assert _order([_qjob("csm", "NL", "Senior Customer Success Manager"),
+                   _qjob("core", "NL", "Revenue Operations Manager")]) == ["core", "csm"]
+    # a stub description scores badly for reasons that are not the role's fault, so it
+    # should not consume a slot ahead of a posting the scorer can actually read
+    assert _order([_qjob("stub", "NL", "Revenue Operations Manager", description="short"),
+                   _qjob("real", "NL", "Revenue Operations Manager")]) == ["real", "stub"]
+
+
+def test_the_queue_rewards_a_confirmed_sponsor_and_a_us_transfer_path():
+    assert _order([_qjob("plain", "NL", "Revenue Operations Manager"),
+                   _qjob("spons", "NL", "Revenue Operations Manager",
+                         sponsor="sponsor")]) == ["spons", "plain"]
+    assert _order([_qjob("plain", "US-Remote", "Revenue Operations Manager"),
+                   _qjob("xfer", "US-Remote", "Revenue Operations Manager",
+                         transfer_markets="NL, IE")]) == ["xfer", "plain"]
+
+
+def test_priority_is_total_and_never_raises_on_a_sparse_row():
+    """priority() runs over rows straight out of a fetcher, so every field has to be
+    optional. A KeyError here takes down the whole run after the fetches have been paid
+    for."""
+    for row in [{}, {"id": "x"}, {"id": "x", "market": None, "title": None},
+                {"id": "x", "market": "NL", "posted_at": "not a date"},
+                {"id": "x", "market": "XX", "title": "Revenue Operations Manager"}]:
+        key = scan.priority(row, {})
+        assert isinstance(key, tuple)
+        # keys must be mutually comparable, or sorted() dies on a mixed batch
+        assert key < scan.priority(_qjob("best", "NL", "Revenue Operations Manager",
+                                         sponsor="sponsor"), {})
+
+
+def test_deferral_counters_are_pruned_to_what_is_still_waiting(tmp=None):
+    """Unbounded growth is the failure mode here: without pruning this file accumulates an
+    entry for every role the radar has ever passed over. seen.json is already the record
+    that a job is finished with, so a counter for one is dead weight."""
+    import tempfile, os as _os
+    path = _os.path.join(tempfile.mkdtemp(), "deferred.json")
+    kept = scan.save_deferrals({"still": 2, "scored": 1, "zero": 0}, {"still", "zero"},
+                               path)
+    assert kept == {"still": 2}
+    assert scan.load_deferrals(path) == {"still": 2}
+    # and it clamps on the way out, so a counter cannot grow past the cap on disk either
+    assert scan.save_deferrals({"old": 99}, {"old"}, path) == {"old": scan.DEFER_CAP}
+
+
+def test_load_deferrals_survives_a_corrupt_or_missing_file():
+    """A lost counter costs one run of ordering fairness. Failing the scan over it would
+    cost the whole run, after the fetches have been paid for."""
+    import tempfile, os as _os
+    d = tempfile.mkdtemp()
+    assert scan.load_deferrals(_os.path.join(d, "nope.json")) == {}
+    bad = _os.path.join(d, "bad.json")
+    open(bad, "w").write('["not", "a", "dict"]')
+    assert scan.load_deferrals(bad) == {}
+    mixed = _os.path.join(d, "mixed.json")
+    open(mixed, "w").write('{"a": 2, "b": "not a number", "c": null}')
+    assert scan.load_deferrals(mixed) == {"a": 2}
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
