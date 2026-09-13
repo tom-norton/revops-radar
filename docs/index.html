@@ -72,6 +72,13 @@
   details.excluded[open]>summary::before{content:"\25BE "}
   details.excluded{margin-top:10px}
   .tag.cap{border-color:var(--mut); color:var(--mut)}
+  /* Market by tier: the goal reads loudest, the last resort quietest. */
+  .tag.market.t1{border-color:var(--good); color:var(--good); font-weight:650}
+  .tag.market.t2{border-color:var(--teal); color:var(--teal)}
+  .tag.market.t3{color:var(--mut)}
+  .tag.market.t4{border-style:dashed; color:var(--mut)}
+  .tag.market.t9{border-style:dashed; color:var(--warn)}
+  .tag.transfer{border-color:var(--teal); color:var(--teal)}
   .subhead{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em;
         color:var(--mut); margin:16px 0 8px; font-weight:700}
   .drop{border-bottom:1px solid var(--line); padding:8px 0; font-size:12.5px}
@@ -214,6 +221,12 @@ function fresh(iso){
 }
 function scoreClass(s){ return s >= 8 ? "s-apply" : s >= GATE ? "" : "s-border"; }
 
+// Where a row's market sits in Tom's ordering. Read from status.json (scan.py's
+// MARKET_TIER) with a fallback that sorts an unknown market LAST rather than first, so a
+// market added to the code before the dashboard has seen it cannot jump the queue.
+let MARKET_TIER = {}, TIER_UNKNOWN = 9;
+function tierOf(j){ return MARKET_TIER[j.tier || j.market || ""] ?? TIER_UNKNOWN; }
+
 function card(j, reviewed){
   const id = String(j.id||"");
   const s = (j.score ?? 0).toFixed(1);
@@ -226,6 +239,22 @@ function card(j, reviewed){
     spon = `<span class="tag ${good?'spon':'nospon'}">${j.sponsor}</span>`;
   }
   const flags = (j.flags||[]).map(f=>`<span class="tag flag">${esc(f)}</span>`).join("");
+  // The market, marked by tier so the backups read as backups at a glance rather than
+  // needing the reader to remember which of six names is which.
+  const tier = tierOf(j);
+  const marketTag = j.tier
+    ? `<span class="tag market t${tier}" title="${tier===1?"Primary market"
+        :tier===2?"Strong option":tier===3?"Backup":"Last resort — remote RevOps only"}"
+       >${esc(j.tier)}</span>`
+    : "";
+  // Only on US rows, and only when the employer's own board shows they hire somewhere Tom
+  // wants to live. That is the difference between a dead end and a route abroad without
+  // changing employer, and it is what lifts the US score band from 2-3 to 4-5.
+  const transferTag = j.transfer_markets
+    ? `<span class="tag transfer"
+         title="This employer also posts roles here, so an internal move later is a route abroad"
+       >&#8599; also hires in ${esc(j.transfer_markets)}</span>`
+    : "";
   const queued = marked(queuedIds, j);
   const queuedTag = queued ? `<span class="tag queued">in the apply queue</span>` : "";
   // Which board the application actually lives on, and whether /submit can fill it
@@ -282,7 +311,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${j.tier?`<span class="tag">${esc(j.tier)}</span>`:""}${queuedTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${marketTag}${transferTag}${queuedTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
@@ -374,7 +403,12 @@ function renderAll(){
   // them happened to be on a board with a driver -- convenience outranking fit, on the one
   // list whose whole job is to rank by fit. The checkmark still says which is which, and
   // the toggle above filters to them outright when that is what's wanted.
-  jobs = [...jobs].sort((a,b)=>(b.score??0) - (a.score??0));
+  // Market tier first, then score. The ordering is Tom's, read from status.json so it
+  // cannot drift from scan.py's MARKET_TIER: Netherlands, then Ireland and London, then
+  // Belgium and Canada, then the US. A brilliant US role still scores what it scores and
+  // still appears -- it just appears below a decent Amsterdam one, which is the whole
+  // point. Within a tier nothing but the score reorders it.
+  jobs = [...jobs].sort((a,b)=> (tierOf(a) - tierOf(b)) || ((b.score??0) - (a.score??0)));
 
   const apply = jobs.filter(j=>(j.score??0) >= GATE);
   const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);
@@ -383,7 +417,8 @@ function renderAll(){
   const lr = allStatus.last_run ? new Date(allStatus.last_run).toLocaleString("en-GB",
       {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
   document.getElementById("meta").textContent =
-      `Netherlands · Belgium · London · Ireland  ·  ${apply.length} to apply, ${border.length} borderline`
+      `Netherlands · Ireland · London · Belgium · Canada · US remote`
+      + `  ·  ${apply.length} to apply, ${border.length} borderline`
       + (staleCount ? `  ·  ${staleCount} older than ${MAX_AGE_DAYS}d hidden` : "")
       + `  ·  last run ${lr}`;
 
@@ -455,10 +490,16 @@ Promise.all([
   fetch("excluded.json").then(r=>r.json()).catch(()=>({})),
 ]).then(([jobs, status, excluded])=>{
   jobs = (jobs||[]).filter(j=>!String(j.id||"").startsWith("demo-"));
-  jobs.sort((a,b)=>(b.score??0)-(a.score??0) || String(b.found_at||"").localeCompare(String(a.found_at||"")));
   allJobs = jobs; allStatus = status || {}; allExcluded = excluded || {};
+  // Read the thresholds and the market ordering from the code's own output BEFORE the
+  // first sort. Sorting first would compare every row at TIER_UNKNOWN, which ties them
+  // all and silently falls back to score-only order on the very first paint.
   if(typeof allStatus.gate === "number") GATE = allStatus.gate;
   if(typeof allStatus.floor === "number") FLOOR = allStatus.floor;
+  if(allStatus.market_tier && typeof allStatus.market_tier === "object")
+    MARKET_TIER = allStatus.market_tier;
+  jobs.sort((a,b)=> (tierOf(a) - tierOf(b)) || ((b.score??0)-(a.score??0))
+                 || String(b.found_at||"").localeCompare(String(a.found_at||"")));
   document.getElementById("apply-h").textContent = `Apply — ${GATE.toFixed(1)} and up`;
   renderAll();
 

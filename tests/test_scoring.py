@@ -696,6 +696,36 @@ def test_collapse_duplicates_leaves_distinct_rows_alone():
 def test_gate_and_floor_are_ordered():
     assert scan.FLOOR < scan.GATE
     assert scan.NTFY_SCORE_THRESHOLD >= scan.GATE
+    # Raised from 6.0/5.0 when the map went from four markets to six. The previous 45 days
+    # of 478 scored rows sat 233 above 6.0 and 156 above 6.5, so this is about 3.5 "apply"
+    # roles a day rather than five.
+    assert (scan.GATE, scan.FLOOR) == (6.5, 6.0)
+
+
+def test_only_the_wanted_markets_ring_the_phone():
+    """A push notification is a claim on Tom's attention right now, not an entry on a list
+    he reads when he chooses. A US role can score 8 on the strength of the role itself
+    while still being somewhere he does not want to move, so it stays on the dashboard and
+    does not ring."""
+    assert scan.NTFY_MAX_TIER == 2
+    ring = [m for m, t in scan.MARKET_TIER.items() if t <= scan.NTFY_MAX_TIER]
+    assert set(ring) == {"NL", "IE", "UK-London"}
+    for market in ("CA", "US-Remote", "BE"):
+        assert scan.market_tier(market) > scan.NTFY_MAX_TIER, market
+
+
+def test_the_dashboard_is_handed_the_market_ordering_rather_than_keeping_a_copy():
+    """docs/index.html sorts by tier then score, and reads the tier table out of
+    status.json for the same reason it reads gate and floor from there: a second copy in
+    the page is a copy that drifts."""
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    assert "allStatus.market_tier" in page
+    assert "tierOf(a) - tierOf(b)" in page
+    # an unknown market must sort LAST, or a market added to scan.py before the dashboard
+    # has seen it jumps straight to the top of the list
+    assert "TIER_UNKNOWN = 9" in page
+    assert "?? TIER_UNKNOWN" in page
 
 
 def test_score_schema_uses_only_supported_json_schema_keywords():

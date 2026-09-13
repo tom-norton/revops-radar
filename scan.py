@@ -354,6 +354,11 @@ CLAUDE_ATTEMPTS = 3           # per call, with exponential backoff on 429/5xx/ti
 
 NTFY_TOPIC = "tom-revops-radar-c16aabb2"   # push notifications for strong matches (ntfy.sh)
 NTFY_SCORE_THRESHOLD = 7.5
+# Only the markets Tom actually wants buzz his phone. A US role can score 8 on the strength
+# of the role itself while still being a place he does not want to move to, and a push
+# notification is a claim on his attention right now rather than an entry on a list he
+# reads when he chooses. Canada and the US stay on the dashboard; they just do not ring.
+NTFY_MAX_TIER = 2
 KEEP_DAYS = 45
 # How far back a row is worth a board lookup. It used to match MAX_POST_AGE_DAYS exactly,
 # on the reasoning that a row he cannot see is a row whose board nobody is waiting to
@@ -384,8 +389,13 @@ SPONSOR_REQUIRED = False      # if True, drop UK/NL jobs whose company isn't on 
 
 # Dashboard bands. Mirrored in docs/index.html and written into docs/status.json each run
 # so the page reads them from here rather than keeping its own copy.
-GATE = 6.0     # 6.0+ -> "apply" section
-FLOOR = 5.0    # 5.0-5.9 -> collapsed "borderline"; below -> collapsed "excluded"
+# Raised from 6.0/5.0 once the map went from four markets to six. The 478 scored rows of
+# the previous 45 days sat 233 above 6.0, 156 above 6.5 and 88 above 7.0, so 6.5 is about
+# 3.5 "apply" roles a day, which is what Tom's own time actually allows. Worth knowing: the
+# score distribution peaks at 5.5-6.5, so the bar lands on the mode and the borderline band
+# is doing real work rather than catching strays.
+GATE = 6.5     # 6.5+ -> "apply" section
+FLOOR = 6.0    # 6.0-6.4 -> collapsed "borderline"; below -> collapsed "excluded"
 
 # Annual base-salary floors per market, local currency (2026). The prose version lives in
 # profile.md for the model to reason with; this is the copy the below-floor cap uses.
@@ -994,7 +1004,9 @@ def note_usage(u):
 def notify_strong_matches(jobs):
     """Push a notification via ntfy.sh (free, no signup) for anything scoring high
     enough this run. Never lets a notification failure affect the scan itself."""
-    strong = [j for j in jobs if (j.get("score") or 0) >= NTFY_SCORE_THRESHOLD]
+    strong = [j for j in jobs
+              if (j.get("score") or 0) >= NTFY_SCORE_THRESHOLD
+              and market_tier(j.get("market")) <= NTFY_MAX_TIER]
     if not strong:
         return
     strong.sort(key=lambda j: j.get("score", 0), reverse=True)
@@ -3121,7 +3133,10 @@ def main():
     src_status = {k: redact(v) for k, v in src_status.items()}
     json.dump({"last_run": now_iso(), "new_this_run": len(scored), "sources": src_status,
                "gate": GATE, "floor": FLOOR, "score_model": CLAUDE_SCORE_MODEL,
-               "screen_model": CLAUDE_SCREEN_MODEL},
+               "screen_model": CLAUDE_SCREEN_MODEL,
+               # Same reason gate/floor are here: the dashboard reads the ordering from
+               # the code rather than keeping its own copy that can drift.
+               "market_tier": MARKET_TIER},
               open("docs/status.json", "w"), indent=1)
     if not dry:
         notify_strong_matches(scored)
