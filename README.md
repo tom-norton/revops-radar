@@ -297,11 +297,29 @@ has gone in, on a real company's record, under your name.
 **Code fills the facts; a model only answers the questions.** Your name, email, phone,
 location, LinkedIn, the CV, the cover letter, work authorisation and sponsorship are all
 filled from what is on file — the same skeleton the letterhead is built from, so a number
-set with `/phone` reaches the form the moment it reaches the CV. Work authorisation comes
-off your nationality and the market the role is in: a US citizen applying to a Dublin role
-is not authorised there and does need sponsorship, and that is legal status rather than a
-judgement call. The model is never shown those fields, so it cannot put a wrong answer in
-one. What it does answer is the rest: "what excites you most about this opportunity", "how
+set with `/phone` reaches the form the moment it reaches the CV. The model is never shown
+those fields, so it cannot put a wrong answer in one.
+
+**Two contact blocks, picked by market.** `contact` is the European CV (Barcelona, the
+European number, a nationality line). `contact_na` is the Canada/US one: Grand Rapids, the
+US number, and **no nationality line** — stating US citizenship on a US application is
+noise, and on a Canadian one it invites a sponsorship question that does not apply to a
+citizen. `cvbuild.load_base(bank, market)` picks between them, and the market is an
+argument to *that* rather than something applied afterwards, because the same skeleton
+feeds the CV, the letterhead and the form: a swap applied in one place and forgotten in
+another would put a Barcelona address on a Grand Rapids CV's application form.
+
+Nationality is its own field rather than read back off the printed contact line. It is a
+*fact* the form filler needs and separately a *line* the European CV happens to print, and
+while it was being scraped out of the contact array, dropping that line from the North
+American block silently emptied nationality for every Canada and US application.
+
+**Work authorisation comes off the citizenships on file and the market the role is in.** A
+US citizen applying to a Dublin role is not authorised there and does need sponsorship.
+Canada answers authorised **yes** and sponsorship **no**, because Canadian citizenship by
+descent is automatic at birth — the certificate is proof of it, not the grant of it. What
+the pending certificate affects is the start date, which an employer needs to know rather
+than have buried, so the answer carries that caveat into the plan you approve. What it does answer is the rest: "what excites you most about this opportunity", "how
 did you hear about this job", and whatever else that particular form asks.
 
 **Demographic questions are declined, never answered.** Gender, race, ethnicity, veteran
@@ -589,8 +607,10 @@ not. It lives in the bank's private copy of `cv-base.json` instead, and nobody e
 to put it there:
 
 ```
-/phone +34 700 000 000     put it on the CV
-/phone off                 take it off
+/phone +34 700 000 000     put it on the European CV
+/phone us +1 555 000 0000  put it on the Canada/US CV
+/phone off                 take the European one off
+/phone us off              take the US one off
 /phone                     what's on there now
 ```
 

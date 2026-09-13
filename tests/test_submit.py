@@ -1003,6 +1003,69 @@ def test_resolve_rows_reports_transfer_markets_once_per_company():
     assert out["r0"]["transfer_markets"] == ["NL"]
 
 
+def test_canada_answers_authorised_yes_because_citizenship_by_descent_is_automatic():
+    """Canadian citizenship by descent is automatic at birth -- the certificate is PROOF of
+    it, not the grant of it -- so yes is the accurate answer, not a hopeful one. Keyed on a
+    single nationality string this read as "not home" and answered "needs sponsorship / not
+    authorised", which is wrong twice over for a citizen."""
+    cz = ["United States", "Canada"]
+    got, why = submit.work_status("Are you legally authorized to work in Canada?", "CA",
+                                  "United States", cz)
+    assert got == "yes"
+    got, why = submit.work_status("Will you now or in the future require sponsorship?",
+                                  "CA", "United States", cz)
+    assert got == "no"
+    # ...and the start-date caveat rides along on the reason, so it reaches the plan Tom
+    # approves rather than being buried.
+    assert "certificate" in why and "employer letter" in why
+
+
+def test_europe_still_needs_sponsorship_and_the_us_still_does_not():
+    cz = ["United States", "Canada"]
+    for market in ("NL", "IE", "UK-London", "BE"):
+        assert submit.work_status("Will you require sponsorship?", market,
+                                  "United States", cz)[0] == "yes", market
+        assert submit.work_status("Are you legally authorized to work there?", market,
+                                  "United States", cz)[0] == "no", market
+    assert submit.work_status("Will you require sponsorship?", "US-Remote",
+                              "United States", cz)[0] == "no"
+    assert submit.work_status("Are you authorized to work in the United States?",
+                              "US-Remote", "United States", cz)[0] == "yes"
+
+
+def test_work_status_without_citizenships_keeps_its_old_behaviour():
+    """A caller that has not been updated must not silently lose the US answers too."""
+    assert submit.work_status("Will you require sponsorship?", "IE",
+                              "United States")[0] == "yes"
+    # with only US citizenship on file, Canada is not home and answers accordingly
+    assert submit.work_status("Are you legally authorized to work in Canada?", "CA",
+                              "United States", ["United States"])[0] == "no"
+    # and nothing on file at all is left to Tom
+    assert submit.work_status("Will you require sponsorship?", "IE", "", []) == ("", "")
+
+
+def test_nationality_survives_the_na_contact_block_dropping_the_printed_line():
+    """The North American CV prints no nationality line. While nationality was scraped off
+    the contact array, that silently emptied it for every Canada and US application -- and
+    it is the one input work_status() has."""
+    for market in ("NL", "CA", "US-Remote"):
+        base, _ = cvbuild.load_base(None, market)
+        ident = submit.identity(base)
+        assert ident["nationality"] == "United States", market
+        assert "Canada" in ident["citizenships"], market
+    # the NA block really does print no nationality, which is what made this a trap
+    na, _ = cvbuild.load_base(None, "US-Remote")
+    assert not any("Nationality" in (c.get("text") or "") for c in na["contact"])
+
+
+def test_a_skeleton_written_before_nationality_was_a_field_still_works():
+    """The fallback path: read it off the printed contact line when the field is absent."""
+    legacy = {"name": "TOM NORTON",
+              "contact": [{"text": "Barcelona, Spain"}, {"text": "a@b.co"},
+                          {"text": "Nationality: United States"}]}
+    assert submit.identity(legacy)["nationality"] == "United States"
+
+
 # ---------------------------------------------------------------- the state machine
 
 LETTER_TEXT = "Dear Acme Hiring Team, I have run renewal forecasting for four years."

@@ -112,10 +112,50 @@ FIRST_PERSON_RE = re.compile(r"(?<![\w'])(I|I'm|I've|my|me|myself)(?![\w'])")
 
 # ---------------------------------------------------------------- the skeleton
 
-def load_base(bank=None):
+# Markets that get the North American contact block: Grand Rapids, the US phone, and no
+# nationality line. Stating US citizenship on a US application is noise, and on a Canadian
+# one it invites a sponsorship question that does not apply to a citizen.
+NA_MARKETS = ("CA", "US-Remote")
+# Where the two phone numbers live in the skeleton. The European one sits in the contact
+# array itself (historically, and /phone still writes it there); the North American one is
+# its own field, because it belongs to the other contact block.
+US_PHONE_FIELD = "phone_us"
+
+
+def contact_for(base, market=None):
+    """The contact array this market should print, and the phone field that feeds it.
+
+    Returns (contact, phone_field). Falls back to the European block for an unknown or
+    missing market, which is the right default: every market that existed before this
+    function did is a European one."""
+    if market in NA_MARKETS and (base or {}).get("contact_na"):
+        return list(base["contact_na"]), US_PHONE_FIELD
+    return list((base or {}).get("contact") or []), "phone"
+
+
+def load_base(bank=None, market=None):
     """The CV skeleton. The bank's copy wins when it exists; the repo's is the seed.
 
-    Returns (base, from_bank)."""
+    Returns (base, from_bank).
+
+    `market` selects the contact block, and it is an argument HERE rather than something
+    callers apply afterwards on purpose: the contact details on a form are read off this
+    same skeleton by submit.identity(), so a swap applied in one place and forgotten in
+    another would put a Barcelona address on a Grand Rapids CV's application form. One
+    call site, one argument, no half-applied state."""
+    base, from_bank = _read_base(bank)
+    contact, phone_field = contact_for(base, market)
+    if phone_field != "phone":
+        # The NA block's number lives in its own field; splice it in where /phone puts the
+        # European one, second, right after the location.
+        number = (base.get(phone_field) or "").strip()
+        if number:
+            contact.insert(1 if contact else 0, {"text": number})
+    base = dict(base, contact=contact)
+    return base, from_bank
+
+
+def _read_base(bank):
     if bank is not None:
         raw = bank.read(BASE_FILE, "")
         if raw.strip():
@@ -203,6 +243,12 @@ def skeleton_gaps(base):
         # public repo gets scraped, the same number on a CV sent to a named recruiter does
         # not. So the bank's private copy is where it goes, and this is what says so.
         gaps.append("no phone number on the contact line")
+    # The North American number is checked separately because it is stored separately, and
+    # because it is the one that goes silently missing: a Canada or US CV renders perfectly
+    # well without it, just with no way for an American recruiter to call.
+    if base.get("contact_na") and not (base.get(US_PHONE_FIELD) or "").strip():
+        gaps.append("no US phone number, so Canada and US CVs go out without one "
+                    "(/phone us <number>)")
     return gaps
 
 

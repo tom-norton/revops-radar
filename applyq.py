@@ -215,7 +215,8 @@ HELP = (
     "/queue - what's waiting\n"
     "/status - what the poller is working on right now\n"
     "/cancel - drop the role in flight and move on\n"
-    "/phone &lt;number&gt; - put your number on the CV (or /phone off)\n"
+    "/phone &lt;number&gt; - your European number (or /phone off)\n"
+    "/phone us &lt;number&gt; - your US number, for Canada and US CVs\n"
     "/redo &lt;what to change&gt; - rebuild the last CV with your feedback\n"
     "/cover &lt;anything to steer it&gt; - write the cover letter for the last CV\n"
     "/submit &lt;link, optional&gt; - fill the application form and show it to you\n"
@@ -2224,7 +2225,9 @@ def build_and_ship(state, job, bank, tg, api_key, chosen, picked_by):
     tailored = cur.get("tailored") or {}
     audit = cur.get("audit") or {}
 
-    base, from_bank = cvbuild.load_base(bank)
+    # The market picks the contact block: Barcelona and a nationality line for Europe,
+    # Grand Rapids and the US number for Canada and the US.
+    base, from_bank = cvbuild.load_base(bank, job.get("market"))
     if not from_bank:
         # First CV ever. Put the skeleton where Tom can edit it and tell him once.
         cvbuild.seed_base(bank)
@@ -2473,7 +2476,9 @@ def build_and_ship_cover(state, job, bank, tg, letter):
     the page has been rendered and looked at. A letter that runs to two pages looks
     perfectly fine to the code that produced it."""
     cur = state["current"]
-    base, _from_bank = cvbuild.load_base(bank)
+    # Same skeleton feeds the letterhead, so the letter's contact details have to agree
+    # with the CV attached beside it.
+    base, _from_bank = cvbuild.load_base(bank, job.get("market"))
 
     own = cv_corpus(bank, base, cur)
     company = company_corpus(cur, job)
@@ -2967,7 +2972,10 @@ def fill_form_stage(state, job, bank, tg, api_key):
     if not fields:
         raise RuntimeError("the form came back with no fields on it")
 
-    base, _from_bank = cvbuild.load_base(bank)
+    # identity() reads the contact details straight off this skeleton, which is what makes
+    # the form and the attached CV agree by construction -- so the market has to be passed
+    # here too, or a Grand Rapids CV goes out with a Barcelona address on its form.
+    base, _from_bank = cvbuild.load_base(bank, job.get("market"))
     ident = submit.identity(base)
     files = application_files(cur, job)
     known, notes_code = submit.plan_known(fields, ident, job, files)
@@ -3125,24 +3133,61 @@ def load_job(job_id):
     return None
 
 
-def set_phone(bank, number):
+def set_phone(bank, number, region="eu"):
     """Put a phone number on the CV, or take it off. Returns the new contact line.
 
     Exists because the alternative was Tom hand-editing JSON in a private repo, which is
-    not a thing to ask of someone who has said plainly he is not a developer. The number
-    stays out of this public repo and goes in the bank's copy of the skeleton, which is
-    exactly where it belongs -- he just never has to see that."""
-    base, _from_bank = cvbuild.load_base(bank)
-    contact = [c for c in (base.get("contact") or [])
-               if not cvbuild.PHONE_RE.match((c.get("text") or "").strip())]
-    if number:
-        # Second, right after the location. That is where it sits on his base CV.
-        contact.insert(1 if contact else 0, {"text": number})
-    base["contact"] = contact
+    not a thing to ask of someone who has said plainly he is not a developer. The numbers
+    stay out of this public repo and go in the bank's copy of the skeleton, which is
+    exactly where they belong -- he just never has to see that.
+
+    Two regions, because there are two CVs. "eu" writes into the European contact array
+    itself, which is where /phone has always put it. "us" writes the phone_us FIELD, which
+    cvbuild.load_base() splices into the North American contact block at render time --
+    the NA block is a separate array, so a number inserted into `contact` would never
+    appear on a Grand Rapids CV."""
+    base, _from_bank = _read_base_raw(bank)
+    if region == "us":
+        if number:
+            base[cvbuild.US_PHONE_FIELD] = number
+        else:
+            base.pop(cvbuild.US_PHONE_FIELD, None)
+    else:
+        contact = [c for c in (base.get("contact") or [])
+                   if not cvbuild.PHONE_RE.match((c.get("text") or "").strip())]
+        if number:
+            # Second, right after the location. That is where it sits on his base CV.
+            contact.insert(1 if contact else 0, {"text": number})
+        base["contact"] = contact
     bank.write(cvbuild.BASE_FILE,
                json.dumps(base, indent=2, ensure_ascii=False) + "\n")
-    bank.commit(f"cv-base: {'set' if number else 'remove'} phone number")
-    return contact
+    bank.commit(f"cv-base: {'set' if number else 'remove'} "
+                f"{'US ' if region == 'us' else ''}phone number")
+    # The line as it will actually print for that region.
+    market = "US-Remote" if region == "us" else "NL"
+    return cvbuild.load_base(bank, market)[0].get("contact") or []
+
+
+def phone_on(bank, market):
+    """The phone number that will actually print on a CV for this market, or "".
+
+    Reads the resolved contact block rather than either storage location, so it cannot
+    disagree with what gets rendered."""
+    base, _ = cvbuild.load_base(bank, market)
+    for c in base.get("contact") or []:
+        text = (c.get("text") or "").strip()
+        if cvbuild.PHONE_RE.match(text):
+            return text
+    return ""
+
+
+def _read_base_raw(bank):
+    """The skeleton as stored, with no contact block selected.
+
+    set_phone() has to write the file back, so it must not persist the resolved `contact`
+    that load_base() builds for a market -- doing that would bake the North American block
+    over the European one the first time a US number was set."""
+    return cvbuild._read_base(bank)
 
 
 def handle_commands(texts, state, queue, tg, bank=None):
@@ -3351,28 +3396,34 @@ def handle_commands(texts, state, queue, tg, bank=None):
                 tg.send("<b>Sending it.</b> I'll tell you what the page says.")
         elif cmd == "/phone":
             arg = text.split(maxsplit=1)[1].strip() if len(text.split()) > 1 else ""
+            # "/phone us <number>" targets the North American CV; bare "/phone <number>"
+            # is the European one, which is what it has always meant.
+            region = "eu"
+            if arg.lower().startswith("us"):
+                region, arg = "us", arg[2:].strip()
+            which = "US CV" if region == "us" else "European CV"
             if bank is None:
                 tg.send("Can't reach the bullet bank right now. Try again in a bit.")
             elif not arg:
-                base, _ = cvbuild.load_base(bank)
-                now = next((c.get("text") for c in (base.get("contact") or [])
-                            if cvbuild.PHONE_RE.match((c.get("text") or "").strip())), None)
-                tg.send(f"Phone on the CV: <b>{esc(now)}</b>\n\n"
-                        f"<i>/phone &lt;number&gt; to change it, /phone off to remove it.</i>"
-                        if now else
-                        "No phone number on the CV yet.\n\n"
-                        "<i>Send /phone +34 700 000 000 and I'll put it on.</i>")
+                eu = phone_on(bank, "NL")
+                us = phone_on(bank, "US-Remote")
+                tg.send("<b>Phone numbers</b>\n"
+                        f"European CV: {esc(eu) if eu else '<i>none</i>'}\n"
+                        f"US / Canada CV: {esc(us) if us else '<i>none</i>'}\n\n"
+                        "<i>/phone &lt;number&gt; sets the European one, "
+                        "/phone us &lt;number&gt; the North American one. "
+                        "Add 'off' to either to remove it.</i>")
             elif arg.lower() in ("off", "none", "remove", "clear"):
-                set_phone(bank, "")
-                tg.send("Phone number taken off the CV.")
+                set_phone(bank, "", region)
+                tg.send(f"Phone number taken off the {which}.")
             elif not cvbuild.PHONE_RE.match(arg):
                 tg.send(f"<code>{esc(arg)}</code> doesn't look like a phone number. "
                         f"Digits, spaces and a leading + only.")
             else:
-                contact = set_phone(bank, arg)
-                tg.send(f"<b>Phone set.</b>  {esc(arg)}\n\n"
+                contact = set_phone(bank, arg, region)
+                tg.send(f"<b>Phone set</b> on the {which}.  {esc(arg)}\n\n"
                         + esc(" | ".join(c.get("text", "") for c in contact))
-                        + "\n\n<i>That's the contact line on every CV from now on.</i>")
+                        + f"\n\n<i>That's the contact line on every {which} from now on.</i>")
         elif cmd in ("/help", "/start"):
             tg.send(HELP)
         elif cmd.startswith("/"):

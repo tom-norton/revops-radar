@@ -27,13 +27,37 @@
   "contact_separator": "  |  ",
 
   "_contact_note": [
-    "The phone number is deliberately NOT here. This repo is public and a phone number in",
+    "Phone numbers are deliberately NOT here. This repo is public and a phone number in",
     "a public repo gets scraped; the same number on a CV sent to a named recruiter does",
-    "not. It lives in the bank's private copy of this file instead.",
+    "not. They live in the bank's private copy of this file instead.",
     "",
-    "Nobody edits JSON to set it. Send the bot  /phone +34 700 000 000  and it writes the",
-    "bank's copy and commits;  /phone off  takes it back off;  /phone  on its own says",
-    "what is currently on the CV."
+    "Nobody edits JSON to set them. Send the bot  /phone +34 700 000 000  for the European",
+    "number and  /phone us +1 555 000 0000  for the US one;  /phone off  and  /phone us off",
+    "take them back off;  /phone  on its own says what is currently on each CV.",
+    "",
+    "There are two contact blocks because there are two audiences. `contact` is the",
+    "European CV. `contact_na` is the Canada/US one: a Grand Rapids address, the US",
+    "number, and NO nationality line -- stating US citizenship on a US application is",
+    "noise, and on a Canadian one it invites a sponsorship question that does not apply.",
+    "cvbuild.load_base(bank, market) picks between them, so a market added to",
+    "cvbuild.NA_MARKETS is all it takes to route a new geography at the NA block."
+  ],
+
+  "nationality": "United States",
+  "_nationality_note": [
+    "Kept as a field of its own rather than read back off the contact line, because it is",
+    "a FACT the form filler needs (submit.work_status answers work-authorisation questions",
+    "from it) and separately a line the European CV happens to print. When the NA contact",
+    "block dropped the printed line, reading nationality off the contact array silently",
+    "broke every work-authorisation answer for Canada and the US."
+  ],
+  "citizenships": ["United States", "Canada"],
+  "_citizenships_note": [
+    "Canadian by descent as of December 2025. No certificate yet and the application runs",
+    "about two more years, so submit.py answers Canadian work-authorisation questions yes",
+    "(citizenship by descent is automatic at birth -- the certificate is proof, not the",
+    "grant) and attaches a note about the pending certificate and the employer letter that",
+    "can expedite it. Tom approves every plan before it is sent."
   ],
 
   "contact": [
@@ -42,6 +66,13 @@
     { "text": "linkedin.com/in/tom-p-norton",
       "href": "https://www.linkedin.com/in/tom-p-norton/" },
     { "text": "Nationality: United States" }
+  ],
+
+  "contact_na": [
+    { "text": "Grand Rapids, MI" },
+    { "text": "tp.norton@pm.me" },
+    { "text": "linkedin.com/in/tom-p-norton",
+      "href": "https://www.linkedin.com/in/tom-p-norton/" }
   ],
 
   "education": [

@@ -877,7 +877,7 @@ def test_the_phone_number_goes_on_from_a_chat_message():
     texts = [c["text"] for c in base["contact"]]
     assert texts[1] == "+34 722 719 046", texts       # second, right after the location
     assert "Barcelona" in texts[0]
-    assert not cvbuild.skeleton_gaps(base)
+    assert not any("contact line" in g for g in cvbuild.skeleton_gaps(base))
     assert "Phone set" in tg.last()
 
     # Changing it replaces rather than stacks, and it can be taken off again.
@@ -888,6 +888,54 @@ def test_the_phone_number_goes_on_from_a_chat_message():
     applyq.handle_commands([(0, "/phone off")], {"current": None}, [], tg, bank)
     base = json.loads(bank.files[cvbuild.BASE_FILE])
     assert not any(cvbuild.PHONE_RE.match(c["text"]) for c in base["contact"])
+
+
+def test_the_us_number_is_stored_apart_and_only_prints_on_na_cvs():
+    """There are two CVs and two numbers. The North American contact block is a separate
+    array, so a number inserted into `contact` would never appear on a Grand Rapids CV --
+    which is why the US one is its own field, spliced in at render time."""
+    bank = FakeBank()
+    tg = FakeTelegram()
+    applyq.handle_commands([(0, "/phone +34 722 719 046")], {"current": None}, [], tg, bank)
+    applyq.handle_commands([(0, "/phone us +1 724 470 7337")], {"current": None}, [], tg,
+                           bank)
+    assert "US CV" in tg.last()
+
+    # Each market prints its own number, and neither leaks into the other.
+    for market in ("NL", "IE", "UK-London", "BE"):
+        line = [c["text"] for c in cvbuild.load_base(bank, market)[0]["contact"]]
+        assert "+34 722 719 046" in line, market
+        assert "+1 724 470 7337" not in line, market
+        assert any("Barcelona" in t for t in line), market
+    for market in ("CA", "US-Remote"):
+        line = [c["text"] for c in cvbuild.load_base(bank, market)[0]["contact"]]
+        assert "+1 724 470 7337" in line, market
+        assert "+34 722 719 046" not in line, market
+        assert any("Grand Rapids" in t for t in line), market
+        # no nationality line on a North American CV
+        assert not any("Nationality" in t for t in line), market
+
+    # Setting the US number must not have overwritten the European block with the NA one,
+    # which is what happens if the resolved contact array is written back to the file.
+    stored = json.loads(bank.files[cvbuild.BASE_FILE])
+    assert any("Barcelona" in (c.get("text") or "") for c in stored["contact"])
+    assert stored.get("contact_na")
+    assert stored[cvbuild.US_PHONE_FIELD] == "+1 724 470 7337"
+
+    # And each can be removed without touching the other.
+    applyq.handle_commands([(0, "/phone us off")], {"current": None}, [], tg, bank)
+    assert applyq.phone_on(bank, "US-Remote") == ""
+    assert applyq.phone_on(bank, "NL") == "+34 722 719 046"
+
+
+def test_bare_phone_reports_both_numbers():
+    bank = FakeBank()
+    tg = FakeTelegram()
+    applyq.handle_commands([(0, "/phone +34 722 719 046")], {"current": None}, [], tg, bank)
+    applyq.handle_commands([(0, "/phone")], {"current": None}, [], tg, bank)
+    said = tg.last()
+    assert "European CV" in said and "US / Canada CV" in said
+    assert "+34 722 719 046" in said
 
 
 def test_a_phone_number_that_is_not_one_is_refused_rather_than_written():
@@ -911,12 +959,20 @@ def test_the_public_seed_carries_no_phone_number_and_says_so():
     """This repo is public. A phone number in a public repo gets scraped; the same number
     on a CV sent to a named recruiter does not. It lives in the bank's private copy, and
     the gap is reported rather than left to be noticed on a finished PDF."""
-    assert not any(cvbuild.PHONE_RE.match((c.get("text") or "").strip())
-                   for c in BASE["contact"])
-    assert any("phone" in g for g in cvbuild.skeleton_gaps(BASE))
-    withphone = json.loads(json.dumps(BASE))
-    withphone["contact"].insert(1, {"text": "+34 722 719 046"})
-    assert not any("phone" in g for g in cvbuild.skeleton_gaps(withphone))
+    for block in ("contact", "contact_na"):
+        assert not any(cvbuild.PHONE_RE.match((c.get("text") or "").strip())
+                       for c in BASE[block]), block
+    assert not BASE.get(cvbuild.US_PHONE_FIELD)
+    # Both numbers are reported as gaps, separately, because they are stored separately and
+    # the North American one is the one that goes silently missing: a Canada or US CV
+    # renders perfectly well without it, just with no way for a recruiter to call.
+    gaps = cvbuild.skeleton_gaps(BASE)
+    assert any("contact line" in g for g in gaps)
+    assert any("US phone" in g for g in gaps)
+    withphones = json.loads(json.dumps(BASE))
+    withphones["contact"].insert(1, {"text": "+34 722 719 046"})
+    withphones[cvbuild.US_PHONE_FIELD] = "+1 724 470 7337"
+    assert not any("phone" in g for g in cvbuild.skeleton_gaps(withphones))
 
 
 def test_the_skeleton_is_nudged_about_once_not_every_role():

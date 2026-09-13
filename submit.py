@@ -260,7 +260,13 @@ def identity(base):
     out = {"full_name": pretty,
            "first_name": parts[0] if parts else "",
            "last_name": " ".join(parts[1:]) if len(parts) > 1 else "",
-           "email": "", "phone": "", "location": "", "linkedin": "", "nationality": ""}
+           "email": "", "phone": "", "location": "", "linkedin": "",
+           # Read off its own field, not off the printed contact line. The North American
+           # contact block deliberately prints no nationality, and while that was being
+           # scraped out of the contact array it silently emptied nationality for every
+           # Canadian and US application -- which is the one input work_status() has.
+           "nationality": ((base or {}).get("nationality") or "").strip(),
+           "citizenships": [c for c in ((base or {}).get("citizenships") or []) if c]}
     for c in (base or {}).get("contact", []):
         text = " ".join((c.get("text") or "").split())
         href = c.get("href") or ""
@@ -273,7 +279,10 @@ def identity(base):
         elif cvbuild.PHONE_RE.match(text):
             out["phone"] = out["phone"] or text
         elif NATIONALITY_RE.match(text):
-            out["nationality"] = NATIONALITY_RE.match(text).group(1).strip()
+            # Fallback only: a skeleton written before `nationality` became a field of its
+            # own still carries it on the printed line.
+            out["nationality"] = (out["nationality"]
+                                  or NATIONALITY_RE.match(text).group(1).strip())
         elif "," in text and not out["location"]:
             out["location"] = text
     return out
@@ -371,29 +380,64 @@ SPONSOR_RE = re.compile(r"(sponsor\w*|visa support|immigration support|require .
                         r"need .*(?:visa|sponsorship))", re.I)
 
 
-def work_status(label, market, nationality):
+# What Tom holds, and the market each one makes him a citizen of. Canada is here on the
+# strength of descent: Canadian citizenship by descent is automatic at birth, so he IS a
+# citizen and needs no authorisation or sponsorship. The certificate is PROOF of that, not
+# the grant of it, which is why "yes" is the accurate answer to an authorisation question
+# and not a hopeful one.
+#
+# What the certificate does affect is the start date, and that is a real thing an employer
+# needs to know rather than something to bury -- hence CITIZENSHIP_CAVEAT, which rides
+# along on the answer's `why` so it reaches the plan Tom approves before anything is sent.
+CITIZEN_MARKETS = {"US": "United States", "CA": "Canada"}
+CITIZENSHIP_CAVEAT = {
+    "CA": ("Canadian citizen by descent (Dec 2025); certificate application pending, "
+           "and an employer letter stating a contingent offer can expedite it"),
+}
+
+
+def citizen_of(country, citizenships):
+    """True when one of the citizenships on file covers this market's country."""
+    want = CITIZEN_MARKETS.get(country)
+    return bool(want and any(want.lower() in (c or "").lower() for c in citizenships or []))
+
+
+def work_status(label, market, nationality, citizenships=None):
     """(answer, why) for a work-authorisation or sponsorship question, or ("", "").
 
-    Answered here, off the market the role is in and the nationality on the CV, because
+    Answered here, off the market the role is in and the citizenships on the CV, because
     both of those are facts on file. A US citizen applying to a Dublin role needs
     sponsorship and is not already authorised, and that is true whatever a model would like
-    the answer to be. Anything more complicated than those two shapes is left to Tom."""
+    the answer to be. Anything more complicated than those two shapes is left to Tom.
+
+    `citizenships` is what makes Canada work. Keyed on a single `nationality` string, a
+    Canadian role read as "not home" and answered "needs sponsorship / not authorised",
+    which is wrong twice over for a citizen. It defaults to the nationality so a caller
+    that has not been updated keeps its old behaviour rather than silently losing the US
+    answers too."""
     label = label or ""
-    us = bool(re.search(r"united states|u\.?s\.?a?\b|american", nationality or "", re.I))
-    if not us:
+    citizenships = list(citizenships or ([nationality] if nationality else []))
+    if not citizenships:
         return "", ""
-    # Which market the posting is in. The profile's markets are "IE", "US-Remote"
-    # and the like, so the country is the part before the dash.
+    # Which market the posting is in. The markets are "IE", "US-Remote" and the like, so
+    # the country is the part before the dash.
     country = (market or "").split("-")[0].strip().upper()
+    if country in ("USA",):
+        country = "US"
     if not country:
         return "", ""
-    home = country in ("US", "USA")
+    home = citizen_of(country, citizenships)
+    if not home and not citizen_of("US", citizenships):
+        # Neither a citizen of the market nor of anywhere this function knows how to
+        # reason from. Left to Tom rather than guessed.
+        return "", ""
+    caveat = CITIZENSHIP_CAVEAT.get(country) if home else None
+    who = f"{CITIZEN_MARKETS[country]} citizen" if home else "US citizen"
+    why = (caveat or f"{who}; the role is in {country}, per the posting")
     if SPONSOR_RE.search(label):
-        return (NO if home else YES), ("US citizen; the role is in "
-                                       f"{country}, per the posting")
+        return (NO if home else YES), why
     if AUTHORISED_RE.search(label):
-        return (YES if home else NO), ("US citizen; the role is in "
-                                       f"{country}, per the posting")
+        return (YES if home else NO), why
     return "", ""
 
 
@@ -456,7 +500,8 @@ def plan_known(fields, ident, job, files):
         if value:
             answers[fid] = answer(value, BY_CODE, why)
             continue
-        status, why = work_status(label, job.get("market"), ident.get("nationality"))
+        status, why = work_status(label, job.get("market"), ident.get("nationality"),
+                                  ident.get("citizenships"))
         if status:
             opt = yes_no_option(status, f.get("options")) if kind == SELECT else \
                 (status.capitalize())
