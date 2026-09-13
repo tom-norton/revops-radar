@@ -355,12 +355,16 @@ CLAUDE_ATTEMPTS = 3           # per call, with exponential backoff on 429/5xx/ti
 NTFY_TOPIC = "tom-revops-radar-c16aabb2"   # push notifications for strong matches (ntfy.sh)
 NTFY_SCORE_THRESHOLD = 7.5
 KEEP_DAYS = 45
-# How far back a row is worth a board lookup. Matches what the dashboard shows, because a
-# row he cannot see is a row whose board nobody is waiting to know.
-BOARD_LOOKUP_DAYS = 7
+# How far back a row is worth a board lookup. It used to match MAX_POST_AGE_DAYS exactly,
+# on the reasoning that a row he cannot see is a row whose board nobody is waiting to
+# know -- but the dashboard keeps rows for KEEP_DAYS (45), not 7, so that was leaving
+# three quarters of the visible board permanently unlooked-up. Two weeks is a compromise:
+# it covers the rows he is realistically still deciding on, and the per-company cache
+# means the extra reach costs each employer once, not once a run.
+BOARD_LOOKUP_DAYS = 14
 # New companies looked up per run. The cache makes each one a one-off cost, so this is
 # only about keeping any single scan short.
-BOARD_LOOKUPS_PER_RUN = 40
+BOARD_LOOKUPS_PER_RUN = 60
 MAX_POST_AGE_DAYS = 7    # drop postings older than this when the source gives us a date
 # How much of the posting the scoring model sees. The old 2200 cut a typical 5,000-char ad
 # roughly in half, and the half it threw away was the bottom -- which is exactly where the
@@ -3003,10 +3007,23 @@ def main():
     # promise without ever opening a browser. Applied to the whole merged list, not just
     # this run's new rows, so a row that has carried an also_seen link since before this
     # existed gets it filled in on the very next scan rather than staying blank forever.
+    # Imported here, not at the top. findform imports this module -- it needs market_of()
+    # to tell whether a board's posting is in one of Tom's markets -- so a top-level
+    # import either way round is a cycle. It resolves at runtime today because both sides
+    # only touch the other inside functions, which is a thing that works right up until
+    # somebody adds a module-level reference and the whole pipeline stops importing. One
+    # deferred import is cheaper than that failure.
+    import findform
     for j in merged:
         ats, fillable = submit.application_status(j)
         j["ats"] = ats
         j["ats_fillable"] = fillable
+        # Separates two things that used to look like one problem. ats_fillable was false
+        # on 432 of 478 rows, which reads as "the bot cannot fill this" -- but for most of
+        # them the link is a job-board advert and the form was never found at all. One is a
+        # missing driver, the other a missing lookup, and only the second is fixed below.
+        j["apply_link"] = findform.apply_link_state(
+            j.get("apply_url") or j.get("url"), fillable)
 
     # Then the half that costs a network call: for the rows that still have no known
     # application host, go and find the company's own board. 373 of 492 rows were in that
@@ -3014,7 +3031,7 @@ def main():
     # /submit would have found a board for a good share the moment one was queued. The
     # answer belongs on the dashboard, before he picks.
     #
-    # Bounded four ways, because this is the one part of a scan that talks to six board
+    # Bounded four ways, because this is the one part of a scan that talks to eight board
     # APIs, and a scan that overruns its fifteen-minute tick races the next one on the
     # push to main. Only rows he can actually see are looked up (recent, and at or above
     # the borderline floor); the answer is cached per COMPANY, negatives included, so the
@@ -3029,14 +3046,13 @@ def main():
             if not j.get("ats")
             and j.get("found_at", "") >= cutoff_seen
             and (j.get("score") or 0) >= FLOOR]
+    # Best row first, by the same ordering the scoring budget uses, and within that the
+    # rows whose only link is a job-board advert. A row already pointing at a company ATS
+    # has somewhere to apply even if this lookup never runs; an "aggregator only" row has
+    # nowhere, so it is the one the budget should be spent on.
+    todo.sort(key=lambda j: (j.get("apply_link") == "aggregator only",
+                             priority(j, deferrals)), reverse=True)
     if todo:
-        # Imported here, not at the top. findform imports this module -- it needs
-        # market_of() to tell whether a board's posting is in one of Tom's markets -- so a
-        # top-level import either way round is a cycle. It resolves at runtime today
-        # because both sides only touch the other inside functions, which is a thing that
-        # works right up until somebody adds a module-level reference and the whole
-        # pipeline stops importing. One deferred import is cheaper than that failure.
-        import findform
         cache = findform.load_cache()
         before = len(cache)
         found = findform.resolve_rows(todo, companies, cache,
@@ -3044,17 +3060,34 @@ def main():
         hits = 0
         for j in todo:
             r = found.get(j.get("id")) or {}
+            # Free either way: the board was fetched to match this row's title against
+            # it, and every board entry carries a location, so which target markets the
+            # employer hires in is arithmetic over data already in hand. It only earns its
+            # place on a US row -- profile.md and the location_visa rubric lift the US band
+            # from 2-3 to 4-5 when there is a route out -- so it is only recorded there.
+            if r.get("transfer_markets") and j.get("market") == "US-Remote":
+                j["transfer_markets"] = ", ".join(r["transfer_markets"])
             if r.get("outcome") == "found":
                 j["ats"] = submit.detect_ats(r["url"]) or submit.apply_host_name(r["url"])
                 j["ats_fillable"] = bool(submit.detect_ats(r["url"]))
                 # Kept so /submit does not repeat the lookup, and so the dashboard can
                 # link straight at the application rather than the advert.
                 j["apply_url"] = r["url"]
+                j["apply_link"] = findform.apply_link_state(r["url"], j["ats_fillable"])
                 hits += 1
         findform.save_cache(cache)
         src_status["board lookup"] = (
             f"{len(todo)} rows with no known board, {hits} resolved; "
             f"{len(cache) - before} companies newly cached, {len(cache)} known")
+
+    # How much of the board actually has somewhere to apply. Worth a line of its own
+    # because it was 76% unusable and nothing said so: the dashboard's only signal was
+    # ats_fillable, which conflates "no driver for this ATS" with "no form found at all".
+    states = {}
+    for j in merged:
+        states[j.get("apply_link") or "unresolved"] = (
+            states.get(j.get("apply_link") or "unresolved", 0) + 1)
+    src_status["apply links"] = ", ".join(f"{k} {v}" for k, v in sorted(states.items()))
 
     src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
     # Everything that cleared stage one but did not get a deep-scoring slot. Prune the

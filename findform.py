@@ -33,6 +33,7 @@ import json
 import os
 import re
 import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -88,6 +89,20 @@ BOARDS = {
                        "?limit=100",
     "recruitee": "https://{slug}.recruitee.com/api/offers/",
     "workable": "https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true",
+    # Added after counting what the dashboard actually links to. Of 478 rows, 367 had no
+    # resolved ATS at all, and the `ats` values that DID resolve (from hiring.cafe's own
+    # apply_url, not from a probe here) were led by workday (14), then eightfold, personio,
+    # teamtailor and icims.
+    #
+    # Personio and Teamtailor are the two of those that a slug guess can reach: both expose
+    # a predictable JSON endpoint under <slug>.<host>. Workday cannot be guessed and is
+    # deliberately absent -- its endpoint needs a tenant AND a career-site name AND the
+    # wdN datacenter number (acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/jobs), none
+    # of which follows from a company name. Eightfold and iCIMS are the same problem.
+    # Those rows still get a real apply link when a source hands one over; they just
+    # cannot be discovered from the company name alone.
+    "personio": "https://{slug}.jobs.personio.com/search.json",
+    "teamtailor": "https://{slug}.teamtailor.com/jobs.json",
 }
 # Where the form actually lives, as opposed to wherever the employer chose to link it.
 # Greenhouse's `absolute_url` is often a careers page on the company's own domain with the
@@ -201,9 +216,28 @@ def _workable(slug, data):
                "linked_from": j.get("url", "")}
 
 
+def _personio(slug, data):
+    # search.json answers a bare list, not an object, and a slug that does not exist
+    # answers 404 -- so board_jobs()'s status check already filters the misses.
+    for j in (data if isinstance(data, list) else data.get("jobs", [])):
+        office = j.get("office") or ""
+        yield {"title": j.get("name") or j.get("title", ""),
+               "location": ", ".join(x for x in (office, j.get("country")) if x) or office,
+               "url": j.get("url") or "", "linked_from": ""}
+
+
+def _teamtailor(slug, data):
+    for j in (data.get("jobs", []) if isinstance(data, dict) else data):
+        loc = j.get("location") or {}
+        yield {"title": j.get("title", ""),
+               "location": (loc.get("name") if isinstance(loc, dict) else str(loc)) or "",
+               "url": j.get("careersite-job-url") or j.get("url", ""),
+               "linked_from": ""}
+
+
 READERS = {"greenhouse": _greenhouse, "ashby": _ashby, "lever": _lever,
            "smartrecruiters": _smartrecruiters, "recruitee": _recruitee,
-           "workable": _workable}
+           "workable": _workable, "personio": _personio, "teamtailor": _teamtailor}
 
 
 def board_jobs(ats, slug, fetch=None):
@@ -219,7 +253,7 @@ def board_jobs(ats, slug, fetch=None):
                                                        "use)",
                                          "Accept": "application/json"},
                                 # Short, because a miss is the normal outcome of a guessed
-                                # slug and there are up to nine of these behind one
+                                # slug and there are up to sixteen of these behind one
                                 # /submit. The default 30s would make a wrong guess cost
                                 # more than a right one.
                                 timeout=PROBE_TIMEOUT)
@@ -238,13 +272,14 @@ def board_jobs(ats, slug, fetch=None):
 def probe_slug(slug, fetch=None):
     """(ats, jobs) for the first board in BOARDS order that answers for one slug.
 
-    The six probes run together rather than one after another, and the reason is a
-    measurement rather than a preference. A typical miss costs 2.8s for all twelve probes,
-    which is nothing -- but a company whose board host simply hangs costs PROBE_TIMEOUT six
-    times over per slug, and a backfill of 35 companies that should have taken two minutes
+    The eight probes run together rather than one after another, and the reason is a
+    measurement rather than a preference. A typical miss costs a couple of seconds for all
+    of them,
+    which is nothing -- but a company whose board host simply hangs costs PROBE_TIMEOUT
+    once per board per slug, and a backfill of 35 companies that should have taken two minutes
     took eleven. A scan runs every fifteen minutes and ends by pushing to main; two
     overlapping ones race on that push. So the tail is the thing worth bounding, and
-    concurrency bounds it at one timeout per slug instead of six.
+    concurrency bounds it at one timeout per slug instead of eight.
 
     What does NOT change is the answer. The winner is still the first board in BOARDS
     order that came back with something, not whichever request happened to return first, so
@@ -266,7 +301,7 @@ def probe_slug(slug, fetch=None):
 # ---------------------------------------------------------------- the company cache
 #
 # 281 distinct companies sit behind the 373 rows whose application host nothing knew. The
-# expensive half of finding one is guessing the slug -- up to two spellings against six
+# expensive half of finding one is guessing the slug -- up to two spellings against eight
 # board APIs before anything is known -- and the answer is a property of the COMPANY, not
 # of the row, so it is worth writing down. A negative is worth writing down too: without
 # one, every scan re-probes the same 200 companies that run their own careers stack and
@@ -306,7 +341,7 @@ def save_cache(boards, path=CACHE_FILE):
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"_readme": [
             "Which job board each company posts on, discovered by findform.py and cached",
-            "here so a scan does not re-probe six board APIs for every company every run.",
+            "here so a scan does not re-probe eight board APIs for every company every run.",
             "An empty `ats` is a real answer: nothing public was found, and it will be",
             f"asked again after {CACHE_TTL_DAYS} days in case they move.",
             "A row records the board found under that company's NAME, which is not proof",
@@ -345,7 +380,7 @@ def find_board(company, companies=None, fetch=None, cache=None):
 
     # A cached answer skips the slug guessing entirely -- including a cached "nothing
     # here", which is the whole point: most of these companies run their own careers
-    # stack and asking six APIs about them again tomorrow finds the same nothing.
+    # stack and asking eight APIs about them again tomorrow finds the same nothing.
     key = cache_key(company)
     hit = (cache or {}).get(key)
     if cache is not None and cache_fresh(hit):
@@ -353,6 +388,8 @@ def find_board(company, companies=None, fetch=None, cache=None):
             return "", "", []
         jobs = board_jobs(hit["ats"], hit["slug"], fetch)
         if jobs:
+            if cache is not None:
+                hit["markets"] = transfer_markets(jobs)
             return hit["ats"], hit["slug"], jobs
         # It was there and now is not. Fall through and look again rather than trusting a
         # stale answer, and let the re-probe overwrite it.
@@ -361,7 +398,11 @@ def find_board(company, companies=None, fetch=None, cache=None):
         ats, jobs = probe_slug(slug, fetch)
         if jobs:
             if cache is not None:
-                cache[key] = {"ats": ats, "slug": slug, "at": _today()}
+                # `markets` rides along because the board is already in hand and it is a
+                # property of the company, same as ats/slug. Older entries simply lack the
+                # key; nothing reads it as authoritative when the board has been refetched.
+                cache[key] = {"ats": ats, "slug": slug, "at": _today(),
+                              "markets": transfer_markets(jobs)}
             return ats, slug, jobs
     if cache is not None:
         cache[key] = {"ats": "", "slug": "", "at": _today()}
@@ -378,6 +419,35 @@ def same_market(market, location):
     if not market:
         return False
     return scan.market_of("", location or "") == market
+
+
+# Which markets are worth knowing an employer hires in. Tiers 1-3, so the four European
+# markets plus Canada: the US is excluded because "a US employer also posts in the US" says
+# nothing, and the whole point of this signal is a route OUT of the US.
+TRANSFER_TARGETS = ("NL", "IE", "UK-London", "BE", "CA")
+
+
+def transfer_markets(jobs):
+    """The target markets an employer posts roles in, from their own board.
+
+    Free. find_board() has already fetched the whole board to match the posting's title
+    against it, and every board entry carries a location, so this is arithmetic over data
+    already in hand rather than a new request.
+
+    Why it matters only for the US: Tom does not want to live there, so a US role is worth
+    far more when the employer also hires somewhere he does. An internal transfer later is
+    a route abroad without changing employer, and sponsorship is a lighter ask once they
+    already know you. profile.md and the location_visa rubric both lift the US band from
+    2-3 to 4-5 on the strength of this.
+
+    Ordered by TRANSFER_TARGETS rather than by how many roles are in each, because it is
+    read as "can I get to the Netherlands from here", not as a headcount."""
+    found = set()
+    for j in jobs or []:
+        market = scan.market_of("", j.get("location") or "")
+        if market in TRANSFER_TARGETS:
+            found.add(market)
+    return [m for m in TRANSFER_TARGETS if m in found]
 
 
 def rank(jobs, title, market=""):
@@ -439,11 +509,67 @@ def find_form(job, companies=None, fetch=None, fillable=None, cache=None):
     return dict(board, outcome="gone")
 
 
+# ---------------------------------------------------------------- aggregator links
+
+# Hosts that advertise a role but never hold its application form. Of 478 dashboard rows,
+# 253 linked to linkedin.com, 79 to adzuna.co.uk/.nl and 31 to revopsroles.com: 76% of the
+# board pointed somewhere no application can be made.
+#
+# Following those links to the employer was tried and does NOT work, for either of the two
+# big ones, so this deliberately does not attempt it:
+#
+#   Adzuna's API `redirect_url` is not a redirect at all -- it answers 200 with an Adzuna
+#   details page. The real apply button on that page points at /land/ad/<id>?aztt=<JWT>,
+#   which is a second Adzuna interstitial, returns 403 from CloudFront to a datacenter IP,
+#   and carries an `exp` claim so the URL would expire anyway. Measured on six real rows:
+#   0 resolved.
+#
+#   LinkedIn's "apply on company website" URL is behind a login for anyone without a
+#   session, and what is left on the guest page is Easy Apply.
+#
+# So the route to a real form for these rows is the one this module already takes: go to
+# the company instead, via find_board(). What these patterns are for is making the gap
+# VISIBLE and letting a scan spend its board-lookup budget on the rows that need it.
+AGGREGATOR_HOSTS = re.compile(
+    r"(^|\.)(adzuna\.[a-z.]+|indeed\.[a-z.]+|reed\.co\.uk|linkedin\.com"
+    r"|revopsroles\.com|glassdoor\.[a-z.]+|ziprecruiter\.[a-z.]+"
+    r"|google\.[a-z.]+|jobs\.google\.[a-z.]+)$", re.I)
+
+
+def _host(url):
+    try:
+        return (urllib.parse.urlparse(url or "").hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def is_aggregator(url):
+    """True when a URL is an advert rather than somewhere an application can be made."""
+    return bool(AGGREGATOR_HOSTS.search(_host(url)))
+
+
+def apply_link_state(url, ats_fillable=False):
+    """How usable a row's link is: "auto-fillable", "company ATS", "aggregator only" or
+    "unresolved".
+
+    The point is to separate two problems that looked like one. `ats_fillable` was true on
+    46 of 478 rows and false on the other 432, which reads as "the bot cannot fill this" --
+    but for most of them the real reason is that the link is a job-board advert and the
+    form was never found at all. One of those is a missing driver; the other is a missing
+    lookup, and only the second is fixed by raising the board-lookup budget."""
+    if not url:
+        return "unresolved"
+    if is_aggregator(url):
+        return "aggregator only"
+    return "auto-fillable" if ats_fillable else "company ATS"
+
+
 # ---------------------------------------------------------------- resolving in bulk
 
 # How long one scan may spend meeting new employers, in seconds. A belt to the `limit`
 # braces, and it exists because `limit` bounds the number of companies rather than the
-# time: a company costs 2.8s when every board answers and 12s per slug when one hangs, and
+# time: a company costs a couple of seconds when every board answers and 12s per slug
+# when one hangs, and
 # which of those a given run gets is a property of somebody else's infrastructure. A scan
 # fires every fifteen minutes and ends by pushing to main, so two overlapping runs race on
 # that push -- and that is a real failure, where "some companies waited until the next
@@ -491,6 +617,7 @@ def resolve_rows(rows, companies=None, cache=None, fetch=None, limit=None,
         except Exception as e:
             print(f"  board lookup failed for {company}: {str(e)[:80]}")
             continue
+        markets = transfer_markets(jobs)
         for row in group:
             rid = row.get("id")
             if not jobs:
@@ -498,6 +625,9 @@ def resolve_rows(rows, companies=None, cache=None, fetch=None, limit=None,
                 continue
             matches, best = rank(jobs, row.get("title") or "", row.get("market") or "")
             base = {"company": company, "ats": ats, "slug": slug, "board_size": len(jobs),
+                    # Computed once per company, not once per row -- same reason the board
+                    # fetch is grouped by company.
+                    "transfer_markets": markets,
                     "candidates": [{k: j.get(k) for k in
                                     ("title", "location", "url", "score")}
                                    for j in matches[:5]]}

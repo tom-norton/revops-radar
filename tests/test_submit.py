@@ -943,6 +943,66 @@ def test_every_board_that_can_be_found_can_also_be_shown():
     assert applyq.board_link({"ats": "greenhouse", "slug": ""}) == ""
 
 
+def test_every_board_reader_has_a_url_and_vice_versa():
+    """BOARDS and READERS are two halves of one fact. A board with no reader is fetched and
+    thrown away; a reader with no URL is dead code."""
+    assert set(findform.BOARDS) == set(findform.READERS)
+
+
+def test_aggregator_links_are_told_apart_from_real_apply_links():
+    """76% of the dashboard pointed somewhere no application can be made -- 253 rows at
+    linkedin.com, 79 at adzuna, 31 at revopsroles -- and the only signal for it was
+    ats_fillable, which conflates "no driver for this ATS" with "no form found at all"."""
+    for url in ["https://www.adzuna.co.uk/jobs/details/1", "https://www.adzuna.nl/details/1",
+                "https://linkedin.com/jobs/view/1", "https://uk.indeed.com/viewjob?jk=1",
+                "https://revopsroles.com/jobs/x", "https://www.reed.co.uk/jobs/1"]:
+        assert findform.is_aggregator(url), url
+        assert findform.apply_link_state(url) == "aggregator only", url
+    for url in ["https://job-boards.greenhouse.io/acme/jobs/1",
+                "https://jobs.ashbyhq.com/acme/1", "https://acme.com/careers/1",
+                "https://acme.jobs.personio.com/job/1"]:
+        assert not findform.is_aggregator(url), url
+    # the three states are distinct, and a driver upgrades the label
+    assert findform.apply_link_state("") == "unresolved"
+    assert findform.apply_link_state("https://acme.com/careers/1") == "company ATS"
+    assert findform.apply_link_state("https://job-boards.greenhouse.io/a/jobs/1",
+                                     True) == "auto-fillable"
+
+
+def test_a_malformed_url_does_not_take_down_the_apply_link_check():
+    """This runs over every row on every scan, so it has to be total."""
+    for url in [None, "", "not a url", "http://", "://broken", "javascript:void(0)"]:
+        assert findform.apply_link_state(url) in ("unresolved", "company ATS",
+                                                  "aggregator only")
+
+
+def test_transfer_markets_reads_the_board_already_in_hand():
+    """A US role is worth far more when the employer also hires somewhere Tom wants to
+    live, and the board has already been fetched to match this row's title against it, so
+    the signal is free. Ordered by preference, not by how many roles are in each."""
+    board = [{"location": "Amsterdam, Netherlands"}, {"location": "Austin, TX"},
+             {"location": "Toronto, ON"}, {"location": "Dublin, Ireland"},
+             {"location": "Berlin, Germany"}, {"location": "Remote (US)"},
+             {"location": "London, England"}]
+    assert findform.transfer_markets(board) == ["NL", "IE", "UK-London", "CA"]
+    # a US-only employer offers no route out, which is the whole point of the signal
+    assert findform.transfer_markets([{"location": "Austin, TX"},
+                                      {"location": "Remote (US)"}]) == []
+    assert findform.transfer_markets([]) == []
+    assert findform.transfer_markets(None) == []
+    # the US is excluded from the targets: "a US employer also posts in the US" says nothing
+    assert "US-Remote" not in findform.TRANSFER_TARGETS
+
+
+def test_resolve_rows_reports_transfer_markets_once_per_company():
+    rows = [{"id": "r0", "company": "Acme", "title": "RevOps Manager",
+             "market": "US-Remote"}]
+    out = findform.resolve_rows(rows, [], {}, board(gh_board(
+        ("RevOps Manager", "Remote - US"),
+        ("Account Executive", "Amsterdam, Netherlands"))))
+    assert out["r0"]["transfer_markets"] == ["NL"]
+
+
 # ---------------------------------------------------------------- the state machine
 
 LETTER_TEXT = "Dear Acme Hiring Team, I have run renewal forecasting for four years."

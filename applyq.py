@@ -2822,7 +2822,9 @@ def board_link(found):
             "lever": f"https://jobs.lever.co/{slug}",
             "smartrecruiters": f"https://jobs.smartrecruiters.com/{slug}",
             "recruitee": f"https://{slug}.recruitee.com/",
-            "workable": f"https://apply.workable.com/{slug}/"}.get(ats, "")
+            "workable": f"https://apply.workable.com/{slug}/",
+            "personio": f"https://{slug}.jobs.personio.com/",
+            "teamtailor": f"https://{slug}.teamtailor.com/jobs"}.get(ats, "")
 
 
 def resolve_form(state, job, tg, url):

@@ -364,15 +364,40 @@ nothing but "unknown" about every one of them — while a board existed for a go
 moment `/submit` was pointed at them. So the lookup moved forward: each scan resolves the
 recent, above-floor rows whose board is unknown, and writes the answer onto the card.
 
+**Every row now carries an `apply_link` state**, and the scan reports the split, because
+"can I actually apply to this" was invisible. The only signal used to be `ats_fillable`,
+which was false on 432 of 478 rows and conflates two different problems: *no driver for
+this ATS* and *no form was ever found*. The four states are `auto-fillable`,
+`company ATS`, `aggregator only` and `unresolved`; a recent run read
+`aggregator only 353, auto-fillable 44, company ATS 87`.
+
+Following an aggregator link to the employer was tried and **does not work**, so the code
+does not attempt it:
+
+- **Adzuna's** API `redirect_url` is not a redirect — it answers 200 with an Adzuna
+  details page. The apply button on that page goes to `/land/ad/<id>?aztt=<JWT>`, a second
+  Adzuna interstitial that returns **403 from CloudFront** to a datacenter IP and carries
+  an `exp` claim, so the URL would expire regardless. Measured on six real rows: 0 resolved.
+- **LinkedIn's** "apply on company website" URL is behind a login, and the guest page only
+  offers Easy Apply.
+
+So the route for those rows is the one this module already takes: go to the company
+instead. What the `apply_link` state buys is that the board-lookup budget is now spent
+**aggregator-only rows first** — a row already pointing at a company ATS has somewhere to
+apply even if the lookup never runs, and an aggregator-only row has nowhere. Raising
+`BOARD_LOOKUP_DAYS` from 7 to 14 (the dashboard keeps rows for 45 days, so 7 left three
+quarters of the visible board permanently unlooked-up) took one run from *26 rows / 7
+resolved* to *66 rows / 12 resolved*.
+
 The cost of that is bounded three ways, because this is the one part of a scan that talks
-to six board APIs:
+to eight board APIs:
 
 - **Cached per company, negatives included** (`board-cache.json`, committed by the scan
   workflow — a cache that isn't committed doesn't survive a fresh runner checkout). The
   ~200 employers running their own careers stack are asked once a month, not every fifteen
   minutes.
-- **The six boards are probed together**, not one after another. A typical miss costs 2.8s
-  for all twelve probes; a company whose board host simply *hangs* costs a timeout six
+- **The eight boards are probed together**, not one after another. A typical miss costs a couple of seconds
+  for all of them; a company whose board host simply *hangs* costs a timeout eight
   times over. Measured on a 35-company backfill: **11 minutes serial, 69 seconds
   concurrent.** The winner is still the first board in list order that answered, so the
   answer doesn't depend on which request came back first.
