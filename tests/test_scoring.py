@@ -1304,6 +1304,47 @@ def test_csm_note_covers_canada_too():
     assert any("CA" in f and "non-standout" in f for f in flags)
 
 
+def test_both_prompts_and_the_profile_agree_about_which_markets_exist():
+    """MARKETS_SENTENCE feeds both prompts and profile.md is inlined verbatim into the deep
+    scorer's system prompt. A market that exists in code but in neither piece of prose is a
+    market the models will quietly reject, which is how non-Dublin Ireland was being killed
+    at stage one while the location gate said it was fine."""
+    markets = scan.MARKETS_SENTENCE.lower()
+    for word in ["netherlands", "belgium", "london", "ireland", "canada", "us"]:
+        assert word in markets, word
+    profile = scan.load_profile().lower()
+    for word in ["netherlands", "belgium", "united kingdom", "ireland", "canada",
+                 "united states"]:
+        assert word in profile, word
+
+
+def test_the_location_dimension_states_a_band_for_every_market():
+    """The Location & Visa dimension is a preference ordering, so a market with no band
+    named in the guidance gets whatever the model feels like. Guard the six."""
+    guide = dict((k, g) for k, _l, _w, g in scan.RUBRIC)["location_visa"].lower()
+    for word in ["netherlands", "ireland", "uk-london", "belgium", "canada", "us"]:
+        assert word in guide, word
+    # and it has to say, in terms, that it is not a feasibility score -- the US is the
+    # market where those two readings diverge and the expensive one to get wrong
+    assert "preference" in guide
+
+
+def test_the_us_transfer_case_is_reachable_from_the_prompt():
+    """The rubric promises a "Transfer" field for the US 4-5 band. If job_message() stops
+    emitting it under that name, the band becomes unreachable and every US role floors at
+    2-3 regardless of the employer's footprint."""
+    guide = dict((k, g) for k, _l, _w, g in scan.RUBRIC)["location_visa"]
+    assert "Transfer" in guide
+    msg = scan.job_message({"title": "RevOps Manager", "company": "Acme",
+                            "location": "Remote (US)", "market": "US-Remote",
+                            "transfer_markets": "NL, IE", "description": "x" * 40})
+    assert "Transfer: this employer also posts roles in NL, IE" in msg
+    # and it stays out of the way when there is nothing to say
+    assert "Transfer:" not in scan.job_message(
+        {"title": "RevOps Manager", "company": "Acme", "location": "Amsterdam",
+         "market": "NL", "description": "x" * 40})
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

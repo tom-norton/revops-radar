@@ -562,10 +562,33 @@ RUBRIC = [
      "bonus but is not required for a high score. Non-tech, non-SaaS (manufacturing, retail, "
      "government) is weaker (4-6)."),
     ("location_visa", "Location & Visa", 15,
-     "The market has already been resolved in code and is given to you; score sponsorship "
-     "realism and comp certainty within it, not whether the location qualifies. Netherlands "
-     "is the primary market; Dublin is structurally safest on salary thresholds; London is a "
-     "deep RevOps market with strong comp."),
+     "This dimension is Tom's PREFERENCE ordering over places to live, not a measure of how "
+     "easy a market is to get hired in. Those two come apart hardest on the US, where he has "
+     "no visa problem at all and still does not want to live there. Do not score a market up "
+     "for being administratively easy. The market is resolved in code and given to you; "
+     "score where it sits in the ordering below, adjusted for sponsorship realism and comp "
+     "certainty within it. Never re-litigate whether the location qualifies.\n"
+     "  * Netherlands, company shown as a sponsor or likely sponsor: 9-10. This is the goal, "
+     "where Tom and his wife want to live.\n"
+     "  * Netherlands, sponsor status not confirmed: 7. Same preference, real execution risk.\n"
+     "  * Ireland: 8. Strong market and the safest permit salary thresholds. Cost of living "
+     "is the real drag and is lower outside Dublin, so a role in Cork or Galway is not a "
+     "worse outcome than a Dublin one.\n"
+     "  * UK-London: 7-8. More expensive than Ireland and they would rather live in Ireland, "
+     "but London comp is strong enough to make it worth more in practice.\n"
+     "  * Belgium: 6. A backup that keeps them in the EU.\n"
+     "  * Canada: 4-5. Tom is a Canadian citizen by descent but holds no certificate yet, so "
+     "the employer lift is a letter rather than visa sponsorship -- genuinely lighter than "
+     "Europe -- against an unproven timeline and a discretionary expedite with no fallback "
+     "if it is refused. Use 5 when the employer is large enough to absorb a delayed start or "
+     "the posting signals a flexible start date; 4 when it signals urgency (immediate start, "
+     "backfill, ASAP).\n"
+     "  * US: 2-3. A financial-runway backstop, not a destination. Scoring it higher for "
+     "being frictionless is exactly the error to avoid.\n"
+     "  * US where the job details show a Transfer field naming NL, IE, UK or CA: 4-5. An "
+     "internal move later is a route abroad without changing employer, and sponsorship is a "
+     "lighter ask once they know you. Still hard, but strictly better than a US-only "
+     "employer."),
     ("trajectory", "Career Trajectory", 10,
      "Does the role advance the RevOps/GTM pivot? Pure CS maintenance is a penalty -- except "
      "that a strong Senior/Principal CSM role in the Netherlands is a primary target and is "
@@ -750,19 +773,21 @@ SCORE_SCHEMA = {
 # screen prompt had already drifted (it listed Belgium as a target but omitted it from the
 # reject clause).
 MARKETS_SENTENCE = ("Netherlands (anywhere), Belgium (anywhere), UK London area and commuter "
-                    "belt only, Ireland (anywhere in the country, not just Dublin)")
-REJECT_SENTENCE = ("Germany, Spain, other UK cities, remote-from-anywhere, "
-                   "and remote-EMEA roles")
+                    "belt only, Ireland (anywhere in the country, not just Dublin), Canada "
+                    "(anywhere, remote or on-site), and the US (REMOTE ONLY, anywhere in the "
+                    "country, and core RevOps roles only)")
+REJECT_SENTENCE = ("Germany, Spain, other UK cities, on-site or hybrid US roles, "
+                   "remote-from-anywhere, and remote-EMEA roles")
 
 SCREEN_SYSTEM = f"""You are a fast pre-screen for a job-search pipeline. Decide if a role is worth a full evaluation for this candidate:
 
-11 years B2B SaaS (Customer Success + Account Management), pivoting into Revenue Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior-IC level. Also open to Senior/Principal Customer Success Manager roles. US citizen needing EU visa sponsorship.
+11 years B2B SaaS (Customer Success + Account Management), pivoting into Revenue Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior-IC level. Also open to Senior/Principal Customer Success Manager roles. US citizen, so any European role needs employer visa sponsorship; also a Canadian citizen by descent, so Canadian roles need no sponsorship.
 
 Target markets ONLY: {MARKETS_SENTENCE}. Reject {REJECT_SENTENCE}.
 
 You may kill a role for exactly TWO reasons. Nothing else is grounds for a kill.
 
-1. LOCATION - the role is not in one of the target markets above.
+1. LOCATION - the role is not in one of the target markets above. Europe is the priority and the US is a distant last resort, but that is a question of SCORE, not of keep/kill: a US or Canadian role that reached you has already passed both a remote check and a narrow RevOps title gate in code, so never kill one for being North American, or for being ranked low. The deep scorer handles the ranking.
 2. FUNCTION - the role is unambiguously outside the candidate's target functions. That means: engineering or data engineering, product management, finance or accounting, quota-carrying sales (AE, SDR, BDR, account executive, business development), deal desk / quote-to-cash / billing / order management, HR or People Ops, procurement, legal, and operations that are not commercial in nature (retail store ops, restaurant ops, manufacturing, supply chain, logistics, facilities, clinical, NGO programme delivery).
 
 NEVER KILL ON SENIORITY. This is the single most important rule here, and getting it wrong is expensive. Analyst, Senior Analyst, Specialist, Coordinator, Associate, Senior Associate, Business Partner, Lead, Manager, Senior Manager, Principal, Director and Head of are ALL keeps. Do not kill something for being "too junior", "entry level", "below Manager", "Director+ exceeds target", or any variant of that reasoning. A title is not a seniority: an "Analyst" or "Associate" at a strong employer routinely carries manager-level scope and pay well above a junior band, and a "Head of" at a 40-person startup is often a hands-on Manager role. The deep scorer reads the full posting - the scope, the reporting line, the years-of-experience band, the stated salary - and weighs seniority properly there. You cannot see enough to make that call. The ONLY seniority-shaped exception: genuine internships, working-student roles, apprenticeships and graduate schemes may be killed.
@@ -798,7 +823,7 @@ Calibration, so the dimension scores land on a consistent scale: 8-10 is a bulls
 
 Do NOT compute a total. The weighted total is computed in code from the six dimension scores you give, and for every role that actually gets scored nothing overrides it afterwards -- there are no caps or ceilings. Every consideration that should move the score has to land inside a dimension: if the posting reads junior, that belongs in Seniority Fit; if the function is off-target, that belongs in Domain and Career Trajectory.
 
-Two facts are handled differently: a stated salary below the market's visa floor, and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
+Two facts are handled differently: a stated salary below the market's floor (a visa floor in Europe, and in the US Tom's own floor for whether the role is worth taking at all), and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
 
 A title band (analyst / specialist / director_plus / normal) is given to you in the job details. It is a signal to read the posting carefully, not a verdict. Do not mark a role down merely because its title contains "Analyst", "Specialist", "Associate" or "Coordinator" -- score what the posting actually describes.
 
@@ -806,15 +831,15 @@ Alongside the dimensions, report these observations from the posting:
 - function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
-- salary_stated / salary_min_base / salary_currency: the annual base-salary floor of any stated range, as a number, with its ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_currency "". A stated figure below the market's visa floor DROPS the role -- see above.
+- salary_stated / salary_min_base / salary_currency: the annual base-salary floor of any stated range, as a number, with its ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_currency "". Report only a figure the POSTING states; never carry over an estimate from a job board. A stated figure below the market's floor DROPS the role -- see above.
 
-The market (Netherlands / Belgium / UK-London / Ireland-Dublin) has already been resolved in code and is given to you in the job details. Trust it. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted.
+The market (NL / BE / UK-London / IE / CA / US-Remote) has already been resolved in code and is given to you in the job details. Trust it. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted. Where it sits in Tom's preference ordering is the whole of the Location & Visa dimension -- see that dimension's guidance, and note that the ordering is about where he wants to live, not about which market is easiest to get hired in.
 
-Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution on Location & Visa (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles. Ignore sponsor for Ireland.
+Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution on Location & Visa (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles, and for the Netherlands specifically it is what separates the 9-10 band from the 7 band. Ignore sponsor entirely for Ireland, Canada and the US: Ireland runs employment permits rather than a register, and Tom needs no sponsorship in either North American market.
 
 Salary: if not stated, do NOT penalise on salary; judge comp risk from the seniority and the company.
 
-Working pattern: on-site or hybrid in the resolved market is normal and expected -- the candidate is relocating for the role and needs an employer with an office there. Do NOT treat an on-site or hybrid requirement, a named-office requirement, or the absence of remote flexibility as a risk, and do not raise a flag about it.
+Working pattern: in Europe and Canada, on-site or hybrid in the resolved market is normal and expected -- the candidate is relocating for the role and needs an employer with an office there. Do NOT treat an on-site or hybrid requirement, a named-office requirement, or the absence of remote flexibility as a risk in those markets, and do not raise a flag about it. The US is the exception and inverts this: a US role only reaches you at all if code read it as remote, so remote is the baseline there rather than a bonus, and a US posting that turns out on reading to require regular office attendance IS worth a flag.
 
 flags: short risk notes, [] if none. Do not add a flag for missing comp, a title band, or the CSM-outside-NL case -- those are added in code from the observations above, and duplicating them crowds out anything genuinely new you noticed. Never add a flag for language or salary either way -- report them accurately in the fields above and say nothing more; code decides whether the role is dropped.
 verdict: one blunt sentence, max 22 words."""
@@ -2142,6 +2167,12 @@ def job_message(job):
             + (f"Title band (resolved in code): {title_band(job.get('title'))}\n")
             + (f"Salary: {job['salary']}\n" if job.get("salary") else "")
             + (f"Sponsor: {job['sponsor']}\n" if job.get("sponsor") else "")
+            # Which other target markets this employer posts roles in, derived free from the
+            # ATS board the apply-link lookup already fetches. Only meaningful for a US row,
+            # where an internal move later is the difference between a dead end and a route
+            # abroad, so it is only emitted when there is something to say.
+            + (f"Transfer: this employer also posts roles in {job['transfer_markets']}\n"
+               if job.get("transfer_markets") else "")
             + (f"Description: {desc}" if desc else "No description; judge on title/location/sponsor only."))
 
 def screen_job(api_key, job):

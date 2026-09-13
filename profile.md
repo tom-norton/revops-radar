@@ -10,7 +10,11 @@ information domains (NAVEX, LexisNexis). ESADE MBA (Barcelona) finishing July 20
 (conferral March 2027); BSBA in Marketing from University of Dayton. Pivoting into Revenue
 Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior IC level. Parallel
 track: Senior / Principal Customer Success Manager at established companies. US citizen;
-needs employer visa sponsorship for any EU role.
+needs employer visa sponsorship for any EU role. Also a Canadian citizen by descent as of
+December 2025, but holds no citizenship certificate yet and the application runs about two
+more years; an employer letter stating an offer contingent on proving citizenship by a date
+can expedite it, which is a lighter lift than sponsorship but is discretionary and carries
+no service-level guarantee.
 
 ## Experience (for Experience Alignment, 25%)
 
@@ -115,29 +119,57 @@ targets. Marketing Ops, Deal Desk, quote-to-cash, billing, pure lifecycle-market
 off-target. Prior domain: GRC / compliance software.
 
 ## Location & visa (15%)
-Target markets ONLY:
-- Netherlands: anywhere in the country. Primary market. HSM salary floor ~EUR 71,304 base
-  (2026, 30+ bracket).
-- Belgium: anywhere in the country. EU Blue Card salary floor (2026) varies by region:
-  ~EUR 56,976 Brussels, ~EUR 63,586 Flanders, ~EUR 68,815 Wallonia.
-- United Kingdom: London and the surrounding commuter area ONLY (exclude Manchester,
-  Edinburgh, Leeds, Bristol, Glasgow, Birmingham, and other UK cities). Skilled Worker visa
-  floor ~GBP 70,000.
+This dimension is a PREFERENCE ordering over places to live, not a measure of how easy a
+market is to hire into. The two come apart hardest on the US: there is no visa problem
+there at all and Tom still does not want to live there. Never score a market up for being
+administratively easy.
+
+Target markets, best to worst. The score bands are in the Location & Visa rubric guidance;
+these are the facts behind them.
+- Netherlands: anywhere in the country. The goal — where Tom and his wife want to live. HSM
+  salary floor ~EUR 71,304 base (2026, 30+ bracket). Score 9-10 with confirmed sponsor
+  status, 7 without.
 - Ireland: anywhere in the country, Dublin and outside it alike. Critical Skills / General
   employment permit; comp floor ~EUR 68,911 (a nationwide threshold, not a Dublin one).
   Dublin carries most of the RevOps market but is also where cost of living eats the
-  salary, so a role in Cork, Galway or a commutable county is not a worse outcome.
+  salary, so a role in Cork, Galway or a commutable county is not a worse outcome. Score 8.
+- United Kingdom: London and the surrounding commuter area ONLY (exclude Manchester,
+  Edinburgh, Leeds, Bristol, Glasgow, Birmingham, and other UK cities). Skilled Worker visa
+  floor ~GBP 70,000. More expensive than Ireland and they would rather live in Ireland, but
+  London comp is strong enough to make it worth more in practice. Score 7-8.
+- Belgium: anywhere in the country. A backup that keeps them in the EU. EU Blue Card salary
+  floor (2026) varies by region: ~EUR 56,976 Brussels, ~EUR 63,586 Flanders, ~EUR 68,815
+  Wallonia. Score 6.
+- Canada: anywhere in the country, remote or on-site. No sponsorship needed (citizen), but
+  the certificate is unproven and the expedite is discretionary, so this sits below all of
+  Europe. Score 4-5.
+- United States: REMOTE ONLY, anywhere in the country, and core RevOps roles only. This is a
+  financial-runway backstop and not a destination — Tom and his family do not want to live
+  here. Score 2-3, or 4-5 when the employer also posts roles in the Netherlands, Ireland,
+  the UK or Canada, because an internal transfer later is a route abroad without changing
+  employer and sponsorship is a lighter ask once they know you.
 
-Reject entirely: Germany, Spain, remote-from-anywhere, and remote-EMEA roles.
+Reject entirely: Germany, Spain, other UK cities, on-site or hybrid US roles,
+remote-from-anywhere, and remote-EMEA roles.
 
-Visa reality: all roles need employer sponsorship. A company on the UK or NL sponsor register
-CAN sponsor but the specific role must still clear the salary/threshold rules. "Not on
-register" is a caution (registers use legal names and miss trading names), not an auto-reject.
+Visa reality: every European role needs employer sponsorship. A company on the UK or NL
+sponsor register CAN sponsor but the specific role must still clear the salary/threshold
+rules. "Not on register" is a caution (registers use legal names and miss trading names),
+not an auto-reject. For the Netherlands specifically, confirmed sponsor status is what
+separates the 9-10 band from the 7 band. Ireland runs employment permits rather than a
+register, and neither North American market needs sponsorship at all, so ignore the sponsor
+field for those three.
 
 ## Salary handling
 Most EU postings don't list salary. If a posting states a salary and its base is genuinely
-below the market's visa floor, the role is dropped outright, not scored and not shown — a
-role Tom cannot legally take at that pay is not worth a fit score. Report the salary fields
+below the market's floor, the role is dropped outright, not scored and not shown. In Europe
+that floor is a visa threshold and a role below it is one Tom cannot legally take. In the US
+it is his own floor — USD 130,000 base — because a US role is only worth taking if it pays
+enough to make staying somewhere he does not want to live comfortable for his family.
+Canada has no floor, since no permit threshold applies.
+
+Only a figure the POSTING states counts. Job-board salary estimates, Adzuna's especially,
+are not evidence and must never be reported as a stated salary. Report the salary fields
 accurately regardless of how strong the rest of the posting looks; the drop happens in code
 from what you report, not from your own judgment call on whether it's close enough. If
 salary is NOT stated, do not reject; estimate comp risk from seniority and company and add
@@ -152,8 +184,10 @@ CSM role in the Netherlands is a primary target and should not be penalized as "
 ## CSM track weighting (important)
 - Netherlands: Senior/Principal CSM at an established company = primary target, score on par
   with RevOps roles.
-- UK (London), Ireland, and Belgium: a CSM role only scores highly if the company
+- UK (London), Ireland, Belgium and Canada: a CSM role only scores highly if the company
   is a genuine standout (tier-1 SaaS, strong brand, clear sponsor) or the fit is unusually
   strong. Otherwise keep CSM in these markets modest, because the pivot and relocation bar
   is higher there. Weight this inside the dimension scores; nothing downstream adjusts the
   total afterwards.
+- United States: not applicable. A US CSM role never reaches scoring — the US title gate in
+  code admits core RevOps only.
