@@ -36,6 +36,18 @@ NO_OBS = {"function_match": "core", "company_standout": True,
           "salary_min_base": 0, "salary_currency": ""}
 
 
+def flag_job(**kw):
+    """A job dict for score_flags() tests, carrying a real-length description.
+
+    The description matters even when a test is about something else: score_flags() flags
+    thin evidence, so a fixture with no description picks that up and every assertion about
+    flag counts drifts by one."""
+    job = {"title": "Revenue Operations Manager", "market": "NL",
+           "description": "x" * (scan.MIN_DESC_CHARS + 1)}
+    job.update(kw)
+    return job
+
+
 def test_weighted_total():
     assert scan.weighted_total(dims()) == 5.0
     assert scan.weighted_total(dims(*([10] * 6))) == 10.0
@@ -142,13 +154,12 @@ def test_flag_title_band_reads_as_an_instruction_to_look():
     send Tom to the JD rather than deliver a verdict."""
     for title in ["Senior Revenue Operations Analyst", "CS Operations Specialist",
                   "Head of Revenue Operations"]:
-        flags = scan.score_flags({"title": title, "market": "NL"}, NO_OBS)
+        flags = scan.score_flags(flag_job(title=title), NO_OBS)
         band = [f for f in flags if f.startswith("title band:")]
         assert band, title
         assert "check the JD" in band[0], title
     # an unremarkable title says nothing
-    assert scan.score_flags({"title": "Revenue Operations Manager", "market": "NL"},
-                            NO_OBS) == []
+    assert scan.score_flags(flag_job(title="Revenue Operations Manager"), NO_OBS) == []
 
 
 def test_flag_csm_track_by_market():
@@ -156,16 +167,16 @@ def test_flag_csm_track_by_market():
     note unless the company is a standout (profile.md, CSM track weighting). It is a note
     now, not a ceiling -- the model reflects the weighting in the dimension scores."""
     title = "Senior Customer Success Manager"
-    assert scan.score_flags({"title": title, "market": "NL"}, NO_OBS) == []
+    assert scan.score_flags(flag_job(title=title), NO_OBS) == []
     plain = dict(NO_OBS, company_standout=False)
     for market in ["UK-London", "IE", "BE"]:
-        flags = scan.score_flags({"title": title, "market": market}, plain)
+        flags = scan.score_flags(flag_job(title=title, market=market), plain)
         assert any(market in f and "non-standout" in f for f in flags), market
         # a genuine standout gets no note
-        assert scan.score_flags({"title": title, "market": market}, NO_OBS) == []
+        assert scan.score_flags(flag_job(title=title, market=market), NO_OBS) == []
     # a RevOps title in those markets never picks up the CSM note
-    assert scan.score_flags({"title": "Revenue Operations Manager",
-                             "market": "UK-London"}, plain) == []
+    assert scan.score_flags(flag_job(title="Revenue Operations Manager",
+                                     market="UK-London"), plain) == []
 
 
 def test_several_flags_are_all_reported():
@@ -174,8 +185,8 @@ def test_several_flags_are_all_reported():
     below-floor salary are excluded from this scenario deliberately -- they disqualify the
     role via deep_score_disqualifier() before score_flags() would ever run on it.)"""
     obs = dict(NO_OBS, company_standout=False)
-    flags = scan.score_flags({"title": "Senior Customer Success Analyst",
-                              "market": "UK-London"}, obs)
+    flags = scan.score_flags(flag_job(title="Senior Customer Success Analyst",
+                                      market="UK-London"), obs)
     assert len(flags) == 2      # title band, CSM outside NL
 
 
@@ -1350,8 +1361,8 @@ def test_every_drop_stage_the_floor_check_emits_has_a_retention_budget():
 
 def test_csm_note_covers_canada_too():
     plain = dict(NO_OBS, company_standout=False)
-    flags = scan.score_flags({"title": "Senior Customer Success Manager",
-                              "market": "CA"}, plain)
+    flags = scan.score_flags(flag_job(title="Senior Customer Success Manager",
+                                      market="CA"), plain)
     assert any("CA" in f and "non-standout" in f for f in flags)
 
 
@@ -1811,6 +1822,66 @@ def test_a_digest_row_with_no_salary_still_cannot_pass_the_us_gate():
     assert not scan.us_comp_unstated(dict(row, salary="$150k – $180k"))
     # the same row for Europe is unaffected -- most EU postings state no salary at all
     assert not scan.us_comp_unstated(dict(row, market="IE"))
+
+
+# ---- thin evidence
+
+
+def test_a_stub_is_not_presented_to_the_scorer_as_a_description():
+    """The measured problem this fixes. revopsroles rows carry a ~50-character synthesized
+    summary and job_message() used to emit it under "Description:" as though it were the
+    posting, so the model had no way to know it was guessing. It showed in the numbers:
+    stub rows scored a 6.03 mean against 5.78 for rows with a real JD, and 22 of 59 cleared
+    the gate. Absence of evidence was reading as absence of problems."""
+    stub = "Category: CS Ops; Seniority: Senior; Work mode: Hybrid"
+    msg = scan.job_message({"title": "Senior Customer Success Manager", "company": "Acme",
+                            "location": "Amsterdam", "market": "NL", "description": stub})
+    assert "EVIDENCE: THIN" in msg
+    assert "Description:" not in msg          # never dressed up as one
+    assert stub in msg                        # but what IS known is still passed on
+    # and it says the disqualifiers did not run, so a silent posting is not a clean one
+    assert "could not run" in msg
+
+    # a real posting is presented normally
+    full = scan.job_message({"title": "RevOps Manager", "company": "Acme",
+                             "location": "Amsterdam", "market": "NL",
+                             "description": "x" * (scan.MIN_DESC_CHARS + 1)})
+    assert "EVIDENCE: THIN" not in full and "Description:" in full
+
+
+def test_thin_is_the_same_threshold_the_fetcher_retries_on():
+    """One definition, or the scorer's warning and the fetcher's retry disagree about what
+    counts as a posting."""
+    assert scan.is_thin("") and scan.is_thin(None)
+    assert scan.is_thin("x" * (scan.MIN_DESC_CHARS - 1))
+    assert not scan.is_thin("x" * scan.MIN_DESC_CHARS)
+    assert scan.is_thin("   " + "x" * 10 + "   ")       # whitespace is not evidence
+
+
+def test_a_thin_row_is_flagged_on_the_card_not_just_in_the_prompt():
+    """A score built on a title and a location is a different kind of number from one built
+    on a posting, and the difference has to be visible where Tom reads it."""
+    thin = [f for f in scan.score_flags(
+        flag_job(description="Category: CS Ops"), NO_OBS) if "thin evidence" in f]
+    assert thin and "could not run" in thin[0]
+    assert not [f for f in scan.score_flags(flag_job(), NO_OBS) if "thin evidence" in f]
+
+
+def test_the_scorer_is_told_how_to_handle_thin_evidence():
+    """The prompt has to say what to DO about it, not just that it happened -- otherwise
+    the model fills the gap with what a role of that title usually involves, which is the
+    exact failure the posting exists to prevent."""
+    system = scan.score_system()
+    assert "EVIDENCE: THIN" in system
+    assert "Thin evidence" in system
+    # and it must name the disqualifier consequence, which is the dangerous half
+    assert "unrun" in system or "not treat a silent posting as a clean one" in system
+
+
+def test_the_thin_stage_label_exists_on_the_dashboard():
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    assert '"thin-evidence"' in page
 
 
 def _run():

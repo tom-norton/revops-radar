@@ -834,6 +834,15 @@ def score_flags(job, obs):
             and not obs.get("company_standout"):
         flags.append(f"CSM in {market} at a non-standout company")
 
+    # Thin evidence, said out loud on the row as well as in the prompt. A score built on a
+    # title and a location is not the same kind of number as one built on a posting, and
+    # the difference has to be visible on the card rather than only in the transcript --
+    # especially because the two hard disqualifiers cannot fire on text this short, so a
+    # role that rules out sponsorship in its JD passes them silently.
+    if is_thin(job.get("description")):
+        flags.append("thin evidence: no real JD retrieved, sponsorship and language "
+                     "checks could not run")
+
     return flags
 
 # JSON schema for the deep score. Replaces "reply with ONLY this JSON" plus a regex that
@@ -920,6 +929,8 @@ Calibration, so the dimension scores land on a consistent scale: 8-10 is a bulls
 Do NOT compute a total. The weighted total is computed in code from the six dimension scores you give, and for every role that actually gets scored nothing overrides it afterwards -- there are no caps or ceilings. Every consideration that should move the score has to land inside a dimension: if the posting reads junior, that belongs in Seniority Fit; if the function is off-target, that belongs in Domain and Career Trajectory.
 
 Two facts are handled differently: a stated salary below the market's floor (a visa floor in Europe, and in the US Tom's own floor for whether the role is worth taking at all), and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
+
+Thin evidence: some rows arrive with no retrievable posting text at all, and those say "EVIDENCE: THIN" where the description would be. Treat that as a real constraint on how high you can score, not as a neutral absence. Do not fill the gap with what a role of that title usually involves -- the whole point of reading the posting is that titles mislead, and on these rows you have not read one. Score each dimension on what is actually stated and no further, cap the total's optimism accordingly, and note the missing evidence in your verdict. A thin row that looks like a 7 is a 7 you cannot support; 5 to 6 is the honest range unless the title and market alone genuinely settle it. Both hard disqualifier checks are also unrun on these rows, so do not treat a silent posting as a clean one.
 
 A title band (analyst / specialist / director_plus / normal) is given to you in the job details. It is a signal to read the posting carefully, not a verdict. Do not mark a role down merely because its title contains "Analyst", "Specialist", "Associate" or "Coordinator" -- score what the posting actually describes.
 
@@ -2135,6 +2146,15 @@ _FREE_IF_NO_MATCH = {workday_desc: workday_cxs_url,
                          (u or "").split("?")[0])}
 MAX_DESC_FETCHES = 3     # network calls per job, so a board of thin ads can't stall a run
 
+
+def is_thin(desc):
+    """True when what we have is not really a posting.
+
+    MIN_DESC_CHARS is already the threshold fill_description() uses to decide a description
+    is missing; this is the same line, named, so the scorer's warning and the fetcher's
+    retry can never disagree about what counts as thin."""
+    return len((desc or "").strip()) < MIN_DESC_CHARS
+
 def fill_description(job):
     """Return the fullest description obtainable for one job, fetching if need be.
 
@@ -2704,7 +2724,21 @@ def job_message(job):
             # abroad, so it is only emitted when there is something to say.
             + (f"Transfer: this employer also posts roles in {job['transfer_markets']}\n"
                if job.get("transfer_markets") else "")
-            + (f"Description: {desc}" if desc else "No description; judge on title/location/sponsor only."))
+            # A stub is not a description, and saying so is the whole point of this branch.
+            # revopsroles rows arrive carrying a ~50-character synthesized summary
+            # ("Category: CS Ops; Seniority: Senior") and the old code emitted that under
+            # "Description:" as though it were the posting. The model had no way to know,
+            # and it showed: stub rows scored a 6.03 mean against 5.78 for rows with a real
+            # JD, with 22 of 59 clearing the gate. Absence of evidence was reading as
+            # absence of problems.
+            + ("EVIDENCE: THIN. No real posting text could be retrieved for this role -- "
+               "what follows is all that is known, and it is a few words of metadata "
+               "rather than a job description. Score conservatively and do NOT infer "
+               "scope, seniority, comp or requirements that are not stated. The two hard "
+               "disqualifier checks (sponsorship ruled out, another language required) "
+               "could not run on text this short, so neither has been cleared.\n"
+               + (f"What is known: {desc}" if desc else "Nothing beyond the fields above.")
+               ) if is_thin(desc) else f"Description: {desc}")
 
 def screen_job(api_key, job):
     text = _claude_call(api_key, CLAUDE_SCREEN_MODEL, SCREEN_SYSTEM, job_message(job), 120)
