@@ -179,20 +179,41 @@ INCLUDE_TITLE = re.compile(
 # asymmetry into the deep score, and score_flags() notes it on the row.
 CSM_ANY = re.compile(r"customer success", re.I)
 
-# The narrow gate for US roles. The US is a financial-runway backstop, not a place Tom wants
-# to move to, so it is only worth the radar's attention when the role is squarely the pivot
-# he is making -- RevOps proper, not the adjacent-and-arguable end of INCLUDE_TITLE. This
-# deliberately drops CSM (every band of it), renewals, enablement, and generic "business
-# operations", all of which are legitimate European targets.
+# Customer success WITH a seniority qualifier. These are the same clauses INCLUDE_TITLE
+# already carries; named separately so the US gate can admit senior CS without admitting
+# the plain title, and so the two cannot silently diverge -- a test asserts everything
+# SENIOR_CS matches is also matched by INCLUDE_TITLE.
 #
-# It also does most of the cost control for this whole change. The US is a far bigger market
-# than the four European ones combined, and this regex runs before any model call, so the
-# volume dies for free rather than at $0.001 a row in stage one.
+# The qualifier requirement is what keeps a bare "Customer Success Manager" out. That title
+# is a primary target in the Netherlands and nowhere else (CSM_ANY, above), and widening it
+# by accident is the exact failure this guards.
+SENIOR_CS = re.compile(
+    r"(senior|principal|lead|enterprise|strategic).{0,20}customer success"
+    r"|customer success.{0,30}(senior|principal|lead|enterprise|strategic)"
+    r"|(manager|head of),?\s+(of\s+)?customer success", re.I)
+
+# The narrow gate for US roles, one of two (see SENIOR_CS below). The US is a
+# financial-runway backstop rather than a place Tom wants to move to, so it is only worth
+# the radar's attention for the pivot proper -- RevOps, not the adjacent-and-arguable end
+# of INCLUDE_TITLE. What it still drops outright is renewals and generic "business
+# operations", both legitimate European targets.
+#
+# It used to drop customer success in every band too. That changed: US senior CS is wanted
+# now, on the grounds that the US searches confirm remote and the salary band, so
+# prefilter() admits SENIOR_CS alongside this. Plain "Customer Success Manager" is still
+# Netherlands-only, which falls out of SENIOR_CS requiring a seniority qualifier.
+#
+# This regex does most of the cost control for the whole US expansion. The US is a far
+# bigger market than the four European ones combined, and this runs before any model call,
+# so the volume dies for free rather than at $0.001 a row in stage one. Every phrase in
+# HC_REVOPS_TITLES has to match here or the search pays for rows this then throws away --
+# which is how "sales enablement" and "commercial operations" came to be missing. A test
+# pins the pairing in both directions.
 REVOPS_CORE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
     r"|cs operations|customer success operations"
     r"|revenue strategy|sales strategy|revenue analytics|revenue systems"
-    r"|revenue technology|revenue enablement"
+    r"|revenue technology|revenue enablement|sales enablement|commercial operations"
     # GTM needs an operations/strategy noun beside it, in either word order. A bare \bgtm\b
     # admitted "GTM Recruiter, AMER" and "Staff, Analytics Engineer, GTM Data Science" on
     # the first US run -- a recruiting role and an engineering role. Both would have died
@@ -728,6 +749,37 @@ def salary_floor_flag(market, obs):
                 f"a {market} role at all")
     return ""
 
+def us_comp_unstated(job):
+    """A reason string when a US row carries no salary at all, "" otherwise.
+
+    The third code-level hard disqualifier, alongside says_no_sponsorship() and
+    requires_other_language(), and it runs in the same place: before either model call, so
+    it costs nothing.
+
+    Tom only wants US roles that are CONFIRMED to pay well. Both US hiring.cafe searches
+    set restrictJobsToTransparentSalaries, so this is the code agreeing with the search
+    rather than second-guessing it: a US row that reached here without a number on it came
+    from a source that does not publish comp, and there is no way to establish it is worth
+    leaving Europe on the table for.
+
+    Absence, not value. The value check is downstream and better placed: COMP_FLOORS via
+    salary_floor_flag() drops a US role whose JD-STATED base is under the floor, reading
+    the figure the deep scorer took off the posting. The feed's salary string is not the
+    posting, so it is trusted for "is there a number" and nothing more.
+
+    How this lands per source: hiring.cafe supplies yearly_min_compensation, JobSpy
+    supplies min_amount when it has one, LinkedIn supplies nothing, and Adzuna's estimates
+    are already discarded by adzuna_salary() for being salary_is_predicted -- so an Adzuna
+    US row has no salary and is dropped, which is the right answer for a filter whose whole
+    point is "confirmed"."""
+    if job.get("market") != "US-Remote":
+        return ""
+    if (job.get("salary") or "").strip():
+        return ""
+    return ("no salary on the posting; a US role is only worth taking at confirmed pay "
+            f"(floor {COMP_FLOORS['US-Remote'][0]} {COMP_FLOORS['US-Remote'][1]})")
+
+
 def deep_score_disqualifier(job, obs):
     """Hard disqualifiers that only the deep scorer can catch, because they need a real
     reading of the full JD rather than a sentence-level regex match. Returns (stage, reason)
@@ -778,7 +830,7 @@ def score_flags(job, obs):
     # CSM track: a primary target in NL, a weaker one elsewhere unless the company is a
     # genuine standout (see the CSM track weighting section of profile.md). The model is
     # told this in the profile and reflects it in the dimensions; this is just the note.
-    if market in ("UK-London", "IE", "BE", "CA") and is_csm_title(title) \
+    if market in ("UK-London", "IE", "BE", "CA", "US-Remote") and is_csm_title(title) \
             and not obs.get("company_standout"):
         flags.append(f"CSM in {market} at a non-standout company")
 
@@ -817,8 +869,9 @@ SCORE_SCHEMA = {
 # reject clause).
 MARKETS_SENTENCE = ("Netherlands (anywhere), Belgium (anywhere), UK London area and commuter "
                     "belt only, Ireland (anywhere in the country, not just Dublin), Canada "
-                    "(anywhere, remote or on-site), and the US (REMOTE ONLY, anywhere in the "
-                    "country, and core RevOps roles only)")
+                    "(anywhere, remote or on-site), and the US (REMOTE ONLY, anywhere in "
+                    "the country, core RevOps or senior customer success only, and the "
+                    "posting must state a salary)")
 REJECT_SENTENCE = ("Germany, Spain, other UK cities, on-site or hybrid US roles, "
                    "remote-from-anywhere, and remote-EMEA roles")
 
@@ -911,7 +964,8 @@ DROP_MAX_ROWS = 400
 DROP_KEEP_PER_STAGE = {"prefilter": 80, "age": 40, "dedupe": 40,
                        "stage1-kill": 120, "score-error": 40, "sponsor-required": 40,
                        "no-sponsorship": 60, "language-required": 60,
-                       "below-visa-floor": 60, "below-comp-floor": 60}
+                       "below-visa-floor": 60, "below-comp-floor": 60,
+                       "us-comp-unstated": 40}
 DROP_KEEP_DEFAULT = 40
 
 _DROP_SEEN = set()
@@ -1624,11 +1678,11 @@ def prefilter(title, location, country=""):
     t = title or ""
     market = market_of(country, location)
     if market == "US-Remote":
-        # The US gets the narrow gate, not the broad one. Checked before the generic branch
-        # so a US "Senior Customer Success Manager" is dropped here rather than admitted by
-        # INCLUDE_TITLE's seniority clause.
-        if not REVOPS_CORE.search(t):
-            return "title: not core RevOps (US roles use the narrow gate)"
+        # The US gets the two narrow gates, not the broad one: core RevOps, or customer
+        # success with a seniority qualifier. Everything else INCLUDE_TITLE would admit --
+        # renewals, generic business operations, plain CSM -- stays out.
+        if not (REVOPS_CORE.search(t) or SENIOR_CS.search(t)):
+            return "title: not core RevOps or senior CS (US uses the narrow gates)"
     elif not (INCLUDE_TITLE.search(t) or (market == "NL" and CSM_ANY.search(t))):
         return "title: no target-function keyword"
     m = EXCLUDE_TITLE.search(t)
@@ -2220,33 +2274,35 @@ APIFY_ACTOR = "memo23~apify-hiring-cafe-scraper"
 # Tom's hiring.cafe searches, as structured data rather than the percent-encoded
 # searchState blobs that used to live here.
 #
-# Those blobs were four 1-2KB URL-encoded JSON strings. They worked, but editing the
-# targeting meant hand-editing percent-encoded JSON, which is the reason adding a market
-# here has been avoided for as long as it has. hiringcafe_url() rebuilds the exact same
-# URLs from the definitions below -- there is a test that round-trips all four and asserts
-# the decoded searchState is unchanged, so this refactor cannot quietly alter what the
-# actor is asked for.
+# Those blobs were 1-2KB URL-encoded JSON strings. They worked, but editing the targeting
+# meant hand-editing percent-encoded JSON, which is the reason adding a market here had
+# been avoided for as long as it had. hiringcafe_url() rebuilds the URLs from the
+# definitions below, and tests/fixtures/hiringcafe-searchstate.json is a capture of the
+# five URLs Tom's own browser produced: the round-trip test asserts every rebuilt
+# searchState decodes to exactly that. A silent change in targeting here would show up as
+# a source going thin rather than as an error, so the fixture is the guard.
 #
-# The "id" on each location is hiring.cafe's own opaque geo key, lifted from the URLs its
-# UI produced. They appear to be client-side keys rather than server lookups -- the filter
-# that matters is address_components.short_name -- but the European ones are the real
-# values regardless, and HC_ID_UNVERIFIED marks the two that are not.
-HC_ID_UNVERIFIED = "pending-real-url"
+# The "id" on each location is hiring.cafe's own opaque geo key, taken from those URLs.
+# workplace_types is PER LOCATION and load-bearing: it is how the European searches keep
+# remote-from-anywhere rows out at source, and how the US ones ask for remote only.
 
 
-def _hc_country(long_name, short_name, population, hc_id, flexible=()):
-    """A whole-country location. `flexible` carries hiring.cafe's flexible_regions, which
-    is how a search opts into remote-from-anywhere rows for that country."""
+def _hc_country(long_name, short_name, population, hc_id, workplace_types=(),
+                flexible=()):
+    """A whole-country location."""
     return {"id": hc_id, "types": ["country"],
             "address_components": [{"long_name": long_name, "short_name": short_name,
                                     "types": ["country"]}],
             "formatted_address": long_name, "population": population,
-            "workplace_types": [], "options": {"flexible_regions": list(flexible)}}
+            "workplace_types": list(workplace_types),
+            "options": {"flexible_regions": list(flexible)}}
 
 
-def _hc_london(radius_miles):
-    """London with a commuter radius. 25 miles for the RevOps search, 50 for the CS ones,
-    which is the asymmetry the original blobs encoded."""
+def _hc_london(radius_miles, workplace_types=()):
+    """London with a commuter radius, which is the only UK shape in scope: market_of()
+    accepts London and the commuter belt and nothing else in the UK, so a whole-UK
+    search would pay Apify for Manchester and Edinburgh rows that prefilter() then
+    drops on arrival."""
     return {"id": "xRg1yZQBoEtHp_8UXQ1z", "types": ["locality"],
             "address_components": [
                 {"long_name": "London", "short_name": "London", "types": ["locality"]},
@@ -2255,33 +2311,59 @@ def _hc_london(radius_miles):
                 {"long_name": "United Kingdom", "short_name": "GB", "types": ["country"]}],
             "geometry": {"location": {"lat": 51.50853, "lon": -0.12574}},
             "formatted_address": "London, England, GB", "population": 8961989,
-            "workplace_types": [],
+            "workplace_types": list(workplace_types),
             "options": {"radius": radius_miles, "radius_unit": "miles",
                         "ignore_radius": False}}
 
 
-def _hc_nl(flexible=()):
-    return _hc_country("The Netherlands", "NL", 17231017, "1BY1yZQBoEtHp_8UEq3V", flexible)
+def _hc_grand_rapids():
+    """Home, remote, flexible outward to anywhere.
+
+    This is how the US searches are scoped, and it is a better expression of "ideally
+    Michigan but anywhere remote" than a whole-country search: the radius puts local roles
+    first while flexible_regions opens it to the state, the country, the continent and the
+    world. There is deliberately no whole-US country location anywhere in this file."""
+    return {"id": "YRk1yZQBoEtHp_8UuNQa", "types": ["locality"],
+            "address_components": [
+                {"long_name": "Grand Rapids", "short_name": "Grand Rapids",
+                 "types": ["locality"]},
+                {"long_name": "Michigan", "short_name": "MI",
+                 "types": ["administrative_area_level_1"]},
+                {"long_name": "United States", "short_name": "US", "types": ["country"]}],
+            "geometry": {"location": {"lat": 42.96336, "lon": -85.66809}},
+            "formatted_address": "Grand Rapids, MI, US", "population": 195097,
+            "workplace_types": ["Remote"],
+            "options": {"radius": 50, "radius_unit": "miles", "ignore_radius": False,
+                        "flexible_regions": ["anywhere_in_administrative_area_level_1",
+                                             "anywhere_in_country",
+                                             "anywhere_in_continent",
+                                             "anywhere_in_world"]}}
 
 
-def _hc_ie(flexible=()):
-    return _hc_country("Ireland", "IE", 4853506, "kxY1yZQBoEtHp_8UEq3V", flexible)
+def _hc_nl(workplace_types=(), flexible=()):
+    return _hc_country("The Netherlands", "NL", 17231017, "1BY1yZQBoEtHp_8UEq3V",
+                       workplace_types, flexible)
 
 
-def _hc_be(flexible=()):
-    return _hc_country("Belgium", "BE", 11422068, "QRY1yZQBoEtHp_8UEq3V", flexible)
+def _hc_ie(workplace_types=(), flexible=()):
+    return _hc_country("Ireland", "IE", 4853506, "kxY1yZQBoEtHp_8UEq3V",
+                       workplace_types, flexible)
 
 
-def _hc_us(flexible=()):
-    return _hc_country("United States", "US", 331002651, HC_ID_UNVERIFIED, flexible)
+def _hc_be(workplace_types=(), flexible=()):
+    return _hc_country("Belgium", "BE", 11422068, "QRY1yZQBoEtHp_8UEq3V",
+                       workplace_types, flexible)
 
 
-def _hc_ca(flexible=()):
-    return _hc_country("Canada", "CA", 38005238, HC_ID_UNVERIFIED, flexible)
+def _hc_ca(workplace_types=(), flexible=()):
+    return _hc_country("Canada", "CA", 37058856, "UxY1yZQBoEtHp_8UEq3V",
+                       workplace_types, flexible)
 
 
-# The RevOps-proper title query, shared by the European and North American searches so
-# they cannot drift apart on what counts as the target function.
+# The RevOps title query, shared verbatim by the European and US searches so they cannot
+# drift apart on what counts as the target function. REVOPS_CORE, the code-side US gate,
+# is pinned against every phrase in here by a test -- a term in the search that the regex
+# does not match is a row Apify is paid for and prefilter() then throws away.
 HC_REVOPS_TITLES = (
     '"revenue operations" OR "RevOps" OR "sales operations" OR "sales ops" OR '
     '"CS operations" OR "customer success operations" OR "GTM operations" OR '
@@ -2289,73 +2371,91 @@ HC_REVOPS_TITLES = (
     '"revenue strategy" OR "sales enablement" OR "revenue enablement" OR '
     '"commercial operations" OR "sales strategy" OR "revenue strategy & operations" OR '
     '"sales strategy & operations" OR "GTM strategy & operations"')
-# The US narrow list: the same shape as REVOPS_CORE in code, so the search asks for what
-# the prefilter would keep anyway rather than paying for rows that die on arrival.
-HC_REVOPS_CORE_TITLES = (
-    '"revenue operations" OR "RevOps" OR "sales operations" OR "sales ops" OR '
-    '"CS operations" OR "customer success operations" OR "GTM operations" OR '
-    '"go-to-market operations" OR "GTM strategy" OR "go-to-market strategy" OR '
-    '"revenue strategy" OR "sales strategy" OR "revenue strategy & operations" OR '
-    '"sales strategy & operations" OR "GTM strategy & operations"')
 
 # label -> searchState. dateFetchedPastNDays is wider than MAX_POST_AGE_DAYS on purpose;
 # the age filter downstream still applies.
+#
+# roleTypes "Individual Contributor" on both RevOps searches is deliberate: Tom wants
+# senior-IC RevOps, so anything hiring.cafe classifies as People Manager is excluded at
+# source.
 APIFY_HIRINGCAFE_SEARCHES = {
-    # revops/gtm ops titles across NL, IE, UK-London, BE
-    "revops-broad": {
-        "locations": [_hc_nl(), _hc_ie(), _hc_london(25), _hc_be()],
+    # RevOps titles across the four European markets plus Canada. Europe is Hybrid/Onsite
+    # only, which keeps remote-EMEA rows out at source; Canada adds Remote because Tom is
+    # a citizen and can work anywhere in it.
+    "revops": {
+        "locations": [
+            _hc_nl(("Hybrid", "Onsite")),
+            _hc_ie(("Hybrid", "Onsite")),
+            _hc_be(("Hybrid", "Onsite")),
+            _hc_ca(("Hybrid", "Onsite", "Remote")),
+            _hc_london(50, ("Hybrid", "Onsite", "Field")),
+        ],
         "commitmentTypes": ["Full Time"],
-        "dateFetchedPastNDays": 21,
+        "dateFetchedPastNDays": 14,
+        "roleTypes": ["Individual Contributor"],
+        "seniorityLevel": ["Mid Level", "Senior Level"],
         "excludedLanguageRequirements": ["dutch", "german", "spanish", "french"],
         "sortBy": "date",
         "jobTitleQuery": HC_REVOPS_TITLES,
     },
-    # CS titles, Netherlands only
-    "cs-nl": {
-        "locations": [_hc_nl()],
+    # Senior CS across NL, Ireland, London and Canada. managementYoeRange caps the people
+    # management expected, which is what keeps this on the senior-IC track.
+    "cs-eu-ca": {
+        "locations": [
+            _hc_nl(("Hybrid", "Onsite", "Field")),
+            _hc_ie(("Hybrid", "Onsite", "Field")),
+            _hc_london(50, ("Hybrid", "Onsite")),
+            _hc_ca(),
+        ],
         "dateFetchedPastNDays": 21,
-        "excludedLanguageRequirements": ["dutch", "german"],
-        "sortBy": "date",
-        "jobTitleQuery": '"Customer success"',
-    },
-    # senior/principal/lead/enterprise/strategic CS titles across NL, IE, UK-London
-    "cs-senior": {
-        "locations": [_hc_nl(),
-                      _hc_ie(("anywhere_in_continent", "anywhere_in_world")),
-                      _hc_london(50)],
-        "dateFetchedPastNDays": 21,
+        "managementYoeRange": [0, 2],
+        "seniorityLevel": ["Senior Level"],
         "excludedLanguageRequirements": ["dutch", "german", "french"],
         "sortBy": "date",
-        "jobTitleQuery": ('"Customer success" AND (senior OR principal OR lead OR '
-                          "enterprise OR strategic)"),
+        "jobTitleQuery": '"Customer success"',
     },
-    # CS titles at GRC/compliance/legaltech companies, NL/IE/UK-London
-    "cs-grc": {
-        "locations": [_hc_nl(), _hc_ie(), _hc_london(50)],
+    # CS titles, Netherlands only and at any seniority -- profile.md's CSM track weighting
+    # makes a plain NL Customer Success Manager a primary target and keeps the same role
+    # modest everywhere else.
+    "cs-nl": {
+        "locations": [_hc_nl(("Hybrid", "Onsite", "Field"))],
         "dateFetchedPastNDays": 21,
         "excludedLanguageRequirements": ["dutch", "german"],
         "sortBy": "date",
         "jobTitleQuery": '"Customer success"',
-        "jobDescriptionQuery": "GRC OR compliance OR legaltech",
     },
-    # Canada, anywhere, broad-ish titles: Tom is a citizen so nothing is gated on remote,
-    # and the same INCLUDE_TITLE breadth Europe gets applies.
-    "revops-ca": {
-        "locations": [_hc_ca()],
+    # US RevOps: remote, transparent salaries only, and a compensation bound.
+    #
+    # maxCompensationLowEnd is Tom's own setting, kept verbatim at his explicit direction.
+    # Reading the field name against its three siblings (minCompensationLowEnd,
+    # minCompensationHighEnd, maxCompensationHighEnd) it looks like an UPPER bound on the
+    # bottom of the posted range, which would invert the filter. If the US feed ever comes
+    # back full of underpaid roles, this is the first thing to check.
+    "us-revops": {
+        "locations": [_hc_grand_rapids()],
         "commitmentTypes": ["Full Time"],
-        "dateFetchedPastNDays": 21,
+        "dateFetchedPastNDays": 14,
+        "restrictJobsToTransparentSalaries": True,
+        "roleTypes": ["Individual Contributor"],
+        "maxCompensationLowEnd": "130000",
+        "seniorityLevel": ["Mid Level", "Senior Level"],
+        "excludedLanguageRequirements": ["dutch", "german", "spanish", "french"],
         "sortBy": "date",
         "jobTitleQuery": HC_REVOPS_TITLES,
     },
-    # US, remote only, core RevOps only. workplaceTypes does the remote half at the source
-    # so the run is not spent fetching onsite rows that market_of() will drop anyway.
-    "revops-us-remote": {
-        "locations": [_hc_us()],
-        "workplaceTypes": ["Remote"],
-        "commitmentTypes": ["Full Time"],
+    # US senior CS. Wanted only because this search confirms remote and the salary band,
+    # which is why the code requires a stated salary on every US row (see prefilter and
+    # us_comp_unstated).
+    "us-cs": {
+        "locations": [_hc_grand_rapids()],
         "dateFetchedPastNDays": 21,
+        "restrictJobsToTransparentSalaries": True,
+        "managementYoeRange": [0, 2],
+        "maxCompensationLowEnd": "130000",
+        "seniorityLevel": ["Senior Level"],
+        "excludedLanguageRequirements": ["dutch", "german", "french"],
         "sortBy": "date",
-        "jobTitleQuery": HC_REVOPS_CORE_TITLES,
+        "jobTitleQuery": '"Customer success"',
     },
 }
 
@@ -2938,6 +3038,10 @@ def main():
         quote = requires_other_language(j["description"])
         if quote:
             record_drop(j, "language-required", f'JD: "{quote}"')
+            seen.add(j["id"]); continue
+        reason = us_comp_unstated(j)
+        if reason:
+            record_drop(j, "us-comp-unstated", reason)
             seen.add(j["id"]); continue
 
         which, raw, label = sponsor_for(j)

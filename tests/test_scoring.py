@@ -1244,24 +1244,45 @@ def test_market_tier_orders_the_six_markets_and_fails_safe():
         assert m in scan.MARKET_TIER, m
 
 
-def test_us_titles_go_through_the_narrow_gate_not_the_broad_one():
-    """The US is a runway backstop, so it is only worth attention for the pivot proper.
-    CSM, renewals, enablement and generic business operations are all legitimate European
-    targets and all out in the US."""
+def test_us_titles_go_through_the_two_narrow_gates_not_the_broad_one():
+    """The US is a runway backstop, so it is only worth attention for the pivot proper or
+    for senior customer success, which Tom now wants because his US searches confirm remote
+    and the salary band. Renewals, generic business operations and marketing ops are all
+    legitimate European targets and all still out in the US."""
     for title in ["Revenue Operations Manager", "Senior RevOps Analyst",
                   "GTM Strategy Manager", "Manager, Sales Strategy & Operations",
-                  "Sales Compensation Manager"]:
+                  "Sales Compensation Manager",
+                  # these two were in the search but missing from the regex
+                  "Sales Enablement Manager", "Commercial Operations Lead",
+                  # senior CS, admitted now
+                  "Senior Customer Success Manager", "Principal Customer Success Manager",
+                  "Customer Success Manager, Enterprise", "Manager, Customer Success"]:
         assert scan.prefilter(title, "Remote (US)") is None, title
-    for title in ["Senior Customer Success Manager", "Renewals Manager",
-                  "Business Operations Manager", "Sales Enablement Manager",
-                  "Manager, Customer Success", "Head of Marketing Operations"]:
+    for title in ["Renewals Manager", "Business Operations Manager",
+                  "Head of Marketing Operations", "GTM Recruiter, AMER"]:
         reason = scan.prefilter(title, "Remote (US)")
-        assert reason and "not core RevOps" in reason, title
+        assert reason and "narrow gates" in reason, title
     # the same titles are still fine in Europe and Canada, which keep the broad gate
-    for title in ["Senior Customer Success Manager", "Renewals Manager",
-                  "Business Operations Manager"]:
+    for title in ["Renewals Manager", "Business Operations Manager"]:
         assert scan.prefilter(title, "Toronto, ON") is None, title
         assert scan.prefilter(title, "London") is None, title
+
+
+def test_senior_cs_is_a_subset_of_the_broad_title_gate():
+    """SENIOR_CS names the same clauses INCLUDE_TITLE already carries. Kept separate so the
+    US gate can admit senior CS without admitting the plain title; this is the guard that
+    the two do not diverge."""
+    for title in ["Senior Customer Success Manager", "Principal Customer Success Manager",
+                  "Lead Customer Success Manager", "Enterprise Customer Success Manager",
+                  "Strategic Customer Success Manager",
+                  "Customer Success Manager, Enterprise",
+                  "Customer Success Lead - Carriers", "Manager, Customer Success",
+                  "Head of Customer Success"]:
+        assert scan.SENIOR_CS.search(title), title
+        assert scan.INCLUDE_TITLE.search(title), title
+    # the qualifier is the whole point: a bare title must not match
+    assert not scan.SENIOR_CS.search("Customer Success Manager")
+    assert not scan.SENIOR_CS.search("Customer Success Associate")
 
 
 def test_a_core_revops_us_role_that_is_not_remote_is_dropped_on_location():
@@ -1487,44 +1508,74 @@ def test_load_deferrals_survives_a_corrupt_or_missing_file():
 # ---- hiring.cafe searches
 
 
-def test_the_structured_searches_rebuild_the_original_urls_exactly():
-    """The four European searches used to be percent-encoded searchState blobs pasted from
-    hiring.cafe's address bar. They are structured dicts now, because editing
-    percent-encoded JSON is the reason adding a market here was avoided for so long.
+def test_every_search_rebuilds_the_url_toms_browser_produced():
+    """The searches are structured dicts, because editing percent-encoded JSON is the
+    reason adding a market here was avoided for so long. The fixture is a capture of the
+    five URLs Tom pasted from his own hiring.cafe session, so this asserts the code asks
+    for precisely what he asked for.
 
-    This pins the refactor against a fixture captured from the blobs before they were
-    replaced: a rebuilt search whose decoded searchState differs from what the actor used
-    to be asked for is a silent change in targeting, and the symptom would be a source
-    quietly going thin rather than an error."""
+    It is the guard that matters most in this file: a silent change in targeting shows up
+    as a source quietly going thin, not as an error."""
     import json as _json
     import os as _os
     import urllib.parse as _url
     fixture = _os.path.join(_os.path.dirname(__file__), "fixtures",
-                            "hiringcafe-searchstate-before-refactor.json")
+                            "hiringcafe-searchstate.json")
     with open(fixture, encoding="utf-8") as f:
-        before = _json.load(f)
-    labels = ["revops-broad", "cs-nl", "cs-senior", "cs-grc"]
-    assert len(before) == len(labels)
-    for label, want in zip(labels, before):
+        want = _json.load(f)
+    assert sorted(want) == sorted(scan.APIFY_HIRINGCAFE_SEARCHES)
+    for label, expect in want.items():
         url = scan.hiringcafe_url(scan.APIFY_HIRINGCAFE_SEARCHES[label])
         got = _json.loads(_url.parse_qs(_url.urlparse(url).query)["searchState"][0])
-        assert got == want, label
+        assert got == expect, label
 
 
-def test_the_north_american_searches_ask_for_what_the_prefilter_would_keep():
-    """A search that asks for rows the prefilter drops on arrival is paid-for volume
-    thrown away, and the Apify budget is per-run and shared across searches."""
-    us = scan.APIFY_HIRINGCAFE_SEARCHES["revops-us-remote"]
-    # remote is filtered at the source, not just in market_of()
-    assert us["workplaceTypes"] == ["Remote"]
-    assert us["locations"][0]["address_components"][0]["short_name"] == "US"
-    # the US title query must not ask for anything REVOPS_CORE would reject
-    for phrase in ["customer success\" OR", "renewals", "sales enablement"]:
-        assert phrase.lower() not in us["jobTitleQuery"].lower(), phrase
-    ca = scan.APIFY_HIRINGCAFE_SEARCHES["revops-ca"]
-    assert ca["locations"][0]["address_components"][0]["short_name"] == "CA"
-    # Canada is not gated on remote -- Tom is a citizen and can work anywhere in it
-    assert "workplaceTypes" not in ca
+def test_the_search_titles_and_the_us_code_gate_cannot_drift_apart():
+    """Every phrase the RevOps search asks for has to be one REVOPS_CORE keeps. A term in
+    the search that the regex misses is a row Apify is paid for and prefilter() then throws
+    away -- which is exactly what was happening to "sales enablement" and "commercial
+    operations"."""
+    import re as _re
+    phrases = _re.findall(r'"([^"]+)"', scan.HC_REVOPS_TITLES)
+    assert len(phrases) == 18
+    for phrase in phrases:
+        assert scan.REVOPS_CORE.search(phrase), phrase
+        assert scan.INCLUDE_TITLE.search(phrase), phrase
+
+
+def test_no_whole_country_us_or_uk_location_exists_anywhere():
+    """Two location shapes that would both pay for rows the location gate then drops: a
+    whole-UK search (market_of accepts London and the commuter belt only) and a whole-US
+    one (the US searches are Grand Rapids plus flexible_regions instead)."""
+    for label, state in scan.APIFY_HIRINGCAFE_SEARCHES.items():
+        for loc in state["locations"]:
+            ac = loc["address_components"][0]
+            assert not (ac["short_name"] == "GB" and loc["types"] == ["country"]), label
+            assert not (ac["short_name"] == "US" and loc["types"] == ["country"]), label
+
+
+def test_the_european_searches_never_ask_for_remote():
+    """profile.md rejects remote-from-anywhere and remote-EMEA, and workplace_types is how
+    that is enforced at source rather than paid for and dropped. Canada is exempt: Tom is a
+    citizen and can work anywhere in it."""
+    for label in ("revops", "cs-eu-ca", "cs-nl"):
+        for loc in scan.APIFY_HIRINGCAFE_SEARCHES[label]["locations"]:
+            short = loc["address_components"][0]["short_name"]
+            if short == "CA":
+                continue
+            assert "Remote" not in loc["workplace_types"], f"{label}/{short}"
+
+
+def test_both_us_searches_require_remote_and_a_transparent_salary():
+    """The US rows are only wanted because the search confirms remote and the salary band.
+    The code leans on that: every US row must carry a stated salary."""
+    for label in ("us-revops", "us-cs"):
+        state = scan.APIFY_HIRINGCAFE_SEARCHES[label]
+        assert state["restrictJobsToTransparentSalaries"] is True, label
+        assert state["locations"][0]["workplace_types"] == ["Remote"], label
+        # home first, then outward -- "ideally Michigan but anywhere remote"
+        flexible = state["locations"][0]["options"]["flexible_regions"]
+        assert "anywhere_in_country" in flexible, label
 
 
 def test_every_hiringcafe_search_produces_a_usable_url():
@@ -1592,6 +1643,44 @@ def test_jobspy_targets_are_whole_countries_not_cities():
     # the US search asks for remote at the source, since market_of() drops the rest
     us = [t for t in scan.JOBSPY_TARGETS if t["cc"] == "us"][0]
     assert all("remote" in term for term in us["terms"])
+
+
+def test_a_us_row_with_no_published_salary_is_dropped_before_any_model_call():
+    """Tom only wants US roles confirmed to pay well, and both US searches set
+    restrictJobsToTransparentSalaries, so this is the code agreeing with the search. It
+    runs alongside says_no_sponsorship() and requires_other_language(), before either
+    model call, so it costs nothing."""
+    assert scan.us_comp_unstated({"market": "US-Remote", "salary": ""})
+    assert scan.us_comp_unstated({"market": "US-Remote"})
+    assert scan.us_comp_unstated({"market": "US-Remote", "salary": "   "})
+    assert not scan.us_comp_unstated({"market": "US-Remote",
+                                      "salary": "130000-160000 USD"})
+    # ...and it is US-only. Europe mostly publishes no salary at all and Canada has no
+    # floor, so applying this anywhere else would empty the board.
+    for market in ("NL", "IE", "UK-London", "BE", "CA"):
+        assert not scan.us_comp_unstated({"market": market, "salary": ""}), market
+
+
+def test_the_us_salary_rule_is_presence_here_and_value_downstream():
+    """Two checks, deliberately different. This one asks "is there a number at all" off the
+    feed, for free. COMP_FLOORS asks "does the number clear the floor" off the JD, which is
+    the only salary source worth gating a value on."""
+    # present but below the floor: survives the free check, dropped after scoring
+    row = {"market": "US-Remote", "salary": "90000-110000 USD"}
+    assert not scan.us_comp_unstated(row)
+    stage, _why = scan.deep_score_disqualifier(
+        row, {"salary_stated": True, "salary_min_base": 90000,
+              "salary_currency": "USD", "language_hard_requirement": False})
+    assert stage == "below-comp-floor"
+
+
+def test_the_new_drop_stage_is_visible_in_the_log_and_on_the_dashboard():
+    """An unregistered stage falls back to the default retention and goes half-invisible in
+    the committed drop log, and an unlabelled one renders as a raw slug."""
+    assert "us-comp-unstated" in scan.DROP_KEEP_PER_STAGE
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    assert '"us-comp-unstated"' in page
 
 
 def _run():

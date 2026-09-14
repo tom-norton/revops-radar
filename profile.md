@@ -143,11 +143,14 @@ these are the facts behind them.
 - Canada: anywhere in the country, remote or on-site. No sponsorship needed (citizen), but
   the certificate is unproven and the expedite is discretionary, so this sits below all of
   Europe. Score 4-5.
-- United States: REMOTE ONLY, anywhere in the country, and core RevOps roles only. This is a
-  financial-runway backstop and not a destination — Tom and his family do not want to live
-  here. Score 2-3, or 4-5 when the employer also posts roles in the Netherlands, Ireland,
-  the UK or Canada, because an internal transfer later is a route abroad without changing
-  employer and sponsorship is a lighter ask once they know you.
+- United States: REMOTE ONLY, anywhere in the country, core RevOps or SENIOR customer
+  success only, and the posting must state a salary. This is a financial-runway backstop
+  and not a destination — Tom and his family do not want to live here — so a US role is
+  only worth taking at pay that is confirmed rather than hoped for, and a US row carrying
+  no published salary is dropped before it is scored. Score 2-3, or 4-5 when the employer
+  also posts roles in the Netherlands, Ireland, the UK or Canada, because an internal
+  transfer later is a route abroad without changing employer and sponsorship is a lighter
+  ask once they know you.
 
 Reject entirely: Germany, Spain, other UK cities, on-site or hybrid US roles,
 remote-from-anywhere, and remote-EMEA roles.
@@ -169,7 +172,12 @@ enough to make staying somewhere he does not want to live comfortable for his fa
 Canada has no floor, since no permit threshold applies.
 
 Only a figure the POSTING states counts. Job-board salary estimates, Adzuna's especially,
-are not evidence and must never be reported as a stated salary. Report the salary fields
+are not evidence and must never be reported as a stated salary.
+
+The US is stricter still, and in two stages. A US row that reaches you at all has already
+had to carry a published salary, or code dropped it before scoring. What you then report is
+checked against the USD 130,000 floor, so report the stated base exactly and let the drop
+happen in code. Report the salary fields
 accurately regardless of how strong the rest of the posting looks; the drop happens in code
 from what you report, not from your own judgment call on whether it's close enough. If
 salary is NOT stated, do not reject; estimate comp risk from seniority and company and add
@@ -189,5 +197,7 @@ CSM role in the Netherlands is a primary target and should not be penalized as "
   strong. Otherwise keep CSM in these markets modest, because the pivot and relocation bar
   is higher there. Weight this inside the dimension scores; nothing downstream adjusts the
   total afterwards.
-- United States: not applicable. A US CSM role never reaches scoring — the US title gate in
-  code admits core RevOps only.
+- United States: senior CS only, and only with a published salary. A plain "Customer
+  Success Manager" never reaches scoring, because the US title gate requires a seniority
+  qualifier. Treat a US senior CS role as a runway decision rather than a pivot: the comp
+  has to justify staying somewhere Tom does not want to live.

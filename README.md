@@ -9,8 +9,9 @@ over Telegram. Hide/Apply/Applied state syncs across your devices via Firebase.
 
 **Markets, in preference order:** Netherlands (anywhere) · Ireland (anywhere) · UK (London
 area only) · Belgium (anywhere) · Canada (anywhere, remote or on-site) · US (**remote only**,
-anywhere, and core RevOps titles only). Germany, Spain, on-site US roles, and
-remote-from-anywhere/EMEA roles are deliberately excluded.
+anywhere, core RevOps or **senior** CS titles only, and **the posting must state a salary**).
+Germany, Spain, on-site US roles, and remote-from-anywhere/EMEA roles are deliberately
+excluded.
 
 That ordering is real, not cosmetic. It sets the `location_visa` score band, the dashboard
 sort order, and who gets first claim on the deep-scoring budget. The US is a
@@ -48,9 +49,19 @@ Cloudflare** below.
    companies with no overlap with `companies.json`, including the two highest-scoring rows
    the radar has found. Its value is long-tail discovery of companies not on the watchlist,
    which is why a watchlist cannot replace it.
-   The searches are **structured dicts** in `scan.py`, not the percent-encoded `searchState`
-   blobs they used to be; `hiringcafe_url()` rebuilds the URLs and a fixture test
-   round-trips the four original European searches to prove the refactor changed nothing.
+   The **five** searches are **structured dicts** in `scan.py`, not the percent-encoded
+   `searchState` blobs they used to be: `revops` (NL/IE/BE/CA + London 50mi),
+   `cs-eu-ca`, `cs-nl`, `us-revops` and `us-cs`. `hiringcafe_url()` rebuilds the URLs, and
+   `tests/fixtures/hiringcafe-searchstate.json` is a capture of the five URLs Tom's own
+   browser produced — the round-trip test asserts the code asks for precisely what he
+   asked for, because a silent change in targeting shows up as a source going thin rather
+   than as an error.
+   `workplace_types` is per-location and load-bearing: it is how the European searches keep
+   remote-EMEA rows out at source and how the US ones ask for remote only. Both US searches
+   also set `restrictJobsToTransparentSalaries`, which is why the code can require a stated
+   salary on every US row. There is deliberately no whole-US or whole-UK location: the US
+   searches are Grand Rapids + 50 miles with `flexible_regions` opening outward, and the UK
+   is the London locality, both so Apify is not paid for rows the location gate then drops.
 6. **LinkedIn** — mirrors "Jobs based on your preferences" via LinkedIn's public,
    unauthenticated guest job-search endpoint. No login or session cookie. Seven geoIds:
    London Area, Belgium, Netherlands, Amsterdam, Ireland, United States, Canada.
