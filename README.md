@@ -1,7 +1,8 @@
 # RevOps Radar
 
-Finds new RevOps / GTM / Sales Ops / CS Ops / Senior CSM roles across your four target
-markets, cheaply screens out the obvious no-fits, deep-scores the survivors against your
+Finds new RevOps / GTM / Sales Ops / CS Ops / Senior CSM roles across your six target
+markets, goes and gets the real ad when a source hands back a stub, cheaply screens out the
+obvious no-fits, deep-scores the survivors against your
 real profile with Claude, checks each UK/NL company against the official visa-sponsor
 registers, and shows you the good ones on a dashboard. Tap **Apply** and it runs the front
 half of the job-application-workflow skill for you and asks whatever it genuinely needs
@@ -82,9 +83,14 @@ Cloudflare** below.
    now the **shape of the text** (a currency symbol next to digits) rather than the colour
    of the span around it, so the next restyle cannot repeat it, and
    `tests/fixtures/revopsroles-digest.html` pins it against a real email.
-   One limit remains: the linked JD cannot be fetched (429 to datacenter IPs), so the
-   description is a ~50-character synthesized summary and the deep scorer judges these rows
-   on the title, location and the digest's own salary line.
+   **The digest is a pointer, not a source.** Its own links still cannot be fetched (429 to
+   datacenter IPs), so a row arrives carrying a ~50-character synthesized summary where a
+   posting should be. Scoring that is close to worthless — a stub says nothing a title does
+   not, and measurably scored *higher* than real postings (6.03 vs 5.78 mean, 22 of 59
+   clearing the gate) because a silent ad has nothing in it to count against. So the title
+   and company are used to go and find the real ad elsewhere; see step 12b below. Whatever
+   survives that unfound reaches the scorer labelled as a stub rather than dressed up as an
+   ad.
    The digest carries work mode as a *tag*, not in the location, and that tag is folded
    into what the location gate sees **for US rows only** — remote is the requirement there,
    whereas in Europe remote wording next to a bare country is how remote-EMEA reqs get
@@ -136,12 +142,42 @@ Cloudflare** below.
     in JavaScript, so scraping the page returns furniture and no JSON-LD), or schema.org
     `JobPosting` markup, whichever returns most. Adzuna's own 400-character summaries get
     upgraded to the full ad this way too.
+12b. When that still comes back thin — a revopsroles stub, or a feed whose link is dead —
+    the **company's own ATS board is searched by name**: `rescue_description()` probes the
+    eight boards in `findform.BOARDS` for the employer, matches the posting by title, and
+    takes the text off the board directly. Free, so it runs in stage 1 before anything is
+    screened, capped at `MAX_JD_RESCUES_PER_RUN = 12` rows a run. It is **stricter about
+    location than an application is**: a board row in the wrong market is refused outright,
+    because a title match alone is good enough to *apply* with (you see the role before you
+    send anything) but not good enough to *score* on — the wrong city's copy of a role would
+    silently answer the location question. Worth being honest about the yield: this only
+    helps a company that has a public board, which is **2 of the 32** revopsroles stubs.
+12c. For the rest, the posting is **web-searched, and the result is verified in code** —
+    the only place in the pipeline that spends tokens to get *evidence* rather than to form
+    a judgement, so it is priced like a last resort: `MAX_JD_SEARCHES_PER_RUN = 3` rows a
+    run, in stage 2 only, and only for a row that has already survived the Haiku screen and
+    won a scoring slot. `search_jd_url()` asks Sonnet for one line, a URL, and nothing else;
+    it is never asked to read or judge the role. `verify_jd()` then decides whether the page
+    is really that job off the page's own schema.org metadata — the title through
+    `findform.title_score` at the same threshold an application uses, the employer through
+    `findform.cache_key` so "Omnea" and "Omnea Ltd" are one company. **Nothing is accepted
+    without both.** A search that finds the wrong posting costs a refused match and a row
+    that stays thin, which is the state it was already in, rather than a confident score
+    built on another role's requirements.
+12d. Anything still thin reaches the scorer marked **`EVIDENCE: THIN`** instead of being
+    handed a 50-character summary in the shape of a description. The prompt tells it to
+    treat that as a real constraint: score only what is stated, do not fill the gap with
+    what a role of that title usually involves, name the missing evidence in the verdict,
+    and understand that 5–6 is the honest range for a row nobody has actually read.
 13. Two **hard disqualifiers are then read off the full text in code, before either model
     call**: an ad that rules out visa sponsorship, and an ad that requires fluency in a
     language other than English. Both drop the job and log the ad's own sentence to
     `docs/excluded.json`, so a wrong drop is visible rather than silent. They are matched in
     code rather than asked of the model because they are absolute and because the model only
-    ever sees a sampled copy of the posting.
+    ever sees a sampled copy of the posting. They also **re-run on any text recovered by 12b
+    or 12c**, since a stub is too short for either to fire — without that, a role the
+    pipeline would have refused had its ad arrived by the ordinary route would get scored
+    just because the ad turned up late.
 
 **Scoring (two stages, so the expensive model only sees real candidates):**
 14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill).
@@ -175,9 +211,12 @@ Cloudflare** below.
     They're shown on the row so you can judge them; they don't move the number. Salary and
     language don't appear here at all — a role either clears them and gets scored clean, or
     it doesn't and step 16 drops it before this function ever runs.
-18. Results commit to `docs/jobs.json`; the dashboard shows **6.0+ to apply**, tucks
-    **5.0–5.9 into a collapsed "borderline"** section, and puts everything below 5 plus
-    every row dropped earlier in the pipeline into a collapsed **"excluded"** section.
+18. Results commit to `docs/jobs.json`; the dashboard shows **6.5+ to apply**, tucks
+    **6.0–6.4 into a collapsed "borderline"** section, and puts everything below 6 plus
+    every row dropped earlier in the pipeline into a collapsed **"excluded"** section. The
+    bands live in `scan.py` (`GATE` / `FLOOR`) and are written into `docs/status.json` each
+    run, so the page reads them from there rather than keeping its own copy — the 6.0/5.0
+    pair still in `docs/index.html` is the fallback for stale data, not the live value.
 
 ## The apply queue
 
