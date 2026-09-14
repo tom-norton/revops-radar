@@ -2197,6 +2197,67 @@ REVOPSROLES_LOOKBACK_DAYS = 4   # covers a missed run (e.g. a quiet weekend) wit
                                  # re-scanning the whole mailbox; reprocessing an
                                  # already-seen job is harmless, seen.json dedupes it
 
+# A compensation figure as this digest writes it: "$104k – $183k", "€70,000 - €90,000",
+# "£85k". Matched on the SHAPE of the text rather than on the colour of the span holding
+# it, and that is the whole point of the rewrite.
+#
+# The selector used to be color:#16a34a, and the site restyled: salary is #9e4d00 now and
+# #16a34a is gone entirely (#10b981 is the category tag's border). Nothing failed loudly.
+# Every row simply arrived with salary "" -- 0 of 32 on the dashboard -- and it stayed
+# invisible for as long as it did because European postings mostly state no salary anyway,
+# so an empty field looked normal. It only became load-bearing when US rows started
+# requiring a stated salary.
+#
+# A colour is presentation and will change again. A currency symbol next to digits is the
+# thing itself.
+REVOPSROLES_SALARY = re.compile(
+    r"[$£€]\s?[\d,.]+\s*[kKmM]?(?:\s*[-–—to]{1,3}\s*[$£€]?\s?[\d,.]+\s*[kKmM]?)?")
+
+
+def parse_revopsroles_jobs(body):
+    """Every job block in one revopsroles digest email, as dicts.
+
+    Pure and offline, so tests/fixtures/revopsroles-digest.html can pin it. That fixture is
+    the guard that matters for this source: the failure mode here is not an exception, it is
+    a selector going stale after a restyle and a field quietly emptying for months.
+
+    Returns id/title/company/location/salary/category/seniority/work_mode. Field extraction
+    is per-block, bounded to the job's own region, so one row's salary can never be read
+    onto another."""
+    out = []
+    for chunk in (body or "").split('<a href="https://revopsroles.com/jobs/')[1:]:
+        m = re.match(r'([0-9a-fA-F-]+)"[^>]*>(.*?)</a>(.*)', chunk, re.S)
+        if not m:
+            continue
+        jid, title_raw, rest = m.groups()
+        region = rest[:1500]        # bounds the field search to this job's own block
+        cl = re.search(r'>([^<]+)<!--\s*-->\s*·\s*([^<]+)</span>', region)
+        company, loc = ((clean_text(cl.group(1)), clean_text(cl.group(2))) if cl
+                        else ("", ""))
+        # The first span in this block whose TEXT reads as money. Skipping the company and
+        # location span matters: a location like "Palo Alto, CA 94301" would otherwise be
+        # read as a figure.
+        salary = ""
+        for text in re.findall(r">([^<]+)</span>", region):
+            text = clean_text(text)
+            if text in (company, loc) or not text:
+                continue
+            if REVOPSROLES_SALARY.search(text):
+                salary = text
+                break
+        tags_m = re.search(r'margin-top:8px">(.*?)</div>', region, re.S)
+        tags = [clean_text(t) for t in
+                (re.findall(r">([^<]+)</span>", tags_m.group(1)) if tags_m else [])]
+        # Category, then seniority, then work mode -- and every one of them optional. A
+        # recent digest carried only two tags (category and seniority) with no work mode at
+        # all, so indexing blind would have thrown on a real email.
+        category, seniority, work_mode = (tags + ["", "", ""])[:3]
+        out.append({"id": jid, "title": clean_text(title_raw), "company": company,
+                    "location": loc, "salary": salary, "category": category,
+                    "seniority": seniority, "work_mode": work_mode})
+    return out
+
+
 def fetch_revopsroles(gmail_address, gmail_app_password, diag=None):
     """Parses Tom's revopsroles.com daily digest email (read via Gmail IMAP) instead of
     scraping the site directly. No full description field is present in the digest, so
@@ -2238,26 +2299,15 @@ def fetch_revopsroles(gmail_address, gmail_app_password, diag=None):
                 continue
             emails += 1
             before = len(out)
-            for chunk in body.split('<a href="https://revopsroles.com/jobs/')[1:]:
-                m = re.match(r'([0-9a-fA-F-]+)"[^>]*>(.*?)</a>(.*)', chunk, re.S)
-                if not m:
-                    continue
-                jid, title_raw, rest = m.groups()
+            for row in parse_revopsroles_jobs(body):
+                jid = row["id"]
                 if jid in seen_ids:
                     continue
                 seen_ids.add(jid)
                 bump_raw("revopsroles", 1)
-                title = clean_text(title_raw)
-                region = rest[:1500]   # bounds the field search to this job's own block
-                cl = re.search(r'>([^<]+)<!--\s*-->\s*·\s*([^<]+)</span>', region)
-                company, loc = (clean_text(cl.group(1)), clean_text(cl.group(2))) if cl else ("", "")
-                sal_m = re.search(r'color:#16a34a[^"]*">([^<]+)</span>', region)
-                salary = clean_text(sal_m.group(1)) if sal_m else ""
-                tags_m = re.search(r'margin-top:8px">(.*?)</div>', region, re.S)
-                tags = re.findall(r'>([^<]+)</span>', tags_m.group(1)) if tags_m else []
-                category = tags[0] if len(tags) > 0 else ""
-                seniority = tags[1] if len(tags) > 1 else ""
-                work_mode = tags[2] if len(tags) > 2 else ""
+                title, company, loc = row["title"], row["company"], row["location"]
+                salary, work_mode = row["salary"], row["work_mode"]
+                category, seniority = row["category"], row["seniority"]
                 cc = country_code(loc.rsplit(",", 1)[-1]) if "," in loc else country_code(loc)
                 if salary:
                     with_salary += 1
@@ -2301,11 +2351,12 @@ def fetch_revopsroles(gmail_address, gmail_app_password, diag=None):
         except Exception:
             pass
     if diag is not None:
-        # with_salary is worth its own number: every US row needs a stated salary
-        # (us_comp_unstated), and on the 32 rows this source had produced up to now it was
-        # zero for zero. If that stays at zero the US half of this feed contributes nothing
-        # and the reason should be on the status line rather than inferred from an empty
-        # dashboard.
+        # with_salary is worth its own number because every US row needs a stated salary
+        # (us_comp_unstated), and this field has already emptied itself once without
+        # anything failing: the selector was a colour, the site restyled, and 32 rows in a
+        # row arrived with nothing. If this count goes to zero again it is the first thing
+        # to look at, and it should be on the status line rather than inferred from an
+        # empty dashboard.
         diag["revopsroles:emails"] = (f"{emails} email{'s' if emails != 1 else ''}, "
                                       f"{with_salary} row(s) with a salary")
     return out

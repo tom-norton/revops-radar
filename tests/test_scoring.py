@@ -1732,15 +1732,83 @@ def test_the_digest_resolves_country_codes_for_the_new_markets():
                                            "belgium")} == {"us", "ca", "ie", "gb", "nl", "be"}
 
 
-def test_a_digest_row_with_no_salary_cannot_pass_the_us_gate():
-    """Standing record of a live gap rather than a hypothetical. On the 32 revopsroles rows
-    the dashboard had, 0 carried a salary, and the JD cannot be fetched either
-    (revopsroles.com answers 429 to datacenter IPs), so the description is a ~50-character
-    synthesized summary. Every US row from this source therefore drops at
-    us-comp-unstated. The fetcher reports a salary count on the status line so this is
-    visible rather than inferred from an empty dashboard."""
+def _digest_html():
+    with open(os.path.join(os.path.dirname(__file__), "fixtures",
+                           "revopsroles-digest.html"), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_the_digest_parser_reads_every_field_off_a_real_email():
+    """Pinned against a real digest, because the failure mode for this source is not an
+    exception -- it is a selector going stale after a restyle and a field quietly emptying
+    for months."""
+    rows = scan.parse_revopsroles_jobs(_digest_html())
+    assert len(rows) == 2
+    first = rows[0]
+    assert first["id"] == "b6fe6ccd-bd3e-43ad-bb68-2b89a868dfec"
+    assert first["title"] == ("Associate Director, Sales Compensation Data Architecture "
+                              "and Strategy")
+    assert first["company"] == "S&P Global"        # &amp; unescaped
+    assert first["location"] == "London, United Kingdom"
+    assert first["salary"] == "$104k – $183k"
+    assert (first["category"], first["seniority"]) == ("Sales Ops", "Director")
+    assert rows[1]["salary"] == "$86k – $153k"
+    assert rows[1]["seniority"] == "Manager"
+    # Every row must carry a salary, which is the whole regression: the old selector was
+    # color:#16a34a and found nothing after the site restyled.
+    assert all(r["salary"] for r in rows)
+
+
+def test_the_digest_salary_survives_a_restyle():
+    """The selector is the SHAPE of the text, not the colour of the span around it. A
+    colour is presentation and already changed once -- #16a34a became #9e4d00 and nothing
+    failed loudly, it just emptied the field on 32 rows. This asserts the next restyle
+    cannot do the same."""
+    html = _digest_html()
+    assert "#16a34a" not in html          # the colour the old selector wanted is gone
+    assert "color:#9e4d00" in html
+    restyled = html.replace("#9e4d00", "#abcdef")
+    rows = scan.parse_revopsroles_jobs(restyled)
+    assert [r["salary"] for r in rows] == ["$104k – $183k", "$86k – $153k"]
+
+
+def test_the_digest_never_mistakes_a_location_for_a_salary():
+    """The company and location live in a span too, and a US location can carry digits
+    ("Palo Alto, CA 94301"). Reading the first money-shaped span without skipping those
+    would put a zip code in the salary field."""
+    html = _digest_html().replace("London, United Kingdom", "Palo Alto, CA 94301")
+    rows = scan.parse_revopsroles_jobs(html)
+    assert rows[0]["location"] == "Palo Alto, CA 94301"
+    assert rows[0]["salary"] == "$104k – $183k"
+
+
+def test_the_digest_tolerates_a_block_with_fewer_tags():
+    """The email Tom forwarded carries only two tags, category and seniority, with no work
+    mode at all -- so indexing tags[2] blind would throw on a real digest."""
+    rows = scan.parse_revopsroles_jobs(_digest_html())
+    assert all(r["work_mode"] == "" for r in rows)
+    # and a block with no tag div at all still parses
+    stripped = _digest_html().replace('margin-top:8px', 'margin-top:9px')
+    rows = scan.parse_revopsroles_jobs(stripped)
+    assert len(rows) == 2
+    assert all(r["category"] == "" and r["seniority"] == "" for r in rows)
+    assert all(r["salary"] for r in rows)       # salary is independent of the tags
+
+
+def test_the_digest_parser_is_total_on_junk():
+    """It runs over whatever arrives in an inbox, so it has to return rather than raise."""
+    for body in ["", None, "<html>no jobs here</html>",
+                 '<a href="https://revopsroles.com/jobs/">malformed</a>']:
+        assert scan.parse_revopsroles_jobs(body) == []
+
+
+def test_a_digest_row_with_no_salary_still_cannot_pass_the_us_gate():
+    """The parser reads salary correctly now, but a posting that genuinely states none must
+    still drop for the US -- that rule is about the role's pay being confirmed, not about
+    the parser working."""
     row = {"market": "US-Remote", "salary": "", "source": "revopsroles"}
     assert scan.us_comp_unstated(row)
+    assert not scan.us_comp_unstated(dict(row, salary="$150k – $180k"))
     # the same row for Europe is unaffected -- most EU postings state no salary at all
     assert not scan.us_comp_unstated(dict(row, market="IE"))
 

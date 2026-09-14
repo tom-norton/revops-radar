@@ -75,11 +75,16 @@ Cloudflare** below.
    IMAP filter is the whole **domain** rather than one mailbox — a new alert sending from a
    different address would otherwise be missed and the status line would look normal. The
    footer reports a per-email kept count plus how many rows carried a salary.
-   Two known limits, both load-bearing for the US: this digest has produced **no salary on
-   any row** (0 of 32), and the linked JD cannot be fetched (429 to datacenter IPs), so the
-   description is a ~50-character synthesized summary. Since every US row needs a stated
-   salary, US rows from this source currently drop at `us-comp-unstated`. The salary count
-   on the status line is there to make that visible rather than inferred.
+   **The salary selector was stale and is fixed.** It matched `color:#16a34a`, the site
+   restyled to `#9e4d00`, and nothing failed loudly — every row simply arrived with an empty
+   salary, 0 of 32, and it stayed invisible because European postings mostly state no pay
+   anyway. It only became load-bearing when US rows started requiring one. The selector is
+   now the **shape of the text** (a currency symbol next to digits) rather than the colour
+   of the span around it, so the next restyle cannot repeat it, and
+   `tests/fixtures/revopsroles-digest.html` pins it against a real email.
+   One limit remains: the linked JD cannot be fetched (429 to datacenter IPs), so the
+   description is a ~50-character synthesized summary and the deep scorer judges these rows
+   on the title, location and the digest's own salary line.
    The digest carries work mode as a *tag*, not in the location, and that tag is folded
    into what the location gate sees **for US rows only** — remote is the requirement there,
    whereas in Europe remote wording next to a bare country is how remote-EMEA reqs get
@@ -924,10 +929,10 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   regexes staying in sync with how those cities/regions actually appear in postings.
 - **revopsroles.com** depends on Tom's Gmail subscriptions staying active and the email's
   HTML layout not changing; it parses those emails rather than the site itself (see above).
-  The salary selector (`color:#16a34a`) currently matches nothing on any row, which is
-  either a stale selector or a site that does not publish pay in the digest — diagnosing it
-  needs one real email in hand. If a digest stops arriving or its markup changes, this
-  source goes quiet the same way the others do; the footer now names each email separately
-  so two alerts read as two.
+  Field extraction is pinned by a fixture rather than trusted, because this source has
+  already failed silently once: a restyle emptied the salary field on every row for as long
+  as nobody was relying on it. If a digest stops arriving or its markup changes, this source
+  goes quiet the same way the others do; the footer names each email separately so two
+  alerts read as two, and reports how many rows carried a salary.
 - The status footer at the bottom of the dashboard shows exactly what each source did each run —
   check it if results look thin.
