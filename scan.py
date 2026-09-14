@@ -1108,6 +1108,8 @@ COUNTRY_CODES = {
     "be": "be", "belgium": "be", "belgie": "be", "belgique": "be",
     "gb": "gb", "uk": "gb", "united kingdom": "gb", "great britain": "gb", "england": "gb",
     "ie": "ie", "ireland": "ie",
+    "us": "us", "usa": "us", "united states": "us", "united states of america": "us",
+    "ca": "ca", "canada": "ca",
 }
 
 def country_code(v):
@@ -2185,12 +2187,17 @@ def fill_description(job):
 # here, Tom's own daily digest email, which he's subscribed his Gmail address to
 # specifically for this.
 GMAIL_IMAP_HOST = "imap.gmail.com"
-REVOPSROLES_SENDER = "hello@mail.revopsroles.com"
+# Matched as a substring of the From header, which is what IMAP SEARCH FROM does -- so
+# this is the whole DOMAIN rather than one mailbox, deliberately. Tom now runs two alerts
+# (Europe and the US) and they arrive as separate emails; if the second one ever sends from
+# a different mailbox or subdomain, an exact match would miss it and the status line would
+# look completely normal. A silently missing feed is the expensive failure here.
+REVOPSROLES_SENDER = "revopsroles.com"
 REVOPSROLES_LOOKBACK_DAYS = 4   # covers a missed run (e.g. a quiet weekend) without
                                  # re-scanning the whole mailbox; reprocessing an
                                  # already-seen job is harmless, seen.json dedupes it
 
-def fetch_revopsroles(gmail_address, gmail_app_password):
+def fetch_revopsroles(gmail_address, gmail_app_password, diag=None):
     """Parses Tom's revopsroles.com daily digest email (read via Gmail IMAP) instead of
     scraping the site directly. No full description field is present in the digest, so
     the real JD is lazy-fetched from the job's revopsroles.com page via
@@ -2198,6 +2205,11 @@ def fetch_revopsroles(gmail_address, gmail_app_password):
     though that fetch is itself likely to hit the same bot-challenge, so a short
     synthesized summary (category/seniority/work mode) is kept as a fallback."""
     out, seen_ids = [], set()
+    # Per-email accounting. Tom runs two alerts now (Europe and the US) and they arrive as
+    # separate emails, so "one email produced everything" and "two emails each produced
+    # half" have to be distinguishable in the status footer -- otherwise a feed that stops
+    # arriving looks exactly like a quiet day.
+    emails, with_salary = 0, 0
     imap = imaplib.IMAP4_SSL(GMAIL_IMAP_HOST)
     try:
         imap.login(gmail_address, gmail_app_password)
@@ -2224,6 +2236,8 @@ def fetch_revopsroles(gmail_address, gmail_app_password):
                     break
             if not body:
                 continue
+            emails += 1
+            before = len(out)
             for chunk in body.split('<a href="https://revopsroles.com/jobs/')[1:]:
                 m = re.match(r'([0-9a-fA-F-]+)"[^>]*>(.*?)</a>(.*)', chunk, re.S)
                 if not m:
@@ -2244,8 +2258,24 @@ def fetch_revopsroles(gmail_address, gmail_app_password):
                 category = tags[0] if len(tags) > 0 else ""
                 seniority = tags[1] if len(tags) > 1 else ""
                 work_mode = tags[2] if len(tags) > 2 else ""
-                cc = country_code(loc.rsplit(",", 1)[-1]) if "," in loc else ""
-                reason = prefilter(title, loc, cc)
+                cc = country_code(loc.rsplit(",", 1)[-1]) if "," in loc else country_code(loc)
+                if salary:
+                    with_salary += 1
+                # The work mode is a TAG in this digest, not part of the location string,
+                # and market_of() only reads the location. For the US that loses real rows:
+                # remote is the REQUIREMENT there, so "Austin, United States" tagged
+                # "Remote" is a US remote role that matching on the location alone drops as
+                # on-site. So the tag is appended to what the gate sees, while `loc` itself
+                # is stored unchanged because that is what Tom reads on the card.
+                #
+                # US ONLY, and that restriction is the whole point. In Europe remote
+                # wording is a reason to REJECT -- market_of() returns None for a bare
+                # country next to "remote", which is how remote-EMEA reqs are kept out --
+                # so appending "(Remote)" to an "Ireland" row would drop a genuine Irish
+                # role that is currently kept. Canada needs no help either: its branch
+                # accepts remote already.
+                gate_loc = f"{loc} ({work_mode})" if work_mode and cc == "us" else loc
+                reason = prefilter(title, gate_loc, cc)
                 if reason:
                     record_drop({"id": f"rr-{jid}", "title": title, "location": loc,
                                  "company": company, "source": "revopsroles"},
@@ -2258,16 +2288,26 @@ def fetch_revopsroles(gmail_address, gmail_app_password):
                 out.append({
                     "id": f"rr-{jid}", "company": company,
                     "title": title, "location": loc, "country": cc,
-                    "market": market_of(cc, loc),
+                    "market": market_of(cc, gate_loc),
                     "url": src_url, "source": "revopsroles", "salary": salary,
                     "posted_at": posted,
                     "_detail": src_url, "_fallback_desc": summary,
                 })
+            if diag is not None:
+                diag[f"revopsroles:email{emails}"] = f"kept {len(out) - before}"
     finally:
         try:
             imap.logout()
         except Exception:
             pass
+    if diag is not None:
+        # with_salary is worth its own number: every US row needs a stated salary
+        # (us_comp_unstated), and on the 32 rows this source had produced up to now it was
+        # zero for zero. If that stays at zero the US half of this feed contributes nothing
+        # and the reason should be on the status line rather than inferred from an empty
+        # dashboard.
+        diag["revopsroles:emails"] = (f"{emails} email{'s' if emails != 1 else ''}, "
+                                      f"{with_salary} row(s) with a salary")
     return out
 
 APIFY_ACTOR = "memo23~apify-hiring-cafe-scraper"
@@ -2936,8 +2976,11 @@ def main():
     gmail_addr, gmail_pw = os.environ.get("GMAIL_ADDRESS", ""), os.environ.get("GMAIL_APP_PASSWORD", "")
     if gmail_addr and gmail_pw:
         try:
-            jobs = fetch_revopsroles(gmail_addr, gmail_pw); found += jobs
-            src_status["revopsroles.com"] = src_line("revopsroles", len(jobs))
+            diag = {}
+            jobs = fetch_revopsroles(gmail_addr, gmail_pw, diag); found += jobs
+            src_status["revopsroles.com"] = (
+                f"{src_line('revopsroles', len(jobs))} | "
+                + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items()))
         except Exception as e:
             src_status["revopsroles.com"] = f"FAIL: {e}"
     else:

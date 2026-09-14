@@ -65,11 +65,25 @@ Cloudflare** below.
 6. **LinkedIn** — mirrors "Jobs based on your preferences" via LinkedIn's public,
    unauthenticated guest job-search endpoint. No login or session cookie. Seven geoIds:
    London Area, Belgium, Netherlands, Amsterdam, Ireland, United States, Canada.
-7. **revopsroles.com** — parsed from Tom's own daily digest email via Gmail IMAP.
+7. **revopsroles.com** — parsed from Tom's own digest emails via Gmail IMAP.
    Direct scraping of the site's location pages broke on 2026-07-31 when the site put
    Vercel's bot/attack-challenge in front of every request, including from GitHub
    Actions' IPs — same failure mode as hiring.cafe's direct API above. Requires
    `GMAIL_ADDRESS`/`GMAIL_APP_PASSWORD` (a Gmail app password); skipped if unset.
+   **Two alerts now** (Europe and the US) arriving as separate emails. The fetcher already
+   loops every matching message and dedupes by job id, so that needed no change, but the
+   IMAP filter is the whole **domain** rather than one mailbox — a new alert sending from a
+   different address would otherwise be missed and the status line would look normal. The
+   footer reports a per-email kept count plus how many rows carried a salary.
+   Two known limits, both load-bearing for the US: this digest has produced **no salary on
+   any row** (0 of 32), and the linked JD cannot be fetched (429 to datacenter IPs), so the
+   description is a ~50-character synthesized summary. Since every US row needs a stated
+   salary, US rows from this source currently drop at `us-comp-unstated`. The salary count
+   on the status line is there to make that visible rather than inferred.
+   The digest carries work mode as a *tag*, not in the location, and that tag is folded
+   into what the location gate sees **for US rows only** — remote is the requirement there,
+   whereas in Europe remote wording next to a bare country is how remote-EMEA reqs get
+   rejected, so doing it everywhere would drop genuine Irish and Dutch roles.
 
 **Filtering:**
 8. A free **title + location filter** drops anything off-function or off-market before a token is spent.
@@ -908,9 +922,12 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   notice; it's wrapped so a failure there never breaks the run, just shows "skipped" for that source.
 - **Belgium/Amsterdam location coverage** for hiring.cafe and LinkedIn depends on `location_ok()`'s
   regexes staying in sync with how those cities/regions actually appear in postings.
-- **revopsroles.com** depends on Tom's Gmail subscription to the site's daily digest staying
-  active and the email's HTML layout not changing; it parses that email rather than the site
-  itself (see above). If the digest stops arriving or its markup changes, this source goes
-  quiet the same way the others do — check the status footer.
+- **revopsroles.com** depends on Tom's Gmail subscriptions staying active and the email's
+  HTML layout not changing; it parses those emails rather than the site itself (see above).
+  The salary selector (`color:#16a34a`) currently matches nothing on any row, which is
+  either a stale selector or a site that does not publish pay in the digest — diagnosing it
+  needs one real email in hand. If a digest stops arriving or its markup changes, this
+  source goes quiet the same way the others do; the footer now names each email separately
+  so two alerts read as two.
 - The status footer at the bottom of the dashboard shows exactly what each source did each run —
   check it if results look thin.

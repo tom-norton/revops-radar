@@ -1683,6 +1683,68 @@ def test_the_new_drop_stage_is_visible_in_the_log_and_on_the_dashboard():
     assert '"us-comp-unstated"' in page
 
 
+# ---- the revopsroles digest
+
+
+def test_the_digest_sender_filter_matches_the_domain_not_one_mailbox():
+    """Tom runs two alerts now, Europe and the US, and they arrive as separate emails. IMAP
+    SEARCH FROM is a substring match on the header, so filtering on the domain means a new
+    alert or a changed sender cannot silently drop a feed -- and a silently missing feed
+    looks exactly like a quiet day on the status line."""
+    assert scan.REVOPSROLES_SENDER == "revopsroles.com"
+    assert "@" not in scan.REVOPSROLES_SENDER
+
+
+def test_the_digest_work_mode_tag_rescues_us_rows_and_leaves_europe_alone():
+    """The work mode is a tag in this digest, not part of the location, and market_of()
+    only reads the location. Folding the tag in is US-only on purpose: remote is the
+    REQUIREMENT there, but in Europe remote wording next to a bare country is how
+    remote-EMEA reqs get rejected, so doing this everywhere would drop a genuine "Ireland"
+    row that is kept today."""
+    def gate(loc, mode, cc):
+        return f"{loc} ({mode})" if mode and cc == "us" else loc
+
+    # US: a city row tagged Remote is a US remote role
+    assert scan.market_of("us", gate("Austin, United States", "Remote", "us")) == "US-Remote"
+    assert scan.market_of("us", gate("San Francisco, CA, United States", "Remote",
+                                     "us")) == "US-Remote"
+    # ...and on-site or hybrid still resolves to nothing
+    for mode in ("Onsite", "Hybrid"):
+        assert scan.market_of("us", gate("Austin, United States", mode, "us")) is None, mode
+    # Europe untouched, including the case the restriction exists for
+    assert scan.market_of("ie", gate("Ireland", "Remote", "ie")) == "IE"
+    assert scan.market_of("nl", gate("Amsterdam, Netherlands", "Remote", "nl")) == "NL"
+    assert scan.market_of("gb", gate("London, United Kingdom", "Remote", "gb")) == "UK-London"
+    # Canada needs no help: its branch accepts remote already
+    assert scan.market_of("ca", gate("Toronto, Canada", "Remote", "ca")) == "CA"
+
+
+def test_the_digest_resolves_country_codes_for_the_new_markets():
+    """country_code() is what turns "Austin, United States" into cc="us", which is the flag
+    the work-mode fix keys on. Without the entry it returned "" and the fix never fired."""
+    for name, want in [("united states", "us"), ("usa", "us"), ("canada", "ca"),
+                       ("united kingdom", "gb"), ("ireland", "ie"),
+                       ("the netherlands", "nl"), ("belgium", "be")]:
+        assert scan.country_code(name) == want, name
+    # every market the radar has must be reachable from a country name in a digest
+    assert {scan.country_code(n) for n in ("united states", "canada", "ireland",
+                                           "united kingdom", "the netherlands",
+                                           "belgium")} == {"us", "ca", "ie", "gb", "nl", "be"}
+
+
+def test_a_digest_row_with_no_salary_cannot_pass_the_us_gate():
+    """Standing record of a live gap rather than a hypothetical. On the 32 revopsroles rows
+    the dashboard had, 0 carried a salary, and the JD cannot be fetched either
+    (revopsroles.com answers 429 to datacenter IPs), so the description is a ~50-character
+    synthesized summary. Every US row from this source therefore drops at
+    us-comp-unstated. The fetcher reports a salary count on the status line so this is
+    visible rather than inferred from an empty dashboard."""
+    row = {"market": "US-Remote", "salary": "", "source": "revopsroles"}
+    assert scan.us_comp_unstated(row)
+    # the same row for Europe is unaffected -- most EU postings state no salary at all
+    assert not scan.us_comp_unstated(dict(row, market="IE"))
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
