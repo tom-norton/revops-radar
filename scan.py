@@ -1968,6 +1968,43 @@ def greenhouse_board_desc(url):
     return greenhouse_desc(f"https://boards-api.greenhouse.io/v1/boards/"
                            f"{m.group(1)}/jobs/{m.group(2)}")
 
+SMARTRECRUITERS_URL = re.compile(
+    r"^https?://jobs\.smartrecruiters\.com/([^/]+)/(\d+)", re.I)
+
+
+def smartrecruiters_desc(url):
+    """The JD off a jobs.smartrecruiters.com posting URL, via their posting API.
+
+    Added because the board lookup was resolving SmartRecruiters URLs and then recovering
+    nothing from them: the visible page renders client-side, so the generic JSON-LD
+    extractor finds no JobPosting. The API has the whole thing in jobAd.sections -- a QIMA
+    RevOps posting came back as 6,736 characters across four sections where the page gave
+    zero.
+
+    Sections are concatenated in reading order rather than cherry-picked, because
+    qualifications is where the language requirements and the years-of-experience ceiling
+    live, and those are exactly what the disqualifier checks and the seniority dimension
+    need to see."""
+    m = SMARTRECRUITERS_URL.match((url or "").split("?")[0])
+    if not m:
+        return ""
+    try:
+        r = get(f"https://api.smartrecruiters.com/v1/companies/{m.group(1)}"
+                f"/postings/{m.group(2)}", headers={"Accept": "application/json"})
+        if r.status_code != 200:
+            return ""
+        secs = ((r.json().get("jobAd") or {}).get("sections") or {})
+    except Exception:
+        return ""
+    parts = []
+    for key in ("jobDescription", "qualifications", "companyDescription",
+                "additionalInformation"):
+        text = strip_html(((secs.get(key) or {}).get("text")) or "")
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
 def fetch_lever(name, slug):
     r = get(f"https://api.lever.co/v0/postings/{slug}?mode=json"); r.raise_for_status()
     out = []
@@ -2139,12 +2176,73 @@ DETAIL_FETCHERS = {"greenhouse": greenhouse_desc, "linkedin": linkedin_desc,
                    "revopsroles": jsonld_job_description}
 # Tried for any source once the specific one has been exhausted. The two URL-rewriting
 # fetchers cost nothing when the URL isn't theirs -- they return "" without a request.
-GENERIC_FETCHERS = (workday_desc, greenhouse_board_desc, jsonld_job_description)
+GENERIC_FETCHERS = (workday_desc, greenhouse_board_desc, smartrecruiters_desc,
+                    jsonld_job_description)
 # Fetchers that make no request unless the URL matches their host, so trying them is free.
 _FREE_IF_NO_MATCH = {workday_desc: workday_cxs_url,
                      greenhouse_board_desc: lambda u: GREENHOUSE_BOARD_URL.match(
+                         (u or "").split("?")[0]),
+                     smartrecruiters_desc: lambda u: SMARTRECRUITERS_URL.match(
                          (u or "").split("?")[0])}
 MAX_DESC_FETCHES = 3     # network calls per job, so a board of thin ads can't stall a run
+
+
+# How many stub rows may go looking for their real posting in one run. Bounded because
+# each one can cost a slug probe across eight board APIs; the per-company cache in
+# board-cache.json means a given employer is only ever paid for once, so this is about
+# keeping a single scan short rather than about a recurring cost.
+MAX_JD_RESCUES_PER_RUN = 12
+
+
+def rescue_description(job, companies, cache, fetch=None):
+    """Go to the company's own board for a row whose posting text never arrived.
+
+    Returns (description, apply_url) and ("", "") when nothing trustworthy was found.
+
+    This is Tom's idea done the cheap way: use the source as a pointer, then get the real
+    JD from the employer. findform already had every piece -- find_board() probes the eight
+    public board APIs by company slug, rank() matches the posting's title -- it was just
+    running AFTER scoring, on rows gated at FLOOR, so the description it could have
+    recovered arrived too late to be scored on.
+
+    The title gate is rank()'s, unchanged, and that matters more here than it does for
+    applications. TITLE_MATCH_MIN plus a market match is what stops a same-titled role in
+    another city being pulled in; a wrong JD does not just mis-link a row, it produces a
+    confidently wrong SCORE, which is harder to notice than a wrong link."""
+    import findform                   # deferred: findform imports this module
+    company = (job.get("company") or "").strip()
+    if not company:
+        return "", ""
+    try:
+        ats, _slug, jobs = findform.find_board(company, companies, fetch, cache)
+    except Exception:
+        return "", ""
+    if not jobs:
+        return "", ""
+    _matches, best = findform.rank(jobs, job.get("title") or "", job.get("market") or "")
+    if not best or not best.get("url"):
+        return "", ""
+    # Stricter than rank() on purpose, and only here.
+    #
+    # rank() accepts a single close title match even when no candidate sits in the
+    # posting's market, so that a board which omits locations does not rule out the whole
+    # company. That is a considered trade-off for finding an application form -- Tom sees
+    # the link and confirms it himself.
+    #
+    # It is the wrong trade-off for a DESCRIPTION. A board that says "Austin, TX" against
+    # an Amsterdam row is not missing a location, it is stating a different one, and
+    # attaching that JD would hand the scorer the wrong comp, the wrong requirements and
+    # the wrong market -- a confidently wrong score, which is exactly what the
+    # thin-evidence work exists to prevent. A thin row is recoverable; a plausible score
+    # built on another city's posting is not.
+    #
+    # So: accept a stated location only when it is in this row's market. A blank location
+    # still falls through, which is the case rank()'s rule was written for.
+    board_loc = (best.get("location") or "").strip()
+    if board_loc and not findform.same_market(job.get("market") or "", board_loc):
+        return "", ""
+    desc = fill_description({"url": best["url"], "source": ats})
+    return (desc, best["url"]) if not is_thin(desc) else ("", best["url"])
 
 
 def is_thin(desc):
@@ -3148,13 +3246,44 @@ def main():
     new_jobs.sort(key=lambda j: priority(j, deferrals), reverse=True)
     survivors = []
 
+    # Board lookups spent rescuing stub descriptions this run, and the cache they share
+    # with the post-score lookup further down -- so a company probed here is not probed
+    # again there.
+    rescues, rescued = 0, 0
+    # Imported here, not at the top. findform imports this module -- it needs market_of()
+    # to tell whether a board's posting is in one of Tom's markets -- so a top-level
+    # import either way round is a cycle. It resolves at runtime today because both sides
+    # only touch the other inside functions, which is a thing that works right up until
+    # somebody adds a module-level reference and the whole pipeline stops importing. One
+    # deferred import is cheaper than that failure.
+    import findform
+    board_cache = findform.load_cache()
+
     for j in new_jobs[:MAX_SCREENED_PER_RUN]:
         # Get the real posting text before anything reads it -- only for survivors of the
         # title/location prefilter, so the fetches stay cheap. Every downstream decision
         # (the two disqualifier checks below, both model calls) is only as good as this.
         j["description"] = fill_description(j)
-        j["desc_chars"] = len(j["description"])   # kept so a score can be audited later
         j.pop("_detail", None); j.pop("_fallback_desc", None)
+
+        # Still no posting? Go to the company's own board for it.
+        #
+        # Deliberately BEFORE the two hard disqualifiers rather than after. They read the
+        # description, so on a stub neither can fire -- a role whose JD rules out
+        # sponsorship was passing both checks silently. Recovering the text first is what
+        # makes them work at all on these rows, and that is worth more than the score.
+        if is_thin(j["description"]) and rescues < MAX_JD_RESCUES_PER_RUN:
+            rescues += 1
+            desc, apply_url = rescue_description(j, companies, board_cache)
+            if apply_url:
+                j["apply_url"] = apply_url       # the real posting, not the advert
+            if desc:
+                j["description"] = desc
+                rescued += 1
+                print(f"  jd    recovered {len(desc)} chars for {j['title']} "
+                      f"@ {j.get('company')}")
+
+        j["desc_chars"] = len(j["description"])   # kept so a score can be audited later
 
         # Hard disqualifiers, read off the full description before either model sees it.
         # These are absolute -- no score is worth computing for a role that has ruled Tom
@@ -3251,13 +3380,6 @@ def main():
     # promise without ever opening a browser. Applied to the whole merged list, not just
     # this run's new rows, so a row that has carried an also_seen link since before this
     # existed gets it filled in on the very next scan rather than staying blank forever.
-    # Imported here, not at the top. findform imports this module -- it needs market_of()
-    # to tell whether a board's posting is in one of Tom's markets -- so a top-level
-    # import either way round is a cycle. It resolves at runtime today because both sides
-    # only touch the other inside functions, which is a thing that works right up until
-    # somebody adds a module-level reference and the whole pipeline stops importing. One
-    # deferred import is cheaper than that failure.
-    import findform
     for j in merged:
         ats, fillable = submit.application_status(j)
         j["ats"] = ats
@@ -3297,7 +3419,9 @@ def main():
     todo.sort(key=lambda j: (j.get("apply_link") == "aggregator only",
                              priority(j, deferrals)), reverse=True)
     if todo:
-        cache = findform.load_cache()
+        # The same cache object pass A already populated, so a company probed while
+        # rescuing a description is not probed again here.
+        cache = board_cache
         before = len(cache)
         found = findform.resolve_rows(todo, companies, cache,
                                       limit=BOARD_LOOKUPS_PER_RUN)
@@ -3334,6 +3458,11 @@ def main():
     src_status["apply links"] = ", ".join(f"{k} {v}" for k, v in sorted(states.items()))
 
     src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
+    if rescues:
+        src_status["jd rescue"] = (
+            f"{rescues} stub row(s) looked for their real posting, {rescued} recovered"
+            + (f" (cap {MAX_JD_RESCUES_PER_RUN})"
+               if rescues >= MAX_JD_RESCUES_PER_RUN else ""))
     # Everything that cleared stage one but did not get a deep-scoring slot. Prune the
     # counters against this set so the file cannot grow without bound, then say out loud
     # how deep the queue is: a backlog that never drains is the one way this design turns

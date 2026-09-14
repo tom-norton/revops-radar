@@ -1884,6 +1884,104 @@ def test_the_thin_stage_label_exists_on_the_dashboard():
     assert '"thin-evidence"' in page
 
 
+# ---- rescuing a stub description from the company's own board
+
+
+def _board(*entries):
+    """A fake fetch for findform.find_board: a Greenhouse board with these roles."""
+    import json as _json
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"jobs": [{"id": i, "title": t, "absolute_url": f"https://x/{i}",
+                              "location": {"name": loc}}
+                             for i, (t, loc) in enumerate(entries, 1)]}
+
+    return lambda url, **kw: R()
+
+
+def test_the_rescue_is_stricter_about_location_than_an_application_is():
+    """rank() accepts a single close title match even when nothing sits in the posting's
+    market, so a board that omits locations does not rule out the whole company. That is
+    the right trade-off for finding a form, which Tom confirms by eye.
+
+    It is the wrong one for a description. A board saying "Austin, TX" against an Amsterdam
+    row is not missing a location, it is stating a different one, and attaching that JD
+    hands the scorer the wrong comp and requirements -- a confidently wrong score, which is
+    what the thin-evidence work exists to prevent."""
+    import findform
+    # rank() on its own WOULD take it: one close title, no market match, so it is returned
+    jobs = findform.board_jobs("greenhouse", "acme",
+                               _board(("Revenue Operations Manager", "Austin, TX")))
+    _m, best = findform.rank(jobs, "Revenue Operations Manager", "NL")
+    assert best is not None and not findform.same_market("NL", best["location"])
+    # ...and the rescue refuses it anyway
+    assert scan.rescue_description(
+        {"company": "Acme", "title": "Revenue Operations Manager", "market": "NL"}, [], {},
+        _board(("Revenue Operations Manager", "Austin, TX"))) == ("", "")
+    # a stated location IN the market is fine
+    desc, url = scan.rescue_description(
+        {"company": "Acme", "title": "Revenue Operations Manager", "market": "NL"}, [], {},
+        _board(("Revenue Operations Manager", "Amsterdam, Netherlands")))
+    assert url                       # matched; the text fetch is a separate network step
+    # and a title that merely reads similar is refused by the title gate
+    assert findform.title_score("Revenue Operations Manager",
+                                "Revenue Operations Manager, Post Sales (EMEA)") < \
+        findform.TITLE_MATCH_MIN
+
+
+def test_the_rescue_returns_nothing_rather_than_something_wrong():
+    """Every failure path hands back ("", "") or at most a URL with no text. A row keeps
+    its stub and its thin-evidence flag rather than being given a JD that is not its own."""
+    assert scan.rescue_description({"company": "", "title": "X"}, [], {}) == ("", "")
+    assert scan.rescue_description({"company": "Acme", "title": "Revenue Operations "
+                                    "Manager", "market": "NL"}, [], {},
+                                   _board()) == ("", "")
+    # a board with only an unrelated role resolves nothing
+    assert scan.rescue_description(
+        {"company": "Acme", "title": "Revenue Operations Manager", "market": "NL"}, [], {},
+        _board(("Warehouse Associate", "Amsterdam"))) == ("", "")
+
+
+def test_the_rescue_runs_before_the_hard_disqualifiers_not_after():
+    """The ordering IS the feature. says_no_sponsorship() and requires_other_language() both
+    read the description, so on a stub neither can fire and a role that rules out
+    sponsorship in its JD passes both silently. Recovering the text first is what makes
+    them work on these rows, and that is worth more than the score."""
+    src = open(os.path.join(os.path.dirname(__file__), "..", "scan.py"),
+               encoding="utf-8").read()
+    body = src[src.index("for j in new_jobs[:MAX_SCREENED_PER_RUN]:"):]
+    rescue_at = body.index("rescue_description(")
+    sponsor_at = body.index("says_no_sponsorship(")
+    language_at = body.index("requires_other_language(")
+    assert rescue_at < sponsor_at, "rescue must run before the sponsorship check"
+    assert rescue_at < language_at, "rescue must run before the language check"
+
+
+def test_smartrecruiters_postings_give_up_their_jd():
+    """The board lookup was resolving SmartRecruiters URLs and recovering nothing: their
+    page renders client-side so the JSON-LD extractor finds no JobPosting. The API has it.
+    Registered as free-if-no-match, so trying it on another host costs no request."""
+    assert scan.smartrecruiters_desc("https://acme.com/careers/1") == ""
+    assert scan.smartrecruiters_desc("") == ""
+    assert scan.SMARTRECRUITERS_URL.match(
+        "https://jobs.smartrecruiters.com/QIMA/744000147877009")
+    assert scan.smartrecruiters_desc in scan.GENERIC_FETCHERS
+    assert scan.smartrecruiters_desc in scan._FREE_IF_NO_MATCH
+
+
+def test_every_generic_fetcher_that_can_be_free_is_marked_free():
+    """A fetcher not in _FREE_IF_NO_MATCH burns one of MAX_DESC_FETCHES on a URL it was
+    never going to handle."""
+    for fetcher in (scan.workday_desc, scan.greenhouse_board_desc,
+                    scan.smartrecruiters_desc):
+        assert fetcher in scan._FREE_IF_NO_MATCH, fetcher.__name__
+    # the generic JSON-LD one is deliberately NOT free: it works on any host
+    assert scan.jsonld_job_description not in scan._FREE_IF_NO_MATCH
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]
