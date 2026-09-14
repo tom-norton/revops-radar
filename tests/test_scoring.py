@@ -1982,6 +1982,153 @@ def test_every_generic_fetcher_that_can_be_free_is_marked_free():
     assert scan.jsonld_job_description not in scan._FREE_IF_NO_MATCH
 
 
+# ---- web-searching for a posting (last resort)
+
+
+def test_the_search_only_accepts_a_url_and_treats_anything_else_as_none():
+    """The model is asked for one line and nothing else. Every other shape of answer has to
+    read as "not found" rather than as something to go fetch."""
+    calls = []
+    real = scan._claude_call
+
+    def fake(reply):
+        def _c(*a, **kw):
+            calls.append(kw.get("tools"))
+            return reply
+        return _c
+
+    try:
+        for reply, want in [
+                ("URL: https://jobs.ashbyhq.com/acme/1", "https://jobs.ashbyhq.com/acme/1"),
+                ("URL: NONE", ""),
+                ("URL: none", ""),
+                ("URL: https://acme.com/x.", "https://acme.com/x"),   # trailing period
+                ("I could not find it.", ""),
+                ("URL: not-a-url", ""),
+                ("", ""),
+        ]:
+            scan._claude_call = fake(reply)
+            assert scan.search_jd_url("k", {"company": "Acme", "title": "X"}) == want, reply
+        # a failing call costs the tokens and nothing else
+        def boom(*a, **kw):
+            raise RuntimeError("api down")
+        scan._claude_call = boom
+        assert scan.search_jd_url("k", {"company": "Acme", "title": "X"}) == ""
+    finally:
+        scan._claude_call = real
+    # and it really does ask for web search
+    assert any(t and t[0]["type"] == "web_search_20260209" for t in calls if t)
+    assert all(t[0]["max_uses"] == scan.JD_SEARCH_MAX_USES for t in calls if t)
+
+
+def test_the_search_result_is_verified_in_code_not_taken_on_trust():
+    """The split is what makes spending tokens here safe. The model points at a page; code
+    decides whether it is the same role, off the page's own schema.org metadata. So a bad
+    search costs a refused match and a row that stays thin -- the outcome it already had --
+    rather than a plausible score built on another role's requirements."""
+    posting = {"title": "Revenue Operations Associate",
+               "hiringOrganization": {"name": "Omnea"},
+               "description": "<p>" + "x" * (scan.MIN_DESC_CHARS + 50) + "</p>"}
+    real = scan.jsonld_job_posting
+    try:
+        scan.jsonld_job_posting = lambda url: posting
+        job = {"company": "Omnea", "title": "Revenue Operations Associate"}
+        desc, url = scan.verify_jd("https://x/1", job)
+        assert desc and url == "https://x/1"
+        # company suffixes are the same employer
+        assert scan.verify_jd("https://x/1", dict(job, company="Omnea Ltd"))[0]
+        # a different employer is refused, however well the title matches
+        assert scan.verify_jd("https://x/1", dict(job, company="Stripe")) == ("", "")
+        # so is a different role at the right employer
+        assert scan.verify_jd("https://x/1",
+                              dict(job, title="Warehouse Associate")) == ("", "")
+        # a page with no JobPosting metadata at all is refused
+        scan.jsonld_job_posting = lambda url: {}
+        assert scan.verify_jd("https://x/1", job) == ("", "")
+        # ...and so is one whose description is itself a stub
+        scan.jsonld_job_posting = lambda url: dict(posting, description="too short")
+        assert scan.verify_jd("https://x/1", job) == ("", "")
+    finally:
+        scan.jsonld_job_posting = real
+
+
+def test_the_search_uses_the_same_title_gate_as_everything_else():
+    """One threshold for "is this the same role", shared with the application lookup and
+    the board rescue."""
+    import findform
+    src = open(os.path.join(os.path.dirname(__file__), "..", "scan.py"),
+               encoding="utf-8").read()
+    body = src[src.index("def verify_jd("):src.index("def is_thin(")]
+    assert "findform.TITLE_MATCH_MIN" in body
+    assert "findform.title_score" in body
+    assert findform.TITLE_MATCH_MIN >= 0.85
+
+
+def test_the_search_is_spent_only_on_rows_that_won_a_scoring_slot():
+    """It is the one place that pays for EVIDENCE rather than judgement, so it must sit in
+    pass B after the Haiku screen and the priority sort -- never on a row about to be
+    killed or deferred."""
+    src = open(os.path.join(os.path.dirname(__file__), "..", "scan.py"),
+               encoding="utf-8").read()
+    passb = src[src.index("# PASS B: deep score"):]
+    search_at = passb.index("search_jd_url(")
+    assert passb.index("survivors.sort(") < search_at
+    # the budget check comes first, so a row past the cap never triggers a search
+    assert passb.index("len(scored) >= MAX_SCORED_PER_RUN") < search_at
+    # and the disqualifiers are re-run on whatever comes back
+    assert "says_no_sponsorship(desc)" in passb
+    assert "requires_other_language(desc)" in passb
+
+
+def test_the_search_budget_is_small_and_bounded():
+    assert scan.MAX_JD_SEARCHES_PER_RUN <= 5
+    assert scan.JD_SEARCH_MAX_USES <= 5
+    assert scan.SERVER_TOOL_MAX_TURNS >= 2      # pause_turn needs at least one resume
+    # a lookup, not a judgement: this must not be the expensive model
+    assert scan.JD_SEARCH_MODEL != scan.CLAUDE_SCORE_MODEL
+
+
+def test_a_server_tool_call_resumes_across_pause_turn():
+    """The API answers pause_turn when its own tool loop needs resuming, and the assistant
+    turn goes straight back with no extra user message. Without tools the loop must run
+    exactly once, so no existing caller changes behaviour."""
+    seen_bodies = []
+
+    class R:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._p = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._p
+
+    replies = [
+        {"stop_reason": "pause_turn", "content": [{"type": "server_tool_use"}], "usage": {}},
+        {"stop_reason": "end_turn", "content": [{"type": "text", "text": "URL: NONE"}],
+         "usage": {}},
+    ]
+    real_post = scan.requests.post
+    try:
+        def post(url, **kw):
+            seen_bodies.append(kw["json"])
+            return R(replies[len(seen_bodies) - 1])
+        scan.requests.post = post
+        out = scan._claude_call("k", "m", "sys", "user", 100,
+                                tools=[{"type": "web_search_20260209",
+                                        "name": "web_search"}])
+        assert out == "URL: NONE"
+        assert len(seen_bodies) == 2
+        # the resumed request carries the assistant turn and no new user message
+        assert seen_bodies[1]["messages"][-1]["role"] == "assistant"
+        assert len(seen_bodies[1]["messages"]) == 2
+    finally:
+        scan.requests.post = real_post
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

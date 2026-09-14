@@ -2152,24 +2152,34 @@ def workday_desc(url):
     except Exception:
         return ""
 
-def jsonld_job_description(url):
-    """Generic schema.org JobPosting extractor. Widely used for SEO across ATS/career
-    platforms (Workday, iCIMS, SmartRecruiters, custom sites) regardless of how the
-    visible page itself renders, so this works across revopsroles.com's varied
-    source_url domains without needing per-ATS parsing. Returns "" if absent/unparseable."""
+def jsonld_job_posting(url):
+    """The schema.org JobPosting dict off a page, or {}.
+
+    Split out from jsonld_job_description() because the JD text is not the only useful
+    thing in there: `title` and `hiringOrganization` are what let a web-searched URL be
+    VERIFIED as the right role in code, instead of taking the model's word for it."""
     try:
         r = get(url); r.raise_for_status()
-        for m in re.finditer(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', r.text, re.S):
+        for m in re.finditer(r'<script type="application/ld\+json"[^>]*>(.*?)</script>',
+                             r.text, re.S):
             try:
                 data = json.loads(m.group(1))
             except Exception:
                 continue
             for d in (data if isinstance(data, list) else [data]):
-                if isinstance(d, dict) and d.get("@type") == "JobPosting" and d.get("description"):
-                    return strip_html(d["description"])
+                if isinstance(d, dict) and d.get("@type") == "JobPosting":
+                    return d
     except Exception:
         pass
-    return ""
+    return {}
+
+
+def jsonld_job_description(url):
+    """Generic schema.org JobPosting extractor. Widely used for SEO across ATS/career
+    platforms (Workday, iCIMS, SmartRecruiters, custom sites) regardless of how the
+    visible page itself renders, so this works across revopsroles.com's varied
+    source_url domains without needing per-ATS parsing. Returns "" if absent/unparseable."""
+    return strip_html((jsonld_job_posting(url) or {}).get("description") or "")
 
 # Source-specific description fetchers, tried before the generic ones below.
 DETAIL_FETCHERS = {"greenhouse": greenhouse_desc, "linkedin": linkedin_desc,
@@ -2243,6 +2253,98 @@ def rescue_description(job, companies, cache, fetch=None):
         return "", ""
     desc = fill_description({"url": best["url"], "source": ats})
     return (desc, best["url"]) if not is_thin(desc) else ("", best["url"])
+
+
+# Web-searching for a posting the other routes could not find. Last resort, and priced
+# like one: this is the only part of the pipeline that spends tokens to get EVIDENCE rather
+# than to form a judgement.
+#
+# Sonnet 5 rather than Opus, because the task is a lookup: find the canonical posting URL.
+# It is not asked to read, summarise or judge the role -- the free JSON-LD extractor pulls
+# the text and code checks the identity, so a wrong answer here is caught rather than
+# believed.
+JD_SEARCH_MODEL = "claude-sonnet-5"
+JD_SEARCH_MAX_TOKENS = 1500
+JD_SEARCH_MAX_USES = 3        # web_search calls inside one request
+MAX_JD_SEARCHES_PER_RUN = 3   # requests per scan; ~$0.01-0.02 each
+
+JD_SEARCH_SYSTEM = """You find the canonical URL of one specific job posting. You do not evaluate it, summarise it, or comment on it.
+
+Given an employer, a job title and a location, search for that exact posting and return the URL of the employer's own application page for it -- their careers site or their applicant tracking system (Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Personio, Teamtailor and the like).
+
+Rules:
+- Prefer the employer's own posting over any job board. LinkedIn, Indeed, Glassdoor, ZipRecruiter and aggregator reposts are a last resort and usually not worth returning at all.
+- It must be THE SAME role: same employer, same title, same location. A similar title at the same company in a different city is the wrong answer, and so is the same title at a different company.
+- If you cannot find it, or you are not confident it is the same role, say so. A wrong URL is far worse than none: it would attach another role's requirements to this one.
+
+Reply with ONLY one line, and nothing else:
+URL: <the url>
+or
+URL: NONE"""
+
+
+def search_jd_url(api_key, job):
+    """A candidate URL for this posting from a web search, or "".
+
+    Deliberately narrow: the model is asked for a URL and nothing else. It does not read
+    the posting and its answer is not trusted -- verify_jd() checks the identity in code
+    off the page's own schema.org metadata. That split is what makes spending tokens here
+    safe: the failure mode of a bad search is a refused match, not a plausible wrong score.
+    """
+    user = (f"Employer: {job.get('company') or '?'}\n"
+            f"Job title: {job.get('title') or '?'}\n"
+            f"Location: {job.get('location') or '?'}")
+    tools = [{"type": "web_search_20260209", "name": "web_search",
+              "max_uses": JD_SEARCH_MAX_USES}]
+    try:
+        text = _claude_call(api_key, JD_SEARCH_MODEL, JD_SEARCH_SYSTEM, user,
+                            JD_SEARCH_MAX_TOKENS, tools=tools)
+    except Exception:
+        return ""
+    m = re.search(r"URL:\s*(\S+)", text or "")
+    if not m:
+        return ""
+    url = m.group(1).strip().rstrip(".,)")
+    if url.upper() == "NONE" or not url.lower().startswith("http"):
+        return ""
+    return url
+
+
+def verify_jd(url, job):
+    """(description, url) when the page at `url` really is this job, else ("", "").
+
+    The verification is the point, and it is done here rather than by the model. A page
+    that advertises itself as a JobPosting states its own title and hiring organisation in
+    schema.org metadata, so those can be checked against the row: the title with the same
+    findform.title_score gate an application uses, and the employer by name.
+
+    Nothing is accepted without both. A search that finds the wrong posting therefore costs
+    a refused match and a thin row -- which is the outcome the row already had -- rather
+    than a confidently wrong score built on another role's requirements."""
+    import findform                   # deferred: findform imports this module
+    posting = jsonld_job_posting(url)
+    if not posting:
+        return "", ""
+    desc = strip_html(posting.get("description") or "")
+    if is_thin(desc):
+        return "", ""
+
+    found_title = (posting.get("title") or "").strip()
+    if not found_title:
+        return "", ""
+    if findform.title_score(job.get("title") or "", found_title) < findform.TITLE_MATCH_MIN:
+        return "", ""
+
+    org = posting.get("hiringOrganization")
+    found_org = (org.get("name") if isinstance(org, dict) else org) or ""
+    want_org = job.get("company") or ""
+    if want_org and found_org:
+        # Same normalisation the board cache keys on, so "Acme", "Acme Ltd" and "Acme,
+        # Inc." are one employer here too.
+        a, b = findform.cache_key(found_org), findform.cache_key(want_org)
+        if a != b and a not in b and b not in a:
+            return "", ""
+    return desc, url
 
 
 def is_thin(desc):
@@ -2752,35 +2854,57 @@ def _extract_json(text):
     m = re.search(r"\{.*\}", text, re.S)
     return json.loads(m.group(0) if m else text)
 
-def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_system=False):
-    """One Messages API call, with bounded retry on the transient failures. cache_system
+# How many assistant turns a server-tool call may be resumed across. The API returns
+# stop_reason "pause_turn" when its own tool loop hits an iteration limit, and handing the
+# assistant turn straight back resumes it. Bounded so a pathological loop cannot run the
+# bill up unattended -- the same reason applyq.SERVER_TOOL_MAX_TURNS exists.
+SERVER_TOOL_MAX_TURNS = 3
+
+
+def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_system=False,
+                 tools=None):
+    """A Messages API call, with bounded retry on the transient failures. cache_system
     puts a cache breakpoint on the system prompt: the deep-score prefix (rubric + the whole
     of profile.md) is identical for every job in a run, so without this it gets re-billed
-    on all 30 calls."""
-    body = {
-        "model": model, "max_tokens": max_tokens,
-        "system": ([{"type": "text", "text": system,
-                     "cache_control": {"type": "ephemeral"}}] if cache_system else system),
-        "messages": [{"role": "user", "content": user}],
-    }
-    if extra:
-        body.update(extra)
-    last = None
-    for attempt in range(CLAUDE_ATTEMPTS):
-        if attempt:
-            time.sleep(2 ** attempt)      # 2s, 4s
-        try:
-            r = requests.post(API_URL, timeout=180, headers={
-                "x-api-key": api_key, "anthropic-version": API_HEADERS_VERSION,
-                "content-type": "application/json"}, json=body)
-        except (requests.Timeout, requests.ConnectionError) as e:
-            last = e
-            continue
-        if r.status_code in (408, 409, 429) or r.status_code >= 500:
-            last = RuntimeError(f"HTTP {r.status_code}: {r.text[:140]}")
-            continue
-        r.raise_for_status()             # 4xx other than the above is a real bug, not a blip
-        payload = r.json()
+    on all 30 calls.
+
+    `tools` turns this into a server-tool call, which is more than one HTTP request: the
+    API answers "pause_turn" when its own tool loop needs resuming, and the assistant turn
+    goes straight back with no extra user message. Without tools the loop runs exactly
+    once, so every existing caller is unaffected."""
+    messages = [{"role": "user", "content": user}]
+    for _turn in range(SERVER_TOOL_MAX_TURNS if tools else 1):
+        body = {
+            "model": model, "max_tokens": max_tokens,
+            "system": ([{"type": "text", "text": system,
+                         "cache_control": {"type": "ephemeral"}}]
+                       if cache_system else system),
+            "messages": messages,
+        }
+        if tools:
+            body["tools"] = tools
+        if extra:
+            body.update(extra)
+        last = None
+        payload = None
+        for attempt in range(CLAUDE_ATTEMPTS):
+            if attempt:
+                time.sleep(2 ** attempt)      # 2s, 4s
+            try:
+                r = requests.post(API_URL, timeout=180, headers={
+                    "x-api-key": api_key, "anthropic-version": API_HEADERS_VERSION,
+                    "content-type": "application/json"}, json=body)
+            except (requests.Timeout, requests.ConnectionError) as e:
+                last = e
+                continue
+            if r.status_code in (408, 409, 429) or r.status_code >= 500:
+                last = RuntimeError(f"HTTP {r.status_code}: {r.text[:140]}")
+                continue
+            r.raise_for_status()         # 4xx other than the above is a real bug, not a blip
+            payload = r.json()
+            break
+        if payload is None:
+            raise last or RuntimeError("claude call failed")
         note_usage(payload.get("usage") or {})
         stop = payload.get("stop_reason")
         # Opus 5 can decline a request outright (HTTP 200, empty content) and can run out of
@@ -2789,9 +2913,12 @@ def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_sys
             raise RuntimeError("model declined to score this posting (stop_reason=refusal)")
         if stop == "max_tokens":
             raise RuntimeError(f"hit max_tokens ({max_tokens}) before finishing")
+        if stop == "pause_turn":
+            messages.append({"role": "assistant", "content": payload.get("content", [])})
+            continue
         return "".join(b.get("text", "") for b in payload.get("content", [])
                        if b.get("type") == "text")
-    raise last or RuntimeError("claude call failed")
+    raise RuntimeError(f"server-tool call did not finish in {SERVER_TOOL_MAX_TURNS} turns")
 
 def sample_desc(desc, cap=None):
     """Fit a description into `cap` characters keeping both ends. A plain head slice drops
@@ -3332,12 +3459,49 @@ def main():
 
     # PASS B: deep score, best first, until the budget runs out.
     survivors.sort(key=lambda j: priority(j, deferrals), reverse=True)
+    searches, searched_ok = 0, 0
     for j in survivors:
         if len(scored) >= MAX_SCORED_PER_RUN:
             # Out of budget. NOT added to seen, so this row comes back next run, and its
             # deferral counter goes up so it climbs the queue when it does.
             deferrals[j["id"]] = min(deferrals.get(j["id"], 0) + 1, DEFER_CAP)
             continue
+
+        # Last resort for a row still carrying no posting: pay for a web search.
+        #
+        # Here rather than in pass A on purpose. This is the only place in the pipeline
+        # that spends tokens to get EVIDENCE rather than to form a judgement, so it is
+        # spent only on rows that already survived the Haiku screen and have won a
+        # deep-scoring slot -- never on one about to be killed or deferred. The queue has
+        # already put them in Tom's own preference order, so the budget lands on the rows
+        # that matter most.
+        if (api_key and not dry and is_thin(j.get("description"))
+                and searches < MAX_JD_SEARCHES_PER_RUN):
+            searches += 1
+            url = search_jd_url(api_key, j)
+            desc, confirmed = verify_jd(url, j) if url else ("", "")
+            if desc:
+                j["description"] = desc
+                j["desc_chars"] = len(desc)
+                j["apply_url"] = j.get("apply_url") or confirmed
+                searched_ok += 1
+                print(f"  jd    web search recovered {len(desc)} chars for {j['title']} "
+                      f"@ {j.get('company')}")
+                # Re-run the two hard disqualifiers now there is finally text to read.
+                # Skipping this would score a role the pipeline would have refused had the
+                # posting arrived by any other route.
+                quote = says_no_sponsorship(desc) or requires_other_language(desc)
+                if quote:
+                    stage = ("no-sponsorship" if says_no_sponsorship(desc)
+                             else "language-required")
+                    record_drop(j, stage, f'JD (web search): "{quote}"')
+                    seen.add(j["id"])
+                    print(f"  drop  {j['title']} @ {j.get('company')} "
+                          f"({stage}, found in the recovered JD)")
+                    continue
+            elif url:
+                print(f"  jd    web search found a page for {j['title']} that could not be "
+                      f"confirmed as the same role; left thin")
         try:
             result = score_job(api_key, system_score, j)
         except Exception as e:
@@ -3458,6 +3622,11 @@ def main():
     src_status["apply links"] = ", ".join(f"{k} {v}" for k, v in sorted(states.items()))
 
     src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
+    if searches:
+        src_status["jd web search"] = (
+            f"{searches} searched, {searched_ok} confirmed and used"
+            + (f" (cap {MAX_JD_SEARCHES_PER_RUN})"
+               if searches >= MAX_JD_SEARCHES_PER_RUN else ""))
     if rescues:
         src_status["jd rescue"] = (
             f"{rescues} stub row(s) looked for their real posting, {rescued} recovered"
