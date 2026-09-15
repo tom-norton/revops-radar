@@ -1,7 +1,7 @@
 {
  "_readme": [
   "Which job board each company posts on, discovered by findform.py and cached",
-  "here so a scan does not re-probe six board APIs for every company every run.",
+  "here so a scan does not re-probe eight board APIs for every company every run.",
   "An empty `ats` is a real answer: nothing public was found, and it will be",
   "asked again after 30 days in case they move.",
   "A row records the board found under that company's NAME, which is not proof",
@@ -65,7 +65,10 @@
   "canva": {
    "ats": "smartrecruiters",
    "slug": "canva",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": [
+    "UK-London"
+   ]
   },
   "carwow": {
    "ats": "ashby",
@@ -107,6 +110,11 @@
    "slug": "",
    "at": "2026-09-14"
   },
+  "equinix": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-14"
+  },
   "eye security": {
    "ats": "ashby",
    "slug": "eye-security",
@@ -115,7 +123,8 @@
   "fin": {
    "ats": "ashby",
    "slug": "fin",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": []
   },
   "fis": {
    "ats": "",
@@ -125,12 +134,19 @@
   "google": {
    "ats": "recruitee",
    "slug": "google",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": [
+    "NL"
+   ]
   },
   "gresb": {
    "ats": "workable",
    "slug": "gresb",
-   "at": "2026-09-11"
+   "at": "2026-09-11",
+   "markets": [
+    "NL",
+    "UK-London"
+   ]
   },
   "hansen": {
    "ats": "",
@@ -157,10 +173,17 @@
    "slug": "",
    "at": "2026-09-09"
   },
+  "leap tools": {
+   "ats": "ashby",
+   "slug": "leap",
+   "at": "2026-09-14",
+   "markets": []
+  },
   "linkedin": {
    "ats": "greenhouse",
    "slug": "linkedin",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": []
   },
   "luma": {
    "ats": "",
@@ -170,7 +193,8 @@
   "meltwater": {
    "ats": "recruitee",
    "slug": "meltwater",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": []
   },
   "miro": {
    "ats": "ashby",
@@ -180,7 +204,10 @@
   "motorway": {
    "ats": "ashby",
    "slug": "motorway",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": [
+    "UK-London"
+   ]
   },
   "onlogic": {
    "ats": "",
@@ -210,7 +237,10 @@
   "planday from xero": {
    "ats": "ashby",
    "slug": "planday-from-xero",
-   "at": "2026-09-10"
+   "at": "2026-09-10",
+   "markets": [
+    "UK-London"
+   ]
   },
   "playable": {
    "ats": "",
@@ -235,22 +265,39 @@
   "qualio": {
    "ats": "greenhouse",
    "slug": "qualio",
-   "at": "2026-09-12"
+   "at": "2026-09-12",
+   "markets": [
+    "IE"
+   ]
   },
   "revelane": {
    "ats": "",
    "slug": "",
    "at": "2026-09-05"
   },
+  "salesforce": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-14"
+  },
   "servicenow": {
    "ats": "smartrecruiters",
    "slug": "servicenow",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": [
+    "IE",
+    "UK-London",
+    "CA"
+   ]
   },
   "sierra": {
    "ats": "ashby",
    "slug": "sierra",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": [
+    "UK-London",
+    "CA"
+   ]
   },
   "soldo": {
    "ats": "",
@@ -260,7 +307,20 @@
   "stepstone uk": {
    "ats": "smartrecruiters",
    "slug": "stepstoneuk",
-   "at": "2026-09-05"
+   "at": "2026-09-05",
+   "markets": [
+    "UK-London"
+   ]
+  },
+  "stripe": {
+   "ats": "greenhouse",
+   "slug": "stripe",
+   "at": "2026-09-14",
+   "markets": [
+    "IE",
+    "UK-London",
+    "CA"
+   ]
   },
   "sunrise": {
    "ats": "greenhouse",
@@ -270,7 +330,8 @@
   "sweep": {
    "ats": "ashby",
    "slug": "sweep",
-   "at": "2026-09-08"
+   "at": "2026-09-08",
+   "markets": []
   },
   "tellent": {
    "ats": "",
@@ -282,10 +343,24 @@
    "slug": "teya",
    "at": "2026-09-05"
   },
+  "themis solutions": {
+   "ats": "",
+   "slug": "",
+   "at": "2026-09-14"
+  },
   "topdesk": {
    "ats": "lever",
    "slug": "topdesk",
-   "at": "2026-09-10"
+   "at": "2026-09-10",
+   "markets": [
+    "UK-London"
+   ]
+  },
+  "trp recruitment": {
+   "ats": "recruitee",
+   "slug": "trp",
+   "at": "2026-09-14",
+   "markets": []
   },
   "upwind security": {
    "ats": "",
