@@ -819,6 +819,79 @@ def test_a_broken_skeleton_in_the_bank_fails_loudly_rather_than_silently_reverti
         raise AssertionError("a corrupt skeleton was accepted")
 
 
+# ---------------------------------------------------------------- backfilling an old bank
+#
+# contact_na, nationality and citizenships were all added to the seed weeks after real
+# banks already existed. seed_base() only ever copies the seed into a bank with NO
+# cv-base.json at all, so a bank that predates one of these fields never gets it -- which is
+# exactly what happened for real: /market CA correctly resolved a role's market, and the CV
+# still printed the Barcelona block, because there was no contact_na on file to switch to.
+
+def _old_shape_bank():
+    """A bank exactly like a real one from before the Canada/US work: it has `contact`
+    (Tom's own edits included) and nothing else new. Deliberately NOT built from BASE, which
+    already carries every current field and so could never catch this."""
+    old = {"name": "TOM NORTON", "contact": [{"text": "Barcelona, Spain"},
+                                             {"text": "tp.norton@pm.me"},
+                                             {"text": "Nationality: United States"}],
+           "education": [], "experience": []}
+    return FakeBank({cvbuild.BASE_FILE: json.dumps(old)}), old
+
+
+def test_an_old_bank_is_backfilled_with_the_fields_it_never_got():
+    bank, old = _old_shape_bank()
+    base, from_bank = cvbuild.load_base(bank, "CA")
+    assert from_bank is True
+    assert any("Grand Rapids" in c["text"] for c in base["contact"]), base["contact"]
+    stored = json.loads(bank.files[cvbuild.BASE_FILE])
+    assert stored.get("contact_na")
+    assert stored.get("citizenships")
+    # His own edits survive the backfill untouched.
+    assert any("Barcelona" in c["text"] for c in stored["contact"])
+
+
+def test_the_backfill_is_written_once_not_re_derived_every_read():
+    bank, _ = _old_shape_bank()
+    cvbuild.load_base(bank)                       # first read: backfills and commits
+    commits_after_first = len(bank.commits)
+    cvbuild.load_base(bank)                       # second read: already has everything
+    assert len(bank.commits) == commits_after_first
+
+
+def test_the_backfill_never_overwrites_a_key_the_bank_already_has():
+    """Even one that looks like Tom customised it -- present is present, whatever its
+    value, and the seed never gets to override something on file."""
+    old = {"name": "TOM NORTON", "contact": [{"text": "Barcelona, Spain"}],
+           "contact_na": [{"text": "Custom NA line"}], "education": [], "experience": []}
+    bank = FakeBank({cvbuild.BASE_FILE: json.dumps(old)})
+    cvbuild.load_base(bank)
+    assert json.loads(bank.files[cvbuild.BASE_FILE])["contact_na"] == [
+        {"text": "Custom NA line"}]
+
+
+def test_a_current_bank_triggers_no_backfill_write_at_all():
+    bank = FakeBank({cvbuild.BASE_FILE: json.dumps(BASE)})
+    cvbuild.load_base(bank)
+    assert bank.commits == []
+
+
+def test_the_form_gets_the_right_visa_answers_off_a_backfilled_bank():
+    """The regression this is actually about. citizenships has no fallback the way
+    nationality does -- without the backfill this stays a plain US citizen's answers even
+    after /market has correctly set the role to CA."""
+    import submit
+    bank, _ = _old_shape_bank()
+    base, _ = cvbuild.load_base(bank, "CA")
+    ident = submit.identity(base)
+    assert "Canada" in ident["citizenships"], ident["citizenships"]
+
+    auth, _ = submit.work_status("Are you legally authorised to work in Canada?",
+                                 "CA", ident["nationality"], ident["citizenships"])
+    spon, _ = submit.work_status("Will you require visa sponsorship?",
+                                 "CA", ident["nationality"], ident["citizenships"])
+    assert auth == "yes" and spon == "no", (auth, spon)
+
+
 # ---------------------------------------------------------------- the render invocation
 
 def test_libreoffice_gets_an_absolute_profile_uri_even_from_a_relative_outdir():

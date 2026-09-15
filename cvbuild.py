@@ -155,16 +155,42 @@ def load_base(bank=None, market=None):
     return base, from_bank
 
 
+# Fields added to the seed after real banks already existed. seed_base() only ever copies
+# the seed into a bank that has NO cv-base.json at all, so a bank from before one of these
+# existed never gets it -- contact_na sat unreachable for weeks on a bank that already had
+# a file, and load_base() silently kept printing the European block for a Canada/US role
+# no matter what market it was given. Worse: submit.identity() reads citizenships straight
+# off the base with no fallback of its own (nationality has one -- it re-parses the printed
+# contact line -- citizenships does not), so a bank missing it answers a Canadian
+# citizen's own work-authorisation questions as a plain US citizen's. _read_base() below
+# closes that gap for every bank still missing one of these, once, the first time it's read.
+SEED_BACKFILL_KEYS = ("contact_na", "nationality", "citizenships")
+
+
 def _read_base(bank):
     if bank is not None:
         raw = bank.read(BASE_FILE, "")
         if raw.strip():
             try:
-                return json.loads(raw), True
+                base = json.loads(raw)
             except json.JSONDecodeError as e:
                 # Do not fall back silently: a base that failed to parse means the CV would
                 # quietly be built from the seed with none of Tom's edits in it.
                 raise RuntimeError(f"{BASE_FILE} in the bullet bank is not valid JSON ({e})")
+            missing = [k for k in SEED_BACKFILL_KEYS if k not in base]
+            if missing:
+                with open(BASE_SEED, encoding="utf-8") as f:
+                    seed = json.load(f)
+                for k in missing:
+                    if k in seed:
+                        base[k] = seed[k]
+                # Persisted and committed, not just patched in memory -- so this runs once
+                # per bank ever (the next read finds every key already present) and the fix
+                # is visible in the bank's own history rather than silently re-derived on
+                # every tick.
+                bank.write(BASE_FILE, json.dumps(base, indent=2, ensure_ascii=False) + "\n")
+                bank.commit(f"cv-base: backfill {', '.join(missing)} from the seed")
+            return base, True
     with open(BASE_SEED, encoding="utf-8") as f:
         return json.load(f), False
 
