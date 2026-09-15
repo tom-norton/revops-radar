@@ -78,6 +78,7 @@
   .tag.market.t3{color:var(--mut)}
   .tag.market.t4{border-style:dashed; color:var(--mut)}
   .tag.market.t9{border-style:dashed; color:var(--warn)}
+  .tag.conflict{border-color:var(--warn); color:var(--warn); font-weight:650}
   .tag.transfer{border-color:var(--teal); color:var(--teal)}
   .subhead{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em;
         color:var(--mut); margin:16px 0 8px; font-weight:700}
@@ -247,6 +248,15 @@ function card(j, reviewed){
         :tier===2?"Strong option":tier===3?"Backup":"Last resort — remote RevOps only"}"
        >${esc(j.tier)}</span>`
     : "";
+  // Sits next to the market it disputes rather than down among the flags, because this one
+  // is not a risk note to weigh -- it means the CV's contact block and the form's visa
+  // answers are being picked off a market the posting itself contradicts. The apply queue
+  // asks before it builds anything; this is so the disagreement is visible without opening
+  // the role at all.
+  const conflictTag = j.market_conflict
+    ? `<span class="tag conflict" title="The posting says ${esc(j.market_conflict.stated)}. /market ${esc(id)} ${esc(j.market_conflict.resolves_to)} corrects it."
+       >&#9888; says ${esc(j.market_conflict.resolves_to)}, not ${esc(j.tier||"?")}</span>`
+    : "";
   // Only on US rows, and only when the employer's own board shows they hire somewhere Tom
   // wants to live. That is the difference between a dead end and a route abroad without
   // changing employer, and it is what lifts the US score band from 2-3 to 4-5.
@@ -311,7 +321,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${marketTag}${transferTag}${queuedTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${marketTag}${conflictTag}${transferTag}${queuedTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>

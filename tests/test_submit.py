@@ -1151,7 +1151,7 @@ def machine(fields=None, sent=True, reason="", state=None, model_answers=None, j
                                                                     calls["browser"] + 1)
     applyq.answer_questions = fake_answers
     the_job = dict(job or GH_JOB)
-    applyq.load_job = lambda _id: dict(the_job)
+    applyq.load_job = lambda _id, bank=None: dict(the_job)
     applyq.CV_OUT_DIR = tempfile.mkdtemp(prefix="applyq-form-")
 
     role = finished_role()
@@ -1518,7 +1518,7 @@ def test_the_same_role_is_not_applied_to_twice():
 
 def test_a_role_with_no_link_left_is_said_plainly():
     step, state, tg, _b, calls = machine()
-    applyq.load_job = lambda _id: None
+    applyq.load_job = lambda _id, bank=None: None
     state["last_cv"]["job_snapshot"].pop("url")
     step("/submit")
     assert calls["preview"] == 0

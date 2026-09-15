@@ -463,7 +463,7 @@ def test_a_role_that_only_ever_got_a_packet_can_be_run_again():
     """Phase 1 finished at the packet. Those roles have no CV, and re-applying should get
     them one rather than being told they are done."""
     tg = FakeTelegram()
-    applyq.load_job = lambda job_id: JOB if job_id == JOB["id"] else None
+    applyq.load_job = lambda job_id, bank=None: JOB if job_id == JOB["id"] else None
     state = {"history": [{"id": JOB["id"], "title": JOB["title"], "outcome": "done",
                           "packet": "p.md"}]}
     state, queue, job = applyq.start_next(state, [JOB["id"]], tg)

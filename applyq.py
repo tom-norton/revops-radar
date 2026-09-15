@@ -80,6 +80,11 @@ BANK_DIR = os.environ.get("BULLET_BANK_DIR", "/tmp/bullet-bank")
 BANK_FILE = "bullet-bank.md"
 ANSWER_FILE = "answer-bank.md"
 STATE_FILE = "state/apply-state.json"
+# Markets Tom has corrected by hand, {job id: market}. In the bank rather than in
+# docs/jobs.json because the apply workflow holds contents:read on this repo and can
+# only write to the bank -- and because the correction has to outlive the scan, which
+# would otherwise put its own reading back on the row tomorrow.
+MARKET_FILE = "state/market-overrides.json"
 PACKET_DIR = "packets"
 # Where a submitted form and the plan behind it are filed, next to the CV and the letter
 # that went up with them.
@@ -217,6 +222,7 @@ HELP = (
     "/cancel - drop the role in flight and move on\n"
     "/phone &lt;number&gt; - your European number (or /phone off)\n"
     "/phone us &lt;number&gt; - your US number, for Canada and US CVs\n"
+    "/market &lt;id&gt; &lt;market&gt; - fix a role the radar put in the wrong country\n"
     "/redo &lt;what to change&gt; - rebuild the last CV with your feedback\n"
     "/cover &lt;anything to steer it&gt; - write the cover letter for the last CV\n"
     "/submit &lt;link, optional&gt; - fill the application form and show it to you\n"
@@ -551,7 +557,37 @@ def comp_risk(job):
 
     A row scored before scan.py started persisting `comp` has no data, which reads as not
     stated. That asks a question that may not be needed; the alternative is assuming the
-    money is fine on a role Tom might take, which is worse."""
+    money is fine on a role Tom might take, which is worse.
+
+    While a market conflict is unresolved the floor is genuinely unknown -- an Irish-tagged
+    Canadian role would be measured against the Irish visa floor, and Canada has none. Both
+    candidates are tried and the STRICTER answer wins, because the two errors are not
+    symmetric: asking about pay that turns out to be fine costs one tap, while skipping the
+    question on a role that needed it means Tom finds out after he has applied. The market
+    question goes out in the same batch (build_questions), so the answer cannot arrive in
+    time to settle this first."""
+    for market in candidate_markets(job):
+        risky, reason = _comp_risk_in(job, market)
+        if risky:
+            return risky, reason
+    return False, ""
+
+
+def candidate_markets(job):
+    """Every market this role might be in, the row's own first.
+
+    One entry normally. Two while a market conflict is open and uncorrected, which is what
+    lets the callers that care reason about both without knowing how a conflict is shaped."""
+    markets = [job.get("market") or ""]
+    resolves = ((job.get("market_conflict") or {}).get("resolves_to") or "")
+    if resolves and resolves not in markets:
+        markets.append(resolves)
+    return markets
+
+
+def _comp_risk_in(job, market):
+    """comp_risk() for one specific market. Split out so a role whose market is in dispute
+    can be measured against both floors without this function knowing that happens."""
     comp = job.get("comp") or {}
     if not comp.get("stated"):
         return True, "no salary stated in the posting"
@@ -561,7 +597,6 @@ def comp_risk(job):
         low = 0.0
     if low <= 0:
         return True, "salary mentioned but no usable base figure"
-    market = job.get("market") or ""
     floor, cur = scan.VISA_FLOORS.get(market, (0, ""))
     stated_cur = (comp.get("currency") or "").upper()
     if not floor:
@@ -852,9 +887,23 @@ def build_questions(audit, job):
     """Every question this role will ask, in one list. The salary gate rides along as
     question 1 when the deep score flagged comp risk, because it needs an answer from Tom
     exactly like a gap does and there is no reason to spend a separate round trip on it.
+    A disputed market rides along the same way, and goes first -- see below.
 
     Returns [{kind, keyword, question, options}]."""
     qs = []
+    conflict = job.get("market_conflict") or {}
+    if conflict.get("resolves_to"):
+        # Ahead of everything, because it is the one answer that changes what the other
+        # questions mean: the salary floor is the market's, and so are the visa answers on
+        # the form. It rides along in this batch rather than opening a stage of its own --
+        # the run only ever waits on Tom twice, each wait costs a cron firing, and this
+        # batch already lands before the CV is built and before any form is filled.
+        # market is never empty here: scan.market_conflict() returns None without one.
+        stated, resolves = conflict.get("stated") or "?", conflict["resolves_to"]
+        qs.append({"kind": "market", "keyword": "market",
+                   "question": (f"The feed says {job['market']}, the posting says "
+                                f"{stated}. Which is right?"),
+                   "options": [resolves, job["market"]]})
     risky, reason = comp_risk(job)
     if risky:
         # Short form of the risk, because the long form reads as an explanation Tom has
@@ -3124,11 +3173,66 @@ def record_usage(state, phase, before):
 
 # ---------------------------------------------------------------- the tick
 
-def load_job(job_id):
+# The markets a role can be corrected TO, and the shorthand Tom will actually type. The
+# canonical names come from scan.MARKET_TIER so this list cannot drift from the radar's.
+def market_aliases():
+    return {m.lower(): m for m in scan.MARKET_TIER} | {
+        "us": "US-Remote", "usa": "US-Remote", "uk": "UK-London", "london": "UK-London",
+        "canada": "CA", "ireland": "IE", "netherlands": "NL", "holland": "NL",
+        "belgium": "BE",
+    }
+
+
+def resolve_market(word):
+    """A canonical market name from whatever Tom typed, or "" if it isn't one."""
+    return market_aliases().get((word or "").strip().lower().replace(" ", "-"), "")
+
+
+def market_overrides(bank):
+    if bank is None:
+        return {}
+    try:
+        return json.loads(bank.read(MARKET_FILE, "") or "{}")
+    except json.JSONDecodeError:
+        # Unlike the run state, a corrupt override file is not worth halting the queue for:
+        # the worst case of ignoring it is the market the radar already believed.
+        print(f"  {MARKET_FILE} is not valid JSON; ignoring the overrides")
+        return {}
+
+
+def set_market_override(bank, job_id, market):
+    """Record that this role is really in `market`. Returns the stored map."""
+    overrides = market_overrides(bank)
+    overrides[str(job_id)] = market
+    bank.write(MARKET_FILE, json.dumps(overrides, indent=1, sort_keys=True) + "\n")
+    bank.commit(f"market: {job_id} is in {market}")
+    return overrides
+
+
+def load_job(job_id, bank=None):
+    """The dashboard row for this id, with any market correction applied.
+
+    The override lands HERE, at the one place every consumer reads a role from, because the
+    market is not a label: it picks the CV's contact block (cvbuild.contact_for), it decides
+    how the application form answers the visa questions (submit.work_status), and it sets
+    the floor comp_risk() measures pay against. Correcting it in four places would mean
+    three chances to forget one, and the one you forget is the form.
+
+    A feed can be wrong about where a job is -- hiring.cafe put a Canadian role in Dublin --
+    and the row on the dashboard keeps the scan's reading either way, since nothing here can
+    write to this repo. That is only cosmetic: what reaches an employer comes through this
+    function."""
     rows = scan.load_json("docs/jobs.json", [])
+    overrides = market_overrides(bank)
     for j in rows:
         ids = [str(j.get("id") or "")] + [str(x) for x in (j.get("dupe_ids") or [])]
         if str(job_id) in ids:
+            # Checked against every id the row answers to, so a correction made against a
+            # duplicate still holds after the two rows are collapsed.
+            fixed = next((overrides[i] for i in ids if i in overrides), "")
+            if fixed and fixed != j.get("market"):
+                j = dict(j, market=fixed, market_was=j.get("market"),
+                         market_conflict=None)
             return j
     return None
 
@@ -3204,11 +3308,11 @@ def handle_commands(texts, state, queue, tg, bank=None):
                 tg.send("Give me an id: /apply <id>")
             elif arg in queue:
                 tg.send(f"{arg} is already queued.")
-            elif not load_job(arg):
+            elif not load_job(arg, bank):
                 tg.send(f"No scored role with id {arg} on the dashboard.")
             else:
                 queue = queue + [arg]
-                j = load_job(arg)
+                j = load_job(arg, bank)
                 tg.send(f"<b>Queued</b>  {esc(clip(j.get('title'), 60))}\n"
                         + esc(f"{j.get('company') or '?'} · "
                               f"{len(queue)} in the queue"))
@@ -3218,7 +3322,7 @@ def handle_commands(texts, state, queue, tg, bank=None):
             else:
                 lines = []
                 for q in queue[:15]:
-                    j = load_job(q)
+                    j = load_job(q, bank)
                     lines.append(
                         f"\u2022 {esc(clip(j.get('title'), 60))} "
                         f"<i>{esc(j.get('company') or '?')}</i>"
@@ -3349,7 +3453,7 @@ def handle_commands(texts, state, queue, tg, bank=None):
                     tg.send("There's a CV in the bank but I can't read it back. "
                             "/apply the role again and I'll rebuild it from scratch.")
                     continue
-                job = (load_job(role_id) or base_role.get("job_snapshot") or {})
+                job = (load_job(role_id, bank) or base_role.get("job_snapshot") or {})
                 if not (job.get("url") or ""):
                     tg.send("I don't have a link to that role's form any more, so there's "
                             "nothing to fill. /apply it again and I'll pick the link back "
@@ -3424,6 +3528,34 @@ def handle_commands(texts, state, queue, tg, bank=None):
                 tg.send(f"<b>Phone set</b> on the {which}.  {esc(arg)}\n\n"
                         + esc(" | ".join(c.get("text", "") for c in contact))
                         + f"\n\n<i>That's the contact line on every {which} from now on.</i>")
+        elif cmd == "/market":
+            parts = text.split()[1:]
+            if bank is None:
+                tg.send("Can't reach the bullet bank right now. Try again in a bit.")
+            elif len(parts) < 2:
+                tg.send("<b>/market &lt;id&gt; &lt;market&gt;</b> corrects where a role is.\n\n"
+                        + esc(" · ".join(scan.MARKET_TIER))
+                        + "\n\n<i>e.g. /market " + esc(parts[0] if parts else "abc123")
+                        + " CA. Use it when the radar has the wrong country: it decides the "
+                        "contact details on the CV and the visa answers on the form.</i>")
+            elif not (job := load_job(parts[0], bank)):
+                tg.send(f"No role with id <code>{esc(parts[0])}</code> on the dashboard.")
+            elif not (market := resolve_market(" ".join(parts[1:]))):
+                tg.send(f"<code>{esc(' '.join(parts[1:]))}</code> isn't one of the markets.\n\n"
+                        + esc(" · ".join(scan.MARKET_TIER)))
+            else:
+                was = job.get("market_was") or job.get("market") or "?"
+                set_market_override(bank, parts[0], market)
+                # Show the contact line this now prints, because that is the thing he is
+                # actually checking when he sends this. The visa answers move with it.
+                base, _ = cvbuild.load_base(bank, market)
+                tg.send(f"<b>{esc(clip(job.get('title'), 60))}</b> is in <b>{esc(market)}</b>"
+                        + (f", not {esc(was)}" if was != market else "")
+                        + ".\n\n"
+                        + esc(" | ".join(c.get("text", "")
+                                         for c in (base.get("contact") or [])))
+                        + "\n\n<i>That's the contact line on its CV, and the work "
+                        "authorisation answers on its form follow the same market.</i>")
         elif cmd in ("/help", "/start"):
             tg.send(HELP)
         elif cmd.startswith("/"):
@@ -3433,7 +3565,7 @@ def handle_commands(texts, state, queue, tg, bank=None):
     return queue, rest
 
 
-def start_next(state, queue, tg):
+def start_next(state, queue, tg, bank=None):
     """Pop the head of the queue into `current`. Removed from the queue at pick-up, not at
     completion: `current` is persisted, so a crashed tick resumes rather than losing the
     role, and a role that can't be found doesn't wedge the queue behind it."""
@@ -3449,7 +3581,7 @@ def start_next(state, queue, tg):
             tg.send(f"{done.get('title') or job_id} already has a CV "
                     f"({done.get('cv')}). Skipped.")
             continue
-        job = load_job(job_id)
+        job = load_job(job_id, bank)
         if not job:
             tg.send(f"Queued id {job_id} isn't on the dashboard any more. Skipped.")
             continue
@@ -3632,6 +3764,27 @@ def advance(state, job, bank, tg, api_key, answers_text):
     if cur["stage"] == "packet":
         audit = cur.get("audit") or {}
         answers = cur.get("answers") or []
+
+        # The market first, because it is the premise of everything after it: the salary
+        # research below reads the market, the CV's contact block is chosen by it, and the
+        # form's work-authorisation answers come off it. Recorded as an override so it
+        # survives this tick -- the CV may not be built until a later firing, and that
+        # firing reloads the role through load_job().
+        mkt = next((a for a in answers if a["kind"] == "market"), None)
+        if mkt:
+            picked = resolve_market(mkt["answer"])
+            if picked and picked != job.get("market"):
+                set_market_override(bank, cur["id"], picked)
+                job["market_was"] = job.get("market")
+                job["market"] = picked
+                tg.send(f"Noted: <b>{esc(picked)}</b>. Its CV and form will use the "
+                        f"{'North American' if picked in cvbuild.NA_MARKETS else 'European'}"
+                        f" contact details.")
+            elif picked:
+                # He confirmed the radar was right. Store it anyway: that is what stops the
+                # same question being asked again if the role is re-run.
+                set_market_override(bank, cur["id"], picked)
+            job["market_conflict"] = None
 
         # Salary research, if he asked for it. Runs here rather than in its own stage so it
         # costs no extra round trip.
@@ -4017,11 +4170,11 @@ def tick(dry=False):
     # the same time.
     job = None
     if not state.get("current"):
-        state, queue, job = start_next(state, queue, tg)
+        state, queue, job = start_next(state, queue, tg, bank)
         if state.get("current"):
             print(f"  starting {state['current']['title']}")
     else:
-        job = load_job(state["current"]["id"])
+        job = load_job(state["current"]["id"], bank)
         if not job:
             # A revision carries its own copy of the posting. "The CV you sent me
             # yesterday" should still be revisable today, and a role ages off the

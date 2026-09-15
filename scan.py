@@ -807,6 +807,38 @@ def deep_score_disqualifier(job, obs):
         return ("below-visa-floor" if kind == "visa" else "below-comp-floor"), note
     return None, None
 
+def market_conflict(job, obs):
+    """{"stated": ..., "resolves_to": ...} when the posting's own location contradicts the
+    market resolved in code, else None.
+
+    This exists because a feed can simply be wrong about where a job is -- hiring.cafe put
+    a Canadian role in Dublin -- and the market is not a cosmetic label downstream. It picks
+    the CV's contact block, and it decides how submit.work_status() answers the visa
+    questions ON THE FORM: an Irish-tagged Canadian role tells the employer Tom needs
+    sponsorship and is not authorised to work there, which is wrong twice over for a
+    Canadian citizen. A wrong phone number is an inconvenience; that is a self-inflicted
+    rejection.
+
+    The deep scorer is the only component that reads the whole posting, and it is
+    deliberately told to TRUST the resolved market rather than argue with it. So it reports
+    the location verbatim instead, and the comparison happens here, in code, through
+    market_of() -- the same single source of truth the location gate and the dashboard use,
+    so there is no third opinion about what a place name means. (findform.same_market() is
+    this comparison as a one-liner, but it calls market_of() itself and we need the
+    resolved value to report, so that would be the same lookup twice.)
+
+    A stated location that resolves to no target market is NOT a conflict. "Remote - EMEA",
+    "Global" and a bare country next to remote wording all land there, and treating them as
+    disagreements would fire on most rows while telling us nothing."""
+    stated = (obs.get("posting_location") or "").strip()
+    market = job.get("market") or ""
+    if not stated or not market:
+        return None
+    resolves = market_of("", stated)
+    if not resolves or resolves == market:
+        return None
+    return {"stated": stated[:120], "resolves_to": resolves}
+
 def score_flags(job, obs):
     """Risk notes shown on a scored row. Language and below-floor salary are NOT here --
     both are hard disqualifiers now (deep_score_disqualifier()) and a job carrying either
@@ -843,6 +875,11 @@ def score_flags(job, obs):
         flags.append("thin evidence: no real JD retrieved, sponsorship and language "
                      "checks could not run")
 
+    conflict = market_conflict(job, obs)
+    if conflict:
+        flags.append(f"location conflict: the posting says {conflict['stated']} "
+                     f"({conflict['resolves_to']}), not {market}")
+
     return flags
 
 # JSON schema for the deep score. Replaces "reply with ONLY this JSON" plus a regex that
@@ -863,12 +900,13 @@ SCORE_SCHEMA = {
         "salary_stated": {"type": "boolean"},
         "salary_min_base": {"type": "number"},
         "salary_currency": {"type": "string"},
+        "posting_location": {"type": "string"},
         "flags": {"type": "array", "items": {"type": "string"}},
         "verdict": {"type": "string"},
     },
     "required": ["dimensions", "function_match", "company_standout",
                  "language_hard_requirement", "salary_stated", "salary_min_base",
-                 "salary_currency", "flags", "verdict"],
+                 "salary_currency", "posting_location", "flags", "verdict"],
     "additionalProperties": False,
 }
 
@@ -939,8 +977,9 @@ Alongside the dimensions, report these observations from the posting:
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
 - salary_stated / salary_min_base / salary_currency: the annual base-salary floor of any stated range, as a number, with its ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_currency "". Report only a figure the POSTING states; never carry over an estimate from a job board. A stated figure below the market's floor DROPS the role -- see above.
+- posting_location: the work location the POSTING itself states, copied as it is written ("Toronto, ON", "Amsterdam, Netherlands", "Remote - US"). This is a transcription, not an opinion: report what the ad says even when it disagrees with the market you were given, and especially then. Give the location of the job, not the company's headquarters, and where several offices are listed give the one the role is actually based in. Use "" when the posting genuinely does not say, which is common -- do not infer one from the company, the currency or the language of the ad.
 
-The market (NL / BE / UK-London / IE / CA / US-Remote) has already been resolved in code and is given to you in the job details. Trust it. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted. Where it sits in Tom's preference ordering is the whole of the Location & Visa dimension -- see that dimension's guidance, and note that the ordering is about where he wants to live, not about which market is easiest to get hired in.
+The market (NL / BE / UK-London / IE / CA / US-Remote) has already been resolved in code and is given to you in the job details. Trust it for SCORING. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted. If the posting's own location contradicts that market, posting_location is where that goes and the only place it goes: report what the ad says there, score the market you were given, and let code reconcile the two. Do not mention the disagreement in a dimension score, in flags or in the verdict. Where it sits in Tom's preference ordering is the whole of the Location & Visa dimension -- see that dimension's guidance, and note that the ordering is about where he wants to live, not about which market is easiest to get hired in.
 
 Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution on Location & Visa (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles, and for the Netherlands specifically it is what separates the 9-10 band from the 7 band. Ignore sponsor entirely for Ireland, Canada and the US: Ireland runs employment permits rather than a register, and Tom needs no sponsorship in either North American market.
 
@@ -3009,6 +3048,11 @@ def parse_score_result(job, data):
         "comp": {"stated": bool(data.get("salary_stated")),
                  "min_base": _as_float(data.get("salary_min_base")),
                  "currency": str(data.get("salary_currency") or "").upper()[:3]},
+        # Structured as well as flagged, because the apply queue has to ACT on this one
+        # rather than just show it: it asks Tom which market is right before building a CV
+        # or filling a form. Parsing it back out of a flag string would be the wrong kind
+        # of clever. None on a row where the posting and the feed agree, which is most.
+        "market_conflict": market_conflict(job, data),
     }
 
 def score_job(api_key, system, job):

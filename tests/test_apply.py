@@ -96,7 +96,7 @@ AUDIT = {
 
 
 def machine(audit=None, comp=None, drafts=None, score=6.8, tailored=None,
-            bank_changes=None):
+            bank_changes=None, market_conflict=None, market="NL"):
     """A state machine wired to stubs. Returns (step, state, tg, bank, calls) where step()
     runs one tick with an optional inbound message from Tom.
 
@@ -107,7 +107,8 @@ def machine(audit=None, comp=None, drafts=None, score=6.8, tailored=None,
     calls = {"audit": 0, "draft": 0, "salary": 0, "split": 0, "drafted_from": None,
              "brief": 0, "tailor": 0, "bankwrite": 0, "render": 0, "shipped": None,
              "revise": 0, "feedback": None, "as_built": None}
-    job = dict(JOB, comp=comp if comp is not None else JOB["comp"], score=score)
+    job = dict(JOB, comp=comp if comp is not None else JOB["comp"], score=score,
+               market=market, market_conflict=market_conflict)
 
     def fake_audit(api_key, j, profile, bank_md, answers_md):
         calls["audit"] += 1
@@ -751,6 +752,202 @@ def test_answer_bank_ids_do_not_collide_within_a_day():
         applyq.timezone.utc).strftime("%Y%m%d")
     assert applyq.next_answer_index(existing) == 2
     assert applyq.next_answer_index("") == 1
+
+
+# ---------------------------------------------------------------- a disputed market
+#
+# hiring.cafe put a Canadian role in Dublin. The market it lands on is not a label: it picks
+# the CV's contact block, it sets the floor comp_risk() measures pay against, and it decides
+# how submit.work_status() answers the visa questions ON THE FORM. An Irish-tagged Canadian
+# role tells the employer Tom needs sponsorship and is not authorised to work there, which
+# is wrong twice over for a Canadian citizen.
+
+CONFLICT = {"stated": "Toronto, ON", "resolves_to": "CA"}
+
+
+def test_a_disputed_market_is_asked_about_before_anything_is_built():
+    step, _state, tg, _bank, calls = machine(market="IE", market_conflict=CONFLICT)
+    step()
+    assert "Toronto, ON" in tg.last()
+    assert "CA" in tg.last()
+    # Nothing has been built or researched yet: the question lands in the batch that runs
+    # before the packet, the CV and any form.
+    assert calls["tailor"] == 0 and calls["render"] == 0
+
+
+def test_the_market_question_comes_before_the_salary_question():
+    """Ordering is load-bearing, not cosmetic. The salary question's premise IS the market:
+    comp_risk() measures the stated pay against that market's visa floor."""
+    qs = applyq.build_questions(AUDIT, dict(JOB, market="IE", market_conflict=CONFLICT,
+                                            comp={"stated": False}))
+    kinds = [q["kind"] for q in qs]
+    assert kinds[0] == "market", kinds
+    assert kinds[1] == "salary", kinds
+
+
+def test_no_conflict_means_no_market_question():
+    assert not [q for q in applyq.build_questions(AUDIT, JOB) if q["kind"] == "market"]
+
+
+def test_answering_the_market_question_records_it_and_says_which_cv():
+    step, _state, tg, bank, _calls = machine(market="IE", market_conflict=CONFLICT)
+    step()
+    step("CA | did the cleanup | built them myself")
+    stored = json.loads(bank.files[applyq.MARKET_FILE])
+    assert stored[JOB["id"]] == "CA", stored
+    assert any("North American" in m for m in tg.sent), tg.sent
+
+
+def test_confirming_the_radar_was_right_is_recorded_too():
+    """Otherwise the same question comes back every time the role is re-run."""
+    step, _state, _tg, bank, _calls = machine(market="IE", market_conflict=CONFLICT)
+    step()
+    step("IE | did the cleanup | built them myself")
+    assert json.loads(bank.files[applyq.MARKET_FILE])[JOB["id"]] == "IE"
+
+
+def test_an_open_conflict_takes_the_stricter_comp_floor():
+    """Canada has no visa floor and Ireland does, so which market you believe decides
+    whether the pay question gets asked at all. While it is in dispute the strict answer
+    wins: asking about pay that turns out to be fine costs one tap, while skipping the
+    question on a role that needed it means Tom finds out after applying."""
+    low_irish = {"stated": True, "min_base": 40000, "currency": "EUR"}
+    # Believed to be Canadian, it would sail through. Disputed, it still gets asked.
+    assert applyq.comp_risk({"market": "CA", "comp": low_irish})[0] is False
+    risky, reason = applyq.comp_risk({"market": "CA", "comp": low_irish,
+                                      "market_conflict": {"stated": "Dublin",
+                                                          "resolves_to": "IE"}})
+    assert risky is True and "IE" in reason, reason
+
+
+def test_a_settled_market_is_measured_only_against_its_own_floor():
+    good = {"stated": True, "min_base": 95000, "currency": "EUR"}
+    assert applyq.comp_risk({"market": "NL", "comp": good})[0] is False
+
+
+# ---------------------------------------------------------------- the override itself
+
+def test_the_override_reaches_every_reader_through_load_job():
+    """load_job() is the one place a role is read from -- the in-flight tick, /submit, the
+    queue listing. Correcting the market there rather than at each consumer is what stops
+    the form being the one place someone forgot."""
+    bank = FakeBank({applyq.MARKET_FILE: json.dumps({"az-nl-1": "CA"})})
+    real = applyq.scan.load_json
+    try:
+        applyq.scan.load_json = lambda *a: [dict(JOB, market="IE")]
+        job = applyq.load_job("az-nl-1", bank)
+        assert job["market"] == "CA"
+        assert job["market_was"] == "IE"
+        # And with no bank, or no override, the row is untouched.
+        assert applyq.load_job("az-nl-1", None)["market"] == "IE"
+        assert applyq.load_job("az-nl-1", FakeBank())["market"] == "IE"
+    finally:
+        applyq.scan.load_json = real
+
+
+def test_a_correction_made_against_a_duplicate_still_holds():
+    """Rows get collapsed. A correction keyed on the id Tom happened to send it against
+    has to survive that, or it silently stops applying."""
+    bank = FakeBank({applyq.MARKET_FILE: json.dumps({"dupe-9": "CA"})})
+    real = applyq.scan.load_json
+    try:
+        applyq.scan.load_json = lambda *a: [dict(JOB, market="IE", dupe_ids=["dupe-9"])]
+        assert applyq.load_job("az-nl-1", bank)["market"] == "CA"
+    finally:
+        applyq.scan.load_json = real
+
+
+def test_a_corrupt_override_file_does_not_wedge_the_queue():
+    """Unlike the run state, where a half-written file means a half-answered interview, the
+    worst case of ignoring these is the market the radar already believed."""
+    assert applyq.market_overrides(FakeBank({applyq.MARKET_FILE: "{not json"})) == {}
+
+
+def test_the_markets_tom_might_type_all_resolve():
+    for typed, want in [("ca", "CA"), ("CA", "CA"), ("canada", "CA"),
+                        ("us", "US-Remote"), ("USA", "US-Remote"),
+                        ("us-remote", "US-Remote"), ("uk", "UK-London"),
+                        ("london", "UK-London"), ("UK-London", "UK-London"),
+                        ("ie", "IE"), ("ireland", "IE"), ("nl", "NL"), ("be", "BE")]:
+        assert applyq.resolve_market(typed) == want, typed
+    for junk in ("", "germany", "remote", "yes", "berlin"):
+        assert applyq.resolve_market(junk) == "", junk
+
+
+def test_every_market_the_radar_knows_can_be_typed_back():
+    """Drift guard in the direction that matters: a market added to scan.py that /market
+    cannot name is a role Tom cannot correct."""
+    for m in applyq.scan.MARKET_TIER:
+        assert applyq.resolve_market(m) == m, m
+
+
+def market_cmd(text, files=None):
+    """Run one /market message through the command layer. Returns (tg, bank)."""
+    tg, bank = FakeTelegram(), FakeBank(files)
+    real = applyq.scan.load_json
+    try:
+        applyq.scan.load_json = lambda *a: [dict(JOB, market="IE")]
+        applyq.handle_commands([(0, text)], {"current": None}, [], tg, bank)
+    finally:
+        applyq.scan.load_json = real
+    return tg, bank
+
+
+def test_the_market_command_corrects_a_role_and_shows_the_contact_line():
+    tg, bank = market_cmd(f"/market {JOB['id']} ca")
+    assert json.loads(bank.files[applyq.MARKET_FILE])[JOB["id"]] == "CA"
+    # It answers the thing he is actually checking: which details this role's CV prints.
+    assert "CA" in tg.last() and "Grand Rapids" in tg.last(), tg.last()
+    assert "not IE" in tg.last(), tg.last()
+
+
+def test_the_market_command_refuses_a_market_that_is_not_one():
+    tg, bank = market_cmd(f"/market {JOB['id']} germany")
+    assert applyq.MARKET_FILE not in bank.files
+    assert "US-Remote" in tg.last()          # it lists the real ones rather than just "no"
+
+
+def test_the_market_command_refuses_an_id_that_is_not_on_the_dashboard():
+    tg, bank = market_cmd("/market nope-999 CA")
+    assert applyq.MARKET_FILE not in bank.files
+    assert "nope-999" in tg.last()
+
+
+def test_the_market_command_with_no_market_explains_itself():
+    tg, bank = market_cmd(f"/market {JOB['id']}")
+    assert applyq.MARKET_FILE not in bank.files
+    assert "UK-London" in tg.last()
+
+
+def test_the_market_command_is_in_the_help():
+    assert "/market" in applyq.HELP
+
+
+# ---------------------------------------------------------------- what reaches an employer
+
+def test_the_form_answers_the_visa_questions_off_the_corrected_market():
+    """The whole point of the change. Before the correction this role tells the employer Tom
+    needs sponsorship; after it, that he is already authorised and needs none."""
+    import json as _json
+    import submit
+    # The real strings off the CV skeleton, not invented ones: citizen_of() matches on the
+    # country name ("Canada"), so a fixture saying "Canadian" would pass a test while the
+    # live answer stayed wrong.
+    base = _json.load(open("cv-base.json"))
+    nationality, citizenships = base["nationality"], base["citizenships"]
+    assert citizenships == ["United States", "Canada"], citizenships
+
+    auth_ie, _ = submit.work_status("Are you legally authorised to work in Ireland?",
+                                    "IE", nationality, citizenships)
+    spon_ie, _ = submit.work_status("Will you require visa sponsorship?",
+                                    "IE", nationality, citizenships)
+    assert auth_ie == "no" and spon_ie == "yes", (auth_ie, spon_ie)
+
+    auth_ca, _ = submit.work_status("Are you legally authorised to work in Canada?",
+                                    "CA", nationality, citizenships)
+    spon_ca, _ = submit.work_status("Will you require visa sponsorship?",
+                                    "CA", nationality, citizenships)
+    assert auth_ca == "yes" and spon_ca == "no", (auth_ca, spon_ca)
 
 
 def _run():

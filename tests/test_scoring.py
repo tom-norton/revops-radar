@@ -2129,6 +2129,71 @@ def test_a_server_tool_call_resumes_across_pause_turn():
         scan.requests.post = real_post
 
 
+# ---------------------------------------------------------------- market conflicts
+#
+# A feed can be wrong about where a job is: hiring.cafe put a Canadian role in Dublin. The
+# market is not cosmetic downstream -- it picks the CV's contact block and it decides how
+# the application FORM answers the visa questions -- so the disagreement has to be caught.
+
+def test_a_posting_that_contradicts_its_market_is_caught():
+    job = flag_job(market="IE", location="Dublin, Ireland")
+    conflict = scan.market_conflict(job, {**NO_OBS, "posting_location": "Toronto, ON"})
+    assert conflict == {"stated": "Toronto, ON", "resolves_to": "CA"}, conflict
+
+
+def test_a_posting_that_agrees_with_its_market_is_not_a_conflict():
+    job = flag_job(market="IE")
+    for stated in ("Dublin, Ireland", "Cork", "Ireland"):
+        assert scan.market_conflict(job, {**NO_OBS, "posting_location": stated}) is None, stated
+
+
+def test_a_location_outside_every_target_market_is_not_a_conflict():
+    """The common case, and the one that would make this useless if it fired. Remote-EMEA
+    wording and a bare country next to "remote" both resolve to no market at all, and
+    calling that a disagreement would flag most rows while saying nothing."""
+    job = flag_job(market="IE")
+    for stated in ("Remote - EMEA", "Global", "Berlin, Germany", "Singapore", ""):
+        assert scan.market_conflict(job, {**NO_OBS, "posting_location": stated}) is None, stated
+
+
+def test_a_row_with_no_market_is_never_in_conflict_with_itself():
+    assert scan.market_conflict(flag_job(market=""), {**NO_OBS,
+                                                      "posting_location": "Toronto"}) is None
+
+
+def test_the_conflict_reaches_the_row_as_data_and_as_a_flag():
+    """Both, on purpose. The flag is so it is visible on the dashboard; the structured copy
+    is because the apply queue has to ACT on it -- parsing it back out of a flag string
+    would be the wrong kind of clever."""
+    job = flag_job(market="IE")
+    data = {**NO_OBS, "posting_location": "Vancouver, BC", "dimensions": dims(),
+            "flags": [], "verdict": "ok"}
+    result = scan.parse_score_result(job, data)
+    assert result["market_conflict"] == {"stated": "Vancouver, BC", "resolves_to": "CA"}
+    assert any("location conflict" in f and "CA" in f for f in result["flags"]), result["flags"]
+
+
+def test_an_agreeing_row_carries_no_conflict_key_value():
+    job = flag_job(market="NL")
+    data = {**NO_OBS, "posting_location": "Amsterdam", "dimensions": dims(),
+            "flags": [], "verdict": "ok"}
+    result = scan.parse_score_result(job, data)
+    assert result["market_conflict"] is None
+    assert not any("location conflict" in f for f in result["flags"])
+
+
+def test_the_scorer_is_asked_for_the_location_and_told_where_it_goes():
+    """The prompt tells the model to TRUST the resolved market and not second-guess it,
+    which is why it cannot be the thing that raises the alarm. It has to be pointed at
+    posting_location instead, or the two instructions just contradict each other."""
+    sys_prompt = scan.score_system()
+    assert "posting_location" in sys_prompt
+    assert "Trust it for SCORING" in sys_prompt
+    # And the schema has to require it, or the model may simply omit it.
+    assert "posting_location" in scan.SCORE_SCHEMA["required"]
+    assert "posting_location" in scan.SCORE_SCHEMA["properties"]
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

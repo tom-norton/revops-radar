@@ -179,6 +179,21 @@ Cloudflare** below.
     pipeline would have refused had its ad arrived by the ordinary route would get scored
     just because the ad turned up late.
 
+13b. **A feed can be wrong about where a job is**, and hiring.cafe was: it put a Canadian
+    role in Dublin. That is not a cosmetic label, because the market picks the CV's contact
+    block, sets the floor pay is measured against, and decides how the application **form**
+    answers the visa questions — an Irish-tagged Canadian role tells the employer Tom needs
+    sponsorship and is not authorised to work there, which is wrong twice over for a
+    Canadian citizen. So the deep scorer, the one component that reads the whole ad, reports
+    the location the posting itself states (`posting_location`) and code compares it through
+    `market_of()`, the same single source of truth the location gate uses. The scorer is
+    deliberately told to **trust** the resolved market for scoring and put any disagreement
+    in that field instead, because a model arguing with the location gate is what the
+    "trust it" instruction was added to stop. A stated location that resolves to no target
+    market is not a conflict — "Remote - EMEA" and "Global" land there and would otherwise
+    fire on most rows. A real disagreement badges the row and, in the apply queue, stops the
+    run to ask before a CV is built or a form is filled (see `/market` below).
+
 **Scoring (two stages, so the expensive model only sees real candidates):**
 14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill).
 15. **Stage 2 — Claude Opus** scores the keepers on the weighted rubric from
@@ -207,7 +222,8 @@ Cloudflare** below.
     supposed to enforce — a RevOps Specialist role that scored 6.5 on the dimensions landed
     at 4.0 because of one word in its title — and the `job-application-workflow` skill this
     rubric comes from has no such mechanism. What's left of it travels as **flags**
-    (`score_flags()`): off-target function, junior/senior title band, CSM outside NL.
+    (`score_flags()`): off-target function, junior/senior title band, CSM outside
+    NL, thin evidence, and a **location conflict** (step 13b).
     They're shown on the row so you can judge them; they don't move the number. Salary and
     language don't appear here at all — a role either clears them and gets scored clean, or
     it doesn't and step 16 drops it before this function ever runs.
@@ -326,7 +342,7 @@ numbers, a sentence about you may not, and the posting is evidence for neither. 
 opening or the close is what failed, nothing is sent at all — a letter without its hook is
 not a letter — and you get told why.
 
-**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/redo`,
+**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/market`, `/redo`,
 `/cover`, `/submit`, `/send`, `/help`.
 
 **Answer questions however you like.** A reply that is nothing but letters is read in
@@ -586,7 +602,7 @@ answer is that nothing here knows what is being asked, so the field goes to you 
 on the printed form, where you can read it yourself, rather than to a model that would
 answer it off the option list alone.
 
-**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/redo`,
+**Bot commands:** `/apply <id>`, `/queue`, `/status`, `/cancel`, `/phone`, `/market`, `/redo`,
 `/cover`, `/submit`, `/send`, `/help`.
 
 ## The CV build
@@ -685,6 +701,29 @@ to put it there:
 
 The bot rewrites the bank's copy and commits. The CV renders fine without a number, so
 this is a nudge on the first build and never a blocker.
+
+**Which of the two you get is decided by the role, not by you.** `contact_for()` returns the
+Grand Rapids block with the US number for Canada and remote-US roles and the Barcelona block
+for European ones, and `load_base()` takes the market as an argument rather than letting
+callers swap contacts afterwards — the form's identity is read off that same skeleton by
+`submit.identity()`, so one call site is what stops a Grand Rapids CV going out attached to a
+form with a Barcelona address on it.
+
+Which makes the market worth being able to correct, because a feed can get it wrong:
+
+```
+/market az-nl-1 CA         this role is in Canada, whatever the feed said
+/market az-nl-1 us         "us", "uk", "canada", "ireland" all work
+/market az-nl-1            list the markets and what this does
+```
+
+That writes a `state/market-overrides.json` in the bank, and `load_job()` applies it — the
+one place every consumer reads a role from, so the CV, the letter, the form and the pay gate
+all move together. Step 13b flags the ones worth correcting, and a flagged role is asked
+about in the same batch as its gap questions, before any CV is built. Two things worth
+knowing: the **dashboard row keeps the scan's reading**, because nothing in the apply
+workflow can write to this repo, and the correction is keyed against every id the row
+answers to, so one made against a duplicate survives the two being collapsed.
 
 Those base bullets are the floor. A role the tailoring pass says nothing about keeps them
 rather than going blank, and they count as a source the honesty screen will trace a
