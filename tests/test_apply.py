@@ -881,13 +881,14 @@ def test_every_market_the_radar_knows_can_be_typed_back():
         assert applyq.resolve_market(m) == m, m
 
 
-def market_cmd(text, files=None):
+def market_cmd(text, files=None, state=None):
     """Run one /market message through the command layer. Returns (tg, bank)."""
     tg, bank = FakeTelegram(), FakeBank(files)
     real = applyq.scan.load_json
     try:
         applyq.scan.load_json = lambda *a: [dict(JOB, market="IE")]
-        applyq.handle_commands([(0, text)], {"current": None}, [], tg, bank)
+        applyq.handle_commands([(0, text)], state if state is not None else {"current": None},
+                               [], tg, bank)
     finally:
         applyq.scan.load_json = real
     return tg, bank
@@ -917,6 +918,51 @@ def test_the_market_command_with_no_market_explains_itself():
     tg, bank = market_cmd(f"/market {JOB['id']}")
     assert applyq.MARKET_FILE not in bank.files
     assert "UK-London" in tg.last()
+
+
+def test_market_with_no_id_corrects_the_role_in_flight():
+    """The whole point of this shorthand: Tom is mid-interview about a role, and it's the
+    one thing "the job I'm actively chatting about" can mean when there's a run in progress."""
+    tg, bank = market_cmd("/market ca", state={
+        "current": {"id": JOB["id"], "title": JOB["title"], "company": JOB["company"],
+                    "stage": "ask", "answers": []}})
+    assert json.loads(bank.files[applyq.MARKET_FILE])[JOB["id"]] == "CA"
+    assert "CA" in tg.last() and "Grand Rapids" in tg.last()
+
+
+def test_market_with_no_id_falls_back_to_the_last_cv_when_nothing_is_in_flight():
+    tg, bank = market_cmd("/market ca", state={
+        "current": None, "last_cv": {"id": JOB["id"], "title": JOB["title"]}})
+    assert json.loads(bank.files[applyq.MARKET_FILE])[JOB["id"]] == "CA"
+    assert "CA" in tg.last()
+
+
+def test_market_with_no_id_and_nothing_to_attach_it_to_says_so():
+    tg, bank = market_cmd("/market ca", state={"current": None})
+    assert applyq.MARKET_FILE not in bank.files
+    assert "nothing in flight" in tg.last().lower()
+
+
+def test_market_with_an_explicit_id_wins_over_whatever_is_in_flight():
+    """A different role is running; naming an id should still correct the one named,
+    not silently redirect to the one on screen."""
+    tg, bank = market_cmd(f"/market {JOB['id']} ca", state={
+        "current": {"id": "some-other-role", "title": "Different Role",
+                    "company": "Other Co", "stage": "ask", "answers": []}})
+    assert json.loads(bank.files[applyq.MARKET_FILE])[JOB["id"]] == "CA"
+
+
+def test_a_single_word_that_is_not_a_market_still_shows_the_general_help():
+    """"/market abc123" -- one word, but not a real market, so it's read as a forgotten
+    market rather than grabbed as an implicit target. Regression: an earlier version of
+    this branch treated every one-word /market as "nothing in flight", which is wrong
+    for this case -- the fix is to show the market list, same as before this shorthand."""
+    tg, bank = market_cmd(f"/market {JOB['id']}", state={
+        "current": {"id": JOB["id"], "title": JOB["title"], "company": JOB["company"],
+                    "stage": "ask", "answers": []}})
+    assert applyq.MARKET_FILE not in bank.files
+    assert "US-Remote" in tg.last()
+    assert "nothing in flight" not in tg.last().lower()
 
 
 def test_the_market_command_is_in_the_help():

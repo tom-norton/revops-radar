@@ -222,7 +222,7 @@ HELP = (
     "/cancel - drop the role in flight and move on\n"
     "/phone &lt;number&gt; - your European number (or /phone off)\n"
     "/phone us &lt;number&gt; - your US number, for Canada and US CVs\n"
-    "/market &lt;id&gt; &lt;market&gt; - fix a role the radar put in the wrong country\n"
+    "/market &lt;market&gt; - fix the market on the role in flight (or /market &lt;id&gt; &lt;market&gt; for another)\n"
     "/redo &lt;what to change&gt; - rebuild the last CV with your feedback\n"
     "/cover &lt;anything to steer it&gt; - write the cover letter for the last CV\n"
     "/submit &lt;link, optional&gt; - fill the application form and show it to you\n"
@@ -3530,22 +3530,55 @@ def handle_commands(texts, state, queue, tg, bank=None):
                         + f"\n\n<i>That's the contact line on every {which} from now on.</i>")
         elif cmd == "/market":
             parts = text.split()[1:]
+            # "/market <market>" acts on whatever role is actually in flight -- the one
+            # he's chatting about right now, which is what he wants nearly every time.
+            # There is nowhere on the dashboard an id is printed as visible text (it only
+            # lives in a data-id attribute behind the buttons), so demanding one here made
+            # the command unusable for its own reason to exist.
+            #
+            # A single word is ambiguous on its own, though: it could be a market with the
+            # role left implicit ("/market CA"), or an id with the market forgotten
+            # ("/market az-nl-1"). Only the first case grabs what's in flight, so check
+            # which one it is before deciding what "no target" even means -- otherwise a
+            # bad id typed alone would silently correct the wrong role.
+            single_market = len(parts) == 1 and resolve_market(parts[0])
+            implicit_id = None
+            if single_market:
+                cur = state.get("current")
+                implicit_id = (cur or {}).get("id") or (state.get("last_cv") or {}).get("id")
+            if implicit_id:
+                job_id, market_words = implicit_id, parts
+            elif len(parts) >= 2:
+                job_id, market_words = parts[0], parts[1:]
+            else:
+                job_id, market_words = None, []
+
             if bank is None:
                 tg.send("Can't reach the bullet bank right now. Try again in a bit.")
-            elif len(parts) < 2:
-                tg.send("<b>/market &lt;id&gt; &lt;market&gt;</b> corrects where a role is.\n\n"
-                        + esc(" · ".join(scan.MARKET_TIER))
-                        + "\n\n<i>e.g. /market " + esc(parts[0] if parts else "abc123")
-                        + " CA. Use it when the radar has the wrong country: it decides the "
-                        "contact details on the CV and the visa answers on the form.</i>")
-            elif not (job := load_job(parts[0], bank)):
-                tg.send(f"No role with id <code>{esc(parts[0])}</code> on the dashboard.")
-            elif not (market := resolve_market(" ".join(parts[1:]))):
-                tg.send(f"<code>{esc(' '.join(parts[1:]))}</code> isn't one of the markets.\n\n"
-                        + esc(" · ".join(scan.MARKET_TIER)))
+            elif job_id is None:
+                if single_market:
+                    # A real market word, correctly read as one, with nothing to attach it
+                    # to -- otherwise this falls to the id-lookup branch below and says "no
+                    # role with that id", which would be true but not what actually happened.
+                    tg.send("Nothing in flight and no CV built yet to correct. "
+                            "/apply a role first, or give me an id: "
+                            "/market &lt;id&gt; &lt;market&gt;.")
+                else:
+                    tg.send("<b>/market &lt;market&gt;</b> corrects the role you're on right "
+                            "now (or the last CV I built). <b>/market &lt;id&gt; &lt;market&gt;"
+                            "</b> for any other role.\n\n"
+                            + esc(" · ".join(scan.MARKET_TIER))
+                            + "\n\n<i>e.g. /market CA. Use it when the radar has the wrong "
+                            "country: it decides the contact details on the CV and the visa "
+                            "answers on the form.</i>")
+            elif not (job := load_job(job_id, bank)):
+                tg.send(f"No role with id <code>{esc(job_id)}</code> on the dashboard.")
+            elif not (market := resolve_market(" ".join(market_words))):
+                tg.send(f"<code>{esc(' '.join(market_words))}</code> isn't one of the "
+                        "markets.\n\n" + esc(" · ".join(scan.MARKET_TIER)))
             else:
                 was = job.get("market_was") or job.get("market") or "?"
-                set_market_override(bank, parts[0], market)
+                set_market_override(bank, job_id, market)
                 # Show the contact line this now prints, because that is the thing he is
                 # actually checking when he sends this. The visa answers move with it.
                 base, _ = cvbuild.load_base(bank, market)

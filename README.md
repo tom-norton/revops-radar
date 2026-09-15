@@ -712,10 +712,18 @@ form with a Barcelona address on it.
 Which makes the market worth being able to correct, because a feed can get it wrong:
 
 ```
-/market az-nl-1 CA         this role is in Canada, whatever the feed said
-/market az-nl-1 us         "us", "uk", "canada", "ireland" all work
-/market az-nl-1            list the markets and what this does
+/market CA                 the role you're on right now is in Canada, whatever the feed said
+/market us                 "us", "uk", "canada", "ireland" all work
+/market az-nl-1 CA         correct a different role by id, not the one in flight
+/market                    list the markets and what this does
 ```
+
+No id needed for the common case — a bare `/market <market>` corrects whatever's in flight,
+falling back to the last CV built if nothing is running. There is nowhere on the dashboard
+an id is printed as visible text (it lives only in a `data-id` attribute behind the Apply
+button), so requiring one for the role already in the chat would have made the command
+useless for the situation it exists for. An id stays available for the other case — fixing a
+role that is not the one currently in flight.
 
 That writes a `state/market-overrides.json` in the bank, and `load_job()` applies it — the
 one place every consumer reads a role from, so the CV, the letter, the form and the pay gate
