@@ -35,6 +35,13 @@ on:
         description: "Relax the 7-day age filter for this run (pair with backfill)"
         type: boolean
         default: false
+      backfill_jd:
+        description: "Re-fetch full ads for rows stored under the old 1200-char cap, then stop"
+        type: boolean
+        default: false
+      backfill_jd_days:
+        description: "How many days back to re-fetch ads for"
+        default: "7"
 
 # Serial. The Worker and GitHub's own late cron can now both ask for a run, and every run
 # ends by committing and pushing to main -- two overlapping ones would race on that push and
@@ -64,12 +71,24 @@ jobs:
         # Pure functions only -- no network, no API key. Catches a broken filter or a
         # mis-weighted rubric before it spends tokens producing wrong scores.
         run: python tests/test_scoring.py
+      - name: Backfill full job descriptions
+        # One-off repair, manual only. Raising DESC_STORE_CAP fixes every row scanned from
+        # here on, but a carried-forward row is never re-fetched by an ordinary run, so the
+        # rows already on the dashboard keep the 1200-char sample until they age out. This
+        # goes and gets them. The scan step below is skipped when this runs.
+        if: inputs.backfill_jd
+        run: python scan.py --backfill-jd --days "${{ inputs.backfill_jd_days }}"
+
       - name: Free past stage-1 kills
         # Manual runs only. Use after loosening the screen or the scoring rules, to give
         # everything the old rules threw away a second look.
         if: inputs.backfill
         run: python scan.py --unkill-history --days "${{ inputs.backfill_days }}"
       - name: Run scanner
+        # Skipped on a backfill run. The backfill is a repair of rows already scored; a scan
+        # on top of it would spend a full budget of Haiku and Opus calls for no reason, and
+        # the commit step below still runs either way so the repair gets pushed.
+        if: ${{ !inputs.backfill_jd }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}

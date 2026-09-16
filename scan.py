@@ -62,6 +62,11 @@ Usage:
                              --unkill-history, whose rows are older than the cutoff by now
   python scan.py --rescore   clear scored rows so the corpus re-runs under the current engine
   python scan.py --dedupe    collapse duplicates already on the dashboard, without scanning
+  python scan.py --backfill-jd [--days N]
+                             re-fetch the full ad for rows stored under the old 1200-char
+                             DESC_STORE_CAP (default: the 7 days the dashboard renders).
+                             A one-off repair -- new rows store whole -- and free, since it
+                             needs no API key.
 """
 
 import email, html, imaplib, json, os, re, subprocess, sys, time, urllib.parse
@@ -403,7 +408,19 @@ DESC_HEAD_SHARE = 0.7         # of DESC_CHAR_CAP; the remainder is taken from th
 # Below this, a description is treated as missing and the detail fetchers are tried. Job
 # boards routinely hand back a page's marketing furniture instead of the posting.
 MIN_DESC_CHARS = 900
-DESC_STORE_CAP = 1200         # how much is kept in docs/jobs.json, for auditing a score
+# How much of the ad is kept in docs/jobs.json. This was 1200 for a long time, sized for
+# auditing a score after the fact, which was all that file was for. It now feeds the
+# application workflow -- the dashboard's copy button hands the stored text to the
+# job-application-workflow skill, and applyq.py reads the same field into seven prompts that
+# each ask sample_desc() for 3000-6000 characters and were silently getting 1200. A
+# head-and-tail sample is fine for checking a score and useless for tailoring a bullet,
+# because the part it drops is the middle, where the responsibilities are.
+#
+# 30000 is not a sample size, it is a sanity guard: the longest ad on record is 23,994
+# characters, so every real posting stores whole and only something pathological gets cut.
+# The cost of going from 1200 to here is about 2.2MB on a file that keeps 45 days of rows
+# (KEEP_DAYS), roughly 0.5MB gzipped over the wire, which the dashboard pays on load.
+DESC_STORE_CAP = 30000        # the whole ad, not a sample
 MAX_SCREENED_PER_RUN = 80     # cap stage-1 Haiku calls
 MAX_SCORED_PER_RUN = 30       # cap stage-2 Opus calls (survivors only)
 SPONSOR_REQUIRED = False      # if True, drop UK/NL jobs whose company isn't on a register
@@ -3217,6 +3234,93 @@ def cmd_dedupe():
           f"The ids they were shown under are carried on the surviving row, so a Hide or "
           f"Mark applied recorded against one still holds.")
 
+def backfill_targets(jobs, days, now=None):
+    """Rows whose stored ad was cut short by the old DESC_STORE_CAP, newest first.
+
+    `desc_chars` is written before truncation (see the scoring loop), so a row where the
+    stored text is shorter than that number is exactly a row the old 1200-char cap trimmed.
+    Rows that were always short -- a revopsroles stub, a feed whose link was dead -- have the
+    two equal and are not targets: there is no fuller version to go and get.
+
+    Bounded by age on purpose. The dashboard only ever renders 7 days (MAX_AGE_DAYS in
+    docs/index.html) while the file keeps 45, so the default scope is the rows Tom can
+    actually click. Widening it means re-requesting hundreds of postings that expired weeks
+    ago, which is a lot of 404s for rows nobody will open."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=days)).isoformat()
+    out = [j for j in jobs
+           if (j.get("found_at") or "") >= cutoff
+           and len(j.get("description") or "") < (j.get("desc_chars") or 0)]
+    return sorted(out, key=lambda j: j.get("found_at") or "", reverse=True)
+
+def backfill_row(job, fetch=None):
+    """Re-fetch one row's full ad. Returns the text, or "" if nothing better was found.
+
+    Two traps, both load-bearing:
+
+    1. `description` is blanked on the copy handed to fill_description(). It returns early
+       when the description it is given already clears MIN_DESC_CHARS (900), and a stored
+       sample is 1200, so without this it hands the sample straight back and never fetches.
+    2. `apply_url` is tried ahead of `url`. Half these rows arrived through an aggregator,
+       whose link is an advert rather than the posting; `apply_url` is the employer's own
+       board, which is both likelier to answer and likelier to carry the whole ad. The
+       source-specific `_detail` endpoint is long gone -- it is popped before a row is
+       stored -- so the generic fetchers and the JSON-LD path do this work.
+    """
+    fetch = fetch or fill_description
+    best = ""
+    for target in (job.get("apply_url"), job.get("url")):
+        if not target:
+            continue
+        probe = dict(job, description="", url=target)
+        try:
+            got = fetch(probe) or ""
+        except Exception:
+            got = ""
+        if len(got) > len(best):
+            best = got
+        if len(best) >= (job.get("desc_chars") or 0):
+            break          # already back to the length the scorer saw; stop asking
+    return best
+
+def cmd_backfill_jd(days, fetch=None):
+    """Recover the full ad for rows stored under the old 1200-character cap.
+
+    A carried-forward row is never re-fetched by an ordinary run -- main() merges `existing`
+    through verbatim and only the new rows go near a fetcher -- so raising DESC_STORE_CAP
+    fixes every future row and none of the ones already on the dashboard. This closes that
+    gap once. It needs no API key: the generic fetchers and schema.org parsing do it all."""
+    jobs = load_json("docs/jobs.json", [])
+    targets = backfill_targets(jobs, days)
+    if not targets:
+        print(f"Nothing to backfill in the last {days} days.")
+        return
+    print(f"{len(targets)} truncated rows in the last {days} days. Re-fetching.\n")
+    by_id = {}
+    recovered = 0
+    for j in targets:
+        stored, want = len(j.get("description") or ""), j.get("desc_chars") or 0
+        got = backfill_row(j, fetch)
+        # Never shorten a row. A fetcher that comes back with a page's furniture instead of
+        # the posting would otherwise replace a real sample with something worse.
+        if len(got) > stored:
+            by_id[id(j)] = got
+            recovered += 1
+            mark = "OK  "
+        else:
+            mark = "--  "
+        print(f"  {mark}{(j.get('source') or '?'):<12} {stored:>5} -> {max(len(got), stored):<6} "
+              f"of {want:<6} {(j.get('company') or '?')[:28]}")
+    for j in jobs:
+        if id(j) in by_id:
+            j["description"] = by_id[id(j)]
+            j["desc_chars"] = len(by_id[id(j)])
+    json.dump(jobs, open("docs/jobs.json", "w"), indent=1)
+    missed = len(targets) - recovered
+    print(f"\nRecovered {recovered} of {len(targets)}. {missed} could not be re-fetched "
+          f"(expired postings, or a board that refuses datacenter IPs); those rows keep the "
+          f"sample they had and say so in the dashboard's copy block.")
+
 def main():
     verify, dry = "--verify" in sys.argv, "--dry" in sys.argv
     here = os.path.dirname(os.path.abspath(__file__))
@@ -3239,6 +3343,14 @@ def main():
         return cmd_rescore()
     if "--dedupe" in sys.argv:
         return cmd_dedupe()
+    if "--backfill-jd" in sys.argv:
+        days = 7
+        if "--days" in sys.argv:
+            try:
+                days = int(sys.argv[sys.argv.index("--days") + 1])
+            except (IndexError, ValueError):
+                print("--days needs a number; using 7.")
+        return cmd_backfill_jd(days)
 
     if "--ignore-age" in sys.argv:
         # One-run escape hatch for the backfill: rows freed by --unkill-history are older
