@@ -4,9 +4,17 @@ Finds new RevOps / GTM / Sales Ops / CS Ops / Senior CSM roles across your six t
 markets, goes and gets the real ad when a source hands back a stub, cheaply screens out the
 obvious no-fits, deep-scores the survivors against your
 real profile with Claude, checks each UK/NL company against the official visa-sponsor
-registers, and shows you the good ones on a dashboard. Tap **Apply** and it runs the front
-half of the job-application-workflow skill for you and asks whatever it genuinely needs
-over Telegram. Hide/Apply/Applied state syncs across your devices via Firebase.
+registers, and shows you the good ones on a dashboard. Tap **Copy for Claude** and the role
+goes to your clipboard -- score, dimensions, flags, sponsor, stated comp and the ad itself --
+ready to paste into the Claude project, where `job-application-workflow` does the rest.
+Hide/Applied state syncs across your devices via Firebase.
+
+**The apply half is mothballed.** The Telegram bot, the gap interview, the CV build and the
+automated submission are switched off, not deleted: `apply.yml` has lost its cron and the
+relay's two apply routes are behind `APPLY_RELAY_ENABLED = false`. Applications are written
+by hand again, in a Claude project, because the automation was not earning what it cost in
+Opus calls. Everything below about the apply queue still describes working code; it just
+does not run on its own any more. The scan and the scoring are untouched.
 
 **Markets, in preference order:** Netherlands (anywhere) · Ireland (anywhere) · UK (London
 area only) · Belgium (anywhere) · Canada (anywhere, remote or on-site) · US (**remote only**,
@@ -236,6 +244,8 @@ Cloudflare** below.
 
 ## The apply queue
 
+> **Mothballed.** Kept as the record of how this worked and as working code behind `workflow_dispatch`. The live path is the dashboard's **Copy for Claude** button into the `job-application-workflow` skill.
+
 Everything after "this role looks good". `applyq.py` runs on a 15-minute cron
 (`.github/workflows/apply.yml`) and works **one role at a time** — a gap interview that
 interleaved questions from two roles would be unusable on a phone, which is the only place
@@ -284,6 +294,8 @@ treated as evidence you did something. `tests/test_apply.py` asserts this direct
 
 ## Telling it the CV is wrong
 
+> **Mothballed.** Kept as the record of how this worked and as working code behind `workflow_dispatch`. The live path is the dashboard's **Copy for Claude** button into the `job-application-workflow` skill.
+
 ```
 /redo cut the LexisNexis training bullet, it's the weakest
 /redo lead the summary with the forecasting, not the MBA
@@ -307,6 +319,8 @@ bank is **not** written a second time, because those bullets already went throug
 promotion test on the first build.
 
 ## The cover letter
+
+> **Mothballed.** Kept as the record of how this worked and as working code behind `workflow_dispatch`. The live path is the dashboard's **Copy for Claude** button into the `job-application-workflow` skill.
 
 Opt-in, never automatic:
 
@@ -364,6 +378,8 @@ it there is nowhere to persist an interview that spans days, and the poller fail
 rather than proceeding.
 
 ## Applying
+
+> **Mothballed.** Kept as the record of how this worked and as working code behind `workflow_dispatch`. The live path is the dashboard's **Copy for Claude** button into the `job-application-workflow` skill.
 
 Opt-in, and it never sends anything on its own:
 

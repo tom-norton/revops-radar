@@ -1,12 +1,15 @@
 name: Apply queue
 
+# MOTHBALLED. The every-15-minutes cron is deliberately gone: the apply queue, the Telegram
+# interview and the automated submission are no longer how applications get made. That work
+# moved back into the job-application-workflow skill, run by hand in a Claude project, with
+# the radar keeping only the half it is good at -- finding roles and scoring them.
+#
+# Nothing here is deleted. Every phase still works, and workflow_dispatch below still runs
+# it, so turning this back on is a matter of restoring the cron line. The relay routes in
+# worker/telegram-relay.js are disabled the same way and for the same reason; see
+# APPLY_RELAY_ENABLED there.
 on:
-  schedule:
-    # Every 15 minutes. GitHub runs scheduled workflows on a best-effort basis and drops
-    # or delays them under load, which is fine here: a missed tick just means the next
-    # question arrives 15 minutes later. Nothing in this workflow is time-critical, and
-    # nothing expires -- a gap interview waits for Tom however long it takes.
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       message:
