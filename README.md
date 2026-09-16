@@ -96,9 +96,18 @@ Cloudflare** below.
    posting should be. Scoring that is close to worthless — a stub says nothing a title does
    not, and measurably scored *higher* than real postings (6.03 vs 5.78 mean, 22 of 59
    clearing the gate) because a silent ad has nothing in it to count against. So the title
-   and company are used to go and find the real ad elsewhere; see step 12b below. Whatever
-   survives that unfound reaches the scorer labelled as a stub rather than dressed up as an
-   ad.
+   and company are used to go and find the real ad elsewhere; see steps 12a–12c below.
+   Whatever survives that unfound reaches the scorer labelled as a stub rather than dressed
+   up as an ad.
+   **What was actually broken was the plumbing, not the source.** All 34 revopsroles rows on
+   the dashboard were stubs, and the reason was one line in `_row_rank`: dedupe runs *before*
+   any description is fetched and picks a winner on source rank, where revopsroles outranks
+   hiring.cafe and LinkedIn. So the stub won and the row it folded away — carrying the
+   employer's own Ashby, Greenhouse, SmartRecruiters or Workable link — was discarded. The
+   JD was never missing from the internet; it was thrown away at the moment of dedupe, and
+   every rescue downstream then paid board probes and web searches hunting for a link the
+   row had already been handed. 19 of the 34 carried one; asking it recovers the full ad for
+   18 of them, 2,371–12,255 characters against the 36–57 they had. Step 12a.
    The digest carries work mode as a *tag*, not in the location, and that tag is folded
    into what the location gate sees **for US rows only** — remote is the requirement there,
    whereas in Europe remote wording next to a bare country is how remote-EMEA reqs get
@@ -150,8 +159,19 @@ Cloudflare** below.
     in JavaScript, so scraping the page returns furniture and no JSON-LD), or schema.org
     `JobPosting` markup, whichever returns most. Adzuna's own 400-character summaries get
     upgraded to the full ad this way too.
-12b. When that still comes back thin — a revopsroles stub, or a feed whose link is dead —
-    the **company's own ATS board is searched by name**: `rescue_description()` probes the
+12a. When that comes back thin, the row is asked **what its own duplicates know** before
+    anything is searched for. Dedupe collapses every copy of a role into one row *before*
+    any description is fetched and picks the survivor on source rank, not on what it can
+    tell us about the job — so the winner is routinely a stub while the copy it folded away
+    was pointing at the employer's own Ashby/Greenhouse/SmartRecruiters/Workable posting.
+    `absorb_duplicate()` already keeps those links on the winner as `also_seen`, so
+    `fill_from_duplicates()` costs nothing to run and needs no lookup: on the 34 revopsroles
+    rows it was written for, 19 carried a link and **18 came back with the full ad**. This
+    is the same `also_seen` field the apply-link resolver reads (see *The record itself is
+    checked before any of that*) — it was answering "where do I apply" and not being asked
+    "what does it say".
+12b. When *that* still comes back thin — a stub with no duplicate, or a feed whose link is
+    dead — the **company's own ATS board is searched by name**: `rescue_description()` probes the
     eight boards in `findform.BOARDS` for the employer, matches the posting by title, and
     takes the text off the board directly. Free, so it runs in stage 1 before anything is
     screened, capped at `MAX_JD_RESCUES_PER_RUN = 12` rows a run. It is **stricter about
@@ -159,7 +179,10 @@ Cloudflare** below.
     because a title match alone is good enough to *apply* with (you see the role before you
     send anything) but not good enough to *score* on — the wrong city's copy of a role would
     silently answer the location question. Worth being honest about the yield: this only
-    helps a company that has a public board, which is **2 of the 32** revopsroles stubs.
+    helps a company that has a public board, which is **3 of the 34** revopsroles stubs —
+    and all three are ones 12a had already recovered for free, so on the current dashboard
+    this step adds nothing the duplicates had not already given. It earns its place on the
+    rows that arrive with no duplicate at all.
 12c. For the rest, the posting is **web-searched, and the result is verified in code** —
     the only place in the pipeline that spends tokens to get *evidence* rather than to form
     a judgement, so it is priced like a last resort: `MAX_JD_SEARCHES_PER_RUN = 3` rows a
@@ -1036,5 +1059,13 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   as nobody was relying on it. If a digest stops arriving or its markup changes, this source
   goes quiet the same way the others do; the footer names each email separately so two
   alerts read as two, and reports how many rows carried a salary.
+  **The site itself is closed to this pipeline and will stay closed.** Every path on
+  `revopsroles.com` returns Vercel's challenge to a datacenter IP — job pages, `/api/*`,
+  even `/robots.txt` — so the "apply to this job" link that leads to the real ATS cannot be
+  read from a runner, and no amount of user-agent work changes that: the block is on the IP,
+  not the client. That makes the digest a **pointer** permanently, and the value of the
+  source is entirely in what it points at. Dropping it would cost the 15 of 34 current rows
+  that no other source carried; keeping it is only defensible because 12a, 12b and 12c go
+  and fetch the ad the digest cannot give.
 - The status footer at the bottom of the dashboard shows exactly what each source did each run —
   check it if results look thin.

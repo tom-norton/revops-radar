@@ -19,6 +19,8 @@ different ways. `test_language_and_salary_floor_are_not_score_flags` guards agai
 two quietly turning back into flags on a scored row instead of the hard drop Tom asked for.
 """
 
+import contextlib
+import json
 import os
 import sys
 
@@ -2305,6 +2307,109 @@ def test_backfill_survives_a_fetcher_that_raises():
         raise RuntimeError("connection reset")
     assert scan.backfill_row({"url": "https://dead", "description": "x" * 1200,
                               "desc_chars": 8000}, boom) == ""
+
+
+@contextlib.contextmanager
+def _patched(obj, name, value):
+    """Swap one attribute for the body of a test and put the original back afterwards, so a
+    failing assertion cannot leave scan.get() stubbed for every test that runs after it."""
+    old = getattr(obj, name)
+    setattr(obj, name, value)
+    try:
+        yield
+    finally:
+        setattr(obj, name, old)
+
+
+def test_a_stub_asks_the_duplicates_it_absorbed_for_the_posting():
+    """The fix this was all for. Dedupe collapses copies BEFORE any description is fetched
+    and picks the winner on source rank, so a revopsroles stub outranks the hiring.cafe row
+    carrying the employer's own Ashby link. The link survives on `also_seen`; this is the
+    row finally asking it for the ad."""
+    calls = []
+    real = "a real posting. " * 200
+    def fake_get(url, **kw):
+        calls.append(url)
+        class R:
+            status_code = 200
+            text = ('<script type="application/ld+json">'
+                    + json.dumps({"@type": "JobPosting", "description": real})
+                    + "</script>") if "ashbyhq" in url else "<html>challenge</html>"
+            def raise_for_status(self): pass
+        return R()
+    with _patched(scan, "get", fake_get):
+        got = scan.fill_description({
+            "url": "https://revopsroles.com/jobs/abc", "source": "revopsroles",
+            "description": "Category: RevOps; Seniority: Senior",
+            "also_seen": [{"source": "hiring.cafe",
+                           "url": "https://jobs.ashbyhq.com/deepl/f232dbed"}],
+        })
+    assert not scan.is_thin(got), len(got)
+    assert any("ashbyhq" in u for u in calls), calls
+
+
+def test_duplicate_fallback_only_runs_when_the_row_is_still_thin():
+    """A row that already has the ad must not spend a request on its duplicates. The whole
+    point of doing this at the end of fill_description() rather than the start."""
+    calls = []
+    def fake_get(url, **kw):
+        calls.append(url)
+        raise AssertionError("should not fetch")
+    with _patched(scan, "get", fake_get):
+        got = scan.fill_description({
+            "url": "https://x/1", "source": "linkedin",
+            "description": "y" * (scan.MIN_DESC_CHARS + 10),
+            "also_seen": [{"source": "adzuna", "url": "https://adzuna/1"}],
+        })
+    assert len(got) == scan.MIN_DESC_CHARS + 10
+    assert calls == []
+
+
+def test_duplicate_fallback_skips_the_row_own_url_and_is_bounded():
+    """A duplicate pointing back at the winner's own link buys nothing, and the budget is a
+    budget: also_seen is ordered as dedupe absorbed it, not by how likely each is to answer."""
+    tried = []
+    def fake_fill(job):
+        tried.append(job["url"])
+        return ""
+    with _patched(scan, "fill_description", fake_fill):
+        scan.fill_from_duplicates({
+            "url": "https://same",
+            "also_seen": [{"source": "a", "url": "https://same"},
+                          {"source": "b", "url": "https://1"},
+                          {"source": "c", "url": "https://2"},
+                          {"source": "d", "url": "https://3"},
+                          {"source": "e", "url": "https://4"}],
+        })
+    assert "https://same" not in tried, tried
+    assert len(tried) <= scan.MAX_ALSO_SEEN_FETCHES, tried
+
+
+def test_backfill_targets_a_stub_that_absorbed_a_duplicate():
+    """A stub with a folded-away copy has somewhere new to look; one without does not. That
+    qualifier is the difference between healing the dashboard and re-requesting empty pages."""
+    now = scan.datetime.now(scan.timezone.utc)
+    fresh = (now - scan.timedelta(days=1)).isoformat()
+    rows = [
+        {"id": "stub-alone", "found_at": fresh, "description": "x" * 54, "desc_chars": 54},
+        {"id": "stub-with-dupe", "found_at": fresh, "description": "x" * 54,
+         "desc_chars": 54, "also_seen": [{"source": "adzuna", "url": "https://a/1"}]},
+    ]
+    got = [j["id"] for j in scan.backfill_targets(rows, 7, now=now)]
+    assert got == ["stub-with-dupe"], got
+
+
+def test_backfill_keeps_asking_until_a_stub_has_a_real_posting():
+    """A stub's desc_chars is 54, so "as long as the scorer saw" was satisfied by the first
+    fetcher that returned anything at all and the row stopped while still holding a stub."""
+    tried = []
+    def fake(job):
+        tried.append(job["url"])
+        return "short" if len(tried) == 1 else "w" * 4000
+    got = scan.backfill_row({"url": "https://advert", "apply_url": "https://board",
+                             "description": "x" * 54, "desc_chars": 54}, fake)
+    assert len(tried) == 2, tried
+    assert not scan.is_thin(got), len(got)
 
 
 def _run():

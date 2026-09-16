@@ -72,11 +72,20 @@ jobs:
         # mis-weighted rubric before it spends tokens producing wrong scores.
         run: python tests/test_scoring.py
       - name: Backfill full job descriptions
-        # One-off repair, manual only. Raising DESC_STORE_CAP fixes every row scanned from
-        # here on, but a carried-forward row is never re-fetched by an ordinary run, so the
-        # rows already on the dashboard keep the 1200-char sample until they age out. This
-        # goes and gets them. The scan step below is skipped when this runs.
+        # Repair of rows already on the dashboard, manual only. A carried-forward row is
+        # never re-fetched by an ordinary run, so two kinds of row stay broken until they
+        # age out: one truncated by the old 1200-char cap, and one that arrived as a stub
+        # and has been holding a folded-away duplicate's link ever since. This goes and
+        # gets both. The scan step below is skipped when this runs.
+        #
+        # The API key is here because a row that crosses from stub to real posting gets
+        # rescored: its stored score was formed under EVIDENCE: THIN, with no ad to read,
+        # and leaving that number next to the recovered ad would be the worse half of the
+        # repair. Without the key the text is still recovered and the command says which
+        # rows kept a score formed without one.
         if: inputs.backfill_jd
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scan.py --backfill-jd --days "${{ inputs.backfill_jd_days }}"
 
       - name: Free past stage-1 kills

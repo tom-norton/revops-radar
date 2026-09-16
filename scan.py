@@ -63,10 +63,13 @@ Usage:
   python scan.py --rescore   clear scored rows so the corpus re-runs under the current engine
   python scan.py --dedupe    collapse duplicates already on the dashboard, without scanning
   python scan.py --backfill-jd [--days N]
-                             re-fetch the full ad for rows stored under the old 1200-char
-                             DESC_STORE_CAP (default: the 7 days the dashboard renders).
-                             A one-off repair -- new rows store whole -- and free, since it
-                             needs no API key.
+                             re-fetch the full ad for rows already on the dashboard that
+                             never got one: cut short by the old 1200-char DESC_STORE_CAP,
+                             or a stub still holding a folded-away duplicate's link
+                             (default: the 7 days the dashboard renders). Free; a row that
+                             crosses from stub to real posting is then RESCORED, which is
+                             the one part that needs ANTHROPIC_API_KEY -- without it the
+                             text is recovered and the stale scores are named.
 """
 
 import email, html, imaplib, json, os, re, subprocess, sys, time, urllib.parse
@@ -2449,7 +2452,56 @@ def fill_description(job):
             best = text
         if len(best) >= MIN_DESC_CHARS:
             break
+    if len(best) < MIN_DESC_CHARS:
+        best = fill_from_duplicates(job, best)
     return best or job.get("_fallback_desc") or ""
+
+
+# How many of a row's absorbed duplicates may be asked for the posting text. Dedupe keeps
+# up to DEDUPE_ALSO_CAP of them and orders them as it absorbed them rather than by how
+# likely each is to answer, so this is a budget rather than a filter.
+MAX_ALSO_SEEN_FETCHES = 3
+
+# Rows this run that got their posting out of a folded-away duplicate. On the status line
+# because this source has already failed silently once: if dedupe ever stops keeping
+# `also_seen`, or the winners stop being stubs, this number goes to zero and nothing else
+# changes -- the rows just quietly go back to being scored off fifty characters.
+DUPE_RECOVERIES = [0, 0]      # [asked, recovered]
+
+
+def fill_from_duplicates(job, best=""):
+    """Ask the copies of this posting that dedupe folded away for the text the winner lacks.
+
+    Duplicates are collapsed BEFORE any description is fetched, and the copy that survives
+    is picked on source rank, not on what it can tell us about the job. revopsroles
+    outranks hiring.cafe and LinkedIn, so the row that won was routinely the one carrying a
+    50-character synthesized summary while the row it folded away carried the employer's
+    own Ashby/Greenhouse/SmartRecruiters/Workable link. The JD was not missing from the
+    internet, it was discarded at the moment of dedupe -- and every rescue downstream then
+    went looking for it on the open web, paying board probes and web searches for a link
+    the row had already been handed.
+
+    absorb_duplicate() keeps those links on the winner as `also_seen`, so they cost nothing
+    to find. Of the 34 revopsroles rows this was written for, 19 carried one and 18 came
+    back with the full ad -- 2,371 to 12,255 characters, against the 36-57 they had.
+
+    Recursion is bounded by construction: the probe dict carries no `also_seen` of its own,
+    so the nested call takes the ordinary fetch path and stops."""
+    asked = False
+    for a in (job.get("also_seen") or [])[:MAX_ALSO_SEEN_FETCHES]:
+        url = (a.get("url") or "") if isinstance(a, dict) else ""
+        if not url or url == job.get("url"):
+            continue
+        asked = True
+        text = fill_description({"url": url, "source": a.get("source") or ""}) or ""
+        if len(text) > len(best):
+            best = text
+        if len(best) >= MIN_DESC_CHARS:
+            break
+    if asked:
+        DUPE_RECOVERIES[0] += 1
+        DUPE_RECOVERIES[1] += len(best) >= MIN_DESC_CHARS
+    return best
 
 # ---------------------------------------------------------------- revopsroles.com
 
@@ -3239,8 +3291,13 @@ def backfill_targets(jobs, days, now=None):
 
     `desc_chars` is written before truncation (see the scoring loop), so a row where the
     stored text is shorter than that number is exactly a row the old 1200-char cap trimmed.
-    Rows that were always short -- a revopsroles stub, a feed whose link was dead -- have the
-    two equal and are not targets: there is no fuller version to go and get.
+
+    A row that was always short is a target too, but only when it carries `also_seen`. That
+    qualifier is the whole difference: a stub with no folded-away copy has nowhere new to
+    look and re-requesting it just buys another empty page, while a stub that absorbed a
+    duplicate is holding the employer's own link and has simply never been asked for it
+    (see fill_from_duplicates()). It is the second case that put 34 of 34 revopsroles rows
+    on the dashboard scored off fifty characters.
 
     Bounded by age on purpose. The dashboard only ever renders 7 days (MAX_AGE_DAYS in
     docs/index.html) while the file keeps 45, so the default scope is the rows Tom can
@@ -3250,7 +3307,8 @@ def backfill_targets(jobs, days, now=None):
     cutoff = (now - timedelta(days=days)).isoformat()
     out = [j for j in jobs
            if (j.get("found_at") or "") >= cutoff
-           and len(j.get("description") or "") < (j.get("desc_chars") or 0)]
+           and (len(j.get("description") or "") < (j.get("desc_chars") or 0)
+                or (is_thin(j.get("description")) and j.get("also_seen")))]
     return sorted(out, key=lambda j: j.get("found_at") or "", reverse=True)
 
 def backfill_row(job, fetch=None):
@@ -3279,8 +3337,12 @@ def backfill_row(job, fetch=None):
             got = ""
         if len(got) > len(best):
             best = got
-        if len(best) >= (job.get("desc_chars") or 0):
-            break          # already back to the length the scorer saw; stop asking
+        # Back to the length the scorer saw AND long enough to be a real posting. The
+        # second half is what makes this work for a stub: its desc_chars is 54, so the
+        # bare "as long as before" test was satisfied by the first fetcher that returned
+        # anything at all and the row stopped asking while still holding a stub.
+        if len(best) >= max(job.get("desc_chars") or 0, MIN_DESC_CHARS):
+            break
     return best
 
 def cmd_backfill_jd(days, fetch=None):
@@ -3295,17 +3357,24 @@ def cmd_backfill_jd(days, fetch=None):
     if not targets:
         print(f"Nothing to backfill in the last {days} days.")
         return
-    print(f"{len(targets)} truncated rows in the last {days} days. Re-fetching.\n")
-    by_id = {}
-    recovered = 0
+    print(f"{len(targets)} thin or truncated rows in the last {days} days. Re-fetching.\n")
+    by_id, crossed = {}, set()
+    recovered = was_stub = 0
     for j in targets:
         stored, want = len(j.get("description") or ""), j.get("desc_chars") or 0
+        stub = is_thin(j.get("description"))
         got = backfill_row(j, fetch)
         # Never shorten a row. A fetcher that comes back with a page's furniture instead of
         # the posting would otherwise replace a real sample with something worse.
         if len(got) > stored:
             by_id[id(j)] = got
             recovered += 1
+            # A row that crossed the thin line is a different case from one that merely got
+            # longer: its stored score was formed with no posting to read. Counted here and
+            # rescored below.
+            if stub and not is_thin(got):
+                was_stub += 1
+                crossed.add(id(j))
             mark = "OK  "
         else:
             mark = "--  "
@@ -3320,6 +3389,83 @@ def cmd_backfill_jd(days, fetch=None):
     print(f"\nRecovered {recovered} of {len(targets)}. {missed} could not be re-fetched "
           f"(expired postings, or a board that refuses datacenter IPs); those rows keep the "
           f"sample they had and say so in the dashboard's copy block.")
+    if was_stub:
+        rescore_recovered(jobs, [j for j in jobs if id(j) in crossed])
+
+
+def rescore_recovered(jobs, stale):
+    """Re-run the deep score on rows whose posting only just arrived.
+
+    Recovering the text and leaving the score alone would be the worse half of the job. A
+    row scored under EVIDENCE: THIN was told in as many words that it was looking at a few
+    words of metadata and that neither hard disqualifier had been cleared -- a Mixpanel
+    stub reached 8.2 on 54 characters. Once the real 6,677-character ad is in hand that
+    number is not conservative, it is simply about a different thing, and it is the number
+    Tom sorts the dashboard by.
+
+    Rescoring in place rather than freeing the row for the next scan is deliberate: these
+    rows are older than the revopsroles digest's 4-day lookback, so a freed row would not
+    come back from the feed -- it would just be gone. The row keeps its id, so a Hide or a
+    Mark-applied recorded against it still holds.
+
+    No API key means no rescore, and that is said out loud rather than passed over: a
+    dashboard where the text and the score disagree about how much was known is worse than
+    one where neither moved."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    stale = [j for j in stale if not is_thin(j.get("description"))]
+    if not stale:
+        return
+    if not api_key:
+        print(f"\n{len(stale)} row(s) now have a real posting but keep a score formed "
+              f"without one. Set ANTHROPIC_API_KEY and re-run to rescore them.")
+        return
+    print(f"\nRescoring {len(stale)} row(s) whose posting only just arrived.")
+    system = score_system()
+    dropped = set()
+    rescored = 0
+    for j in stale:
+        before = j.get("score")
+        # The free checks first, exactly as the scan runs them, and for the same reason:
+        # these are the two questions the stub could not be asked. A role whose ad rules
+        # out sponsorship was sitting on the dashboard with a score because the sentence
+        # saying so had never been fetched. No Opus call is worth making for it.
+        quote = says_no_sponsorship(j.get("description"))
+        stage = "no-sponsorship" if quote else ""
+        if not quote:
+            quote = requires_other_language(j.get("description"))
+            stage = "language-required" if quote else ""
+        if quote:
+            dropped.add(id(j))
+            record_drop(j, stage, f'JD (recovered): "{quote}"')
+            print(f"  drop  {j.get('title')} @ {j.get('company')} ({stage})")
+            continue
+        try:
+            result = score_job(api_key, system, j)
+        except Exception as e:
+            print(f"  ERR   {j.get('title')} @ {j.get('company')} ({str(e)[:80]})")
+            continue
+        if result.get("disqualified"):
+            # The recovered ad rules Tom out. Same policy as the scan itself: dropped
+            # outright rather than shown with a caveat -- and this is exactly the row the
+            # thin-evidence warning could not catch, because there was nothing to read.
+            dropped.add(id(j))
+            record_drop(j, result["stage"],
+                        f"{result['reason']} (read off the recovered posting)")
+            print(f"  drop  {j.get('title')} @ {j.get('company')} "
+                  f"({result['stage']}: {result['reason']})")
+            continue
+        j.update(result)
+        rescored += 1
+        print(f"  {before} -> {j['score']:<5} {(j.get('company') or '?')[:28]} "
+              f"| {(j.get('title') or '')[:40]}")
+    kept = [j for j in jobs if id(j) not in dropped]
+    json.dump(kept, open("docs/jobs.json", "w"), indent=1)
+    if dropped:
+        prev = load_json("docs/excluded.json", {})
+        prev["rows"] = trim_drop_rows(DROPS + prev.get("rows", []))
+        json.dump(prev, open("docs/excluded.json", "w"), indent=1)
+    print(f"Rescored {rescored}, dropped {len(dropped)}, "
+          f"{len(stale) - rescored - len(dropped)} left as they were.")
 
 def main():
     verify, dry = "--verify" in sys.argv, "--dry" in sys.argv
@@ -3783,6 +3929,10 @@ def main():
             f"{searches} searched, {searched_ok} confirmed and used"
             + (f" (cap {MAX_JD_SEARCHES_PER_RUN})"
                if searches >= MAX_JD_SEARCHES_PER_RUN else ""))
+    if DUPE_RECOVERIES[0]:
+        asked, got = DUPE_RECOVERIES
+        src_status["jd from duplicates"] = (
+            f"{asked} thin row(s) asked the copies dedupe folded away, {got} recovered")
     if rescues:
         src_status["jd rescue"] = (
             f"{rescues} stub row(s) looked for their real posting, {rescued} recovered"
