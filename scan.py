@@ -740,34 +740,86 @@ def salary_floor_flag(market, obs):
     requires_other_language() drop on a regex match before the model ever runs. A role that
     cannot clear the floor on its own stated salary is not one Tom can take, so there is
     nothing to show a flag on; the name stays because the function itself -- find the note,
-    or don't -- hasn't changed. Most EU postings state no salary at all, and the ones that
-    do often state a range whose bottom is a negotiating position rather than the offer,
-    which is exactly why this only fires on a real, market-matched, stated figure.
+    or don't -- hasn't changed. Most EU postings state no salary at all, which is exactly
+    why this only fires on a real, market-matched, stated figure.
 
-    "Stated" means stated in the posting. The figure reaching this function comes from the
+    THE TOP OF THE BAND DECIDES, NOT THE BOTTOM. This read the bottom, and a posting is not
+    an offer: "$120,000 - $150,000" against a $130,000 floor was dropped outright on the
+    120, even though most of that band clears the floor and the whole negotiation happens
+    inside it. A band is only disqualifying when ALL of it is below the floor -- then no
+    amount of negotiating gets there, and that is the fact worth acting on. A band that
+    straddles the floor is kept and FLAGGED (see score_flags), so Tom sees the risk rather
+    than never seeing the role. The same correction applies to a visa floor: what matters
+    is whether Tom can be hired above it, not what the bottom of the advertised range says.
+
+    "Stated" means stated in the posting. The figures reaching this function come from the
     deep scorer reading the JD, which is the only salary source in the pipeline that can be
     trusted to gate on: Adzuna reports an ESTIMATE for most rows, and adzuna_salary()
     already discards anything flagged salary_is_predicted precisely so a guessed number can
     never reach here and drop a real role."""
     if not market or not obs.get("salary_stated"):
         return ""
-    try:
-        low = float(obs.get("salary_min_base") or 0)
-    except (TypeError, ValueError):
-        return ""
+    low, high = salary_band(obs)
     floor, cur, kind = floor_for(market)
-    if low <= 0 or not floor:
+    if high <= 0 or not floor:
         return ""
     stated = (obs.get("salary_currency") or "").upper()
     if stated and stated != cur:
         return ""
-    if low < floor:
+    if high < floor:
+        band = f"{int(low)}-{int(high)}" if low and low < high else f"{int(high)}"
         if kind == "visa":
-            return (f"stated salary {int(low)} {cur} below the {market} visa floor "
+            return (f"stated salary {band} {cur} entirely below the {market} visa floor "
                     f"({floor} {cur})")
-        return (f"stated salary {int(low)} {cur} below the {floor} {cur} floor for taking "
-                f"a {market} role at all")
+        return (f"stated salary {band} {cur} entirely below the {floor} {cur} floor for "
+                f"taking a {market} role at all")
     return ""
+
+
+def salary_band(obs):
+    """(low, high) of the stated base range, as floats, with the two ordered and either one
+    standing in for a missing other.
+
+    A single figure arrives as a range of itself. A row scored before salary_max_base
+    existed has no top at all, and falls back to its bottom -- which restores exactly the
+    old behaviour for the stored corpus rather than reading a missing top as zero and
+    disqualifying every historical row at once."""
+    low = _as_float(obs.get("salary_min_base"))
+    high = _as_float(obs.get("salary_max_base"))
+    if high <= 0:
+        high = low
+    if low <= 0:
+        low = high
+    return (low, high) if low <= high else (high, low)
+
+# A pay figure as a US ad writes it: "$120,000", "$120,000 - $150,000", "$120K", "$120k".
+# Comma form is tried before the bare run of digits so "$1,000,000" is read as one number
+# rather than as a stray "000".
+US_PAY_FIGURE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})+|\d{2,3}(?:\.\d+)?\s*[kK]\b|\d{5,7})")
+# The window an annual base salary lives in. Its whole job is to keep the figures that are
+# NOT salaries out: "$5M in ARR", "$50/hour", "a $2,500 learning stipend", "401(k)".
+US_PAY_MIN, US_PAY_MAX = 40_000, 1_000_000
+
+
+def jd_pay_figures(desc):
+    """Every number in the text that could be an annual US base salary, as floats.
+
+    Deliberately a presence test, not an extraction: what it answers is "does this ad talk
+    about pay at all", and the actual numbers are read by the deep scorer off the whole
+    posting. So a false positive here costs nothing -- the row survives to be scored, the
+    scorer reports salary_stated false, and deep_score_disqualifier() drops it then, which
+    is the same outcome one step later. A false NEGATIVE costs a real role, silently."""
+    out = []
+    for raw in US_PAY_FIGURE.findall(desc or ""):
+        text = raw.replace(",", "").strip()
+        try:
+            value = float(text[:-1].strip()) * 1000 if text[-1] in "kK" else float(text)
+        except ValueError:
+            continue
+        if US_PAY_MIN <= value <= US_PAY_MAX:
+            out.append(value)
+    return out
+
 
 def us_comp_unstated(job):
     """A reason string when a US row carries no salary at all, "" otherwise.
@@ -787,17 +839,31 @@ def us_comp_unstated(job):
     the figure the deep scorer took off the posting. The feed's salary string is not the
     posting, so it is trusted for "is there a number" and nothing more.
 
-    How this lands per source: hiring.cafe supplies yearly_min_compensation, JobSpy
-    supplies min_amount when it has one, LinkedIn supplies nothing, and Adzuna's estimates
-    are already discarded by adzuna_salary() for being salary_is_predicted -- so an Adzuna
-    US row has no salary and is dropped, which is the right answer for a filter whose whole
-    point is "confirmed"."""
+    How this lands per source: hiring.cafe supplies yearly_min_compensation, JobSpy supplies
+    min_amount when it has one, LinkedIn supplies NOTHING, and Adzuna's figures are mostly
+    modelled estimates that adzuna_salary() discards for being salary_is_predicted.
+
+    THE AD IS ASKED BEFORE THE FEED'S SILENCE IS BELIEVED. Reading "no salary field" as "no
+    salary" made this filter a filter on which source found the role rather than on what the
+    role pays: a US ad that states its band in the posting -- which US ads increasingly must,
+    under pay-transparency laws -- was dropped unread because LinkedIn has no salary column
+    and Adzuna's guess was thrown away. The description is already in hand by the time this
+    runs (fill_description() is the line above it in main()), so it costs one regex to ask.
+
+    The rule itself is unchanged: a US role still has to be CONFIRMED to pay well. A row
+    that gets through on the strength of a figure in its ad is confirmed downstream, where
+    the deep scorer reads the actual numbers -- and deep_score_disqualifier() drops it there
+    if the scorer finds no stated salary after all. This moves the question from "did the
+    feed have a column" to "does the posting say", which is the question that was meant."""
     if job.get("market") != "US-Remote":
         return ""
     if (job.get("salary") or "").strip():
         return ""
-    return ("no salary on the posting; a US role is only worth taking at confirmed pay "
-            f"(floor {COMP_FLOORS['US-Remote'][0]} {COMP_FLOORS['US-Remote'][1]})")
+    if jd_pay_figures(job.get("description")):
+        return ""
+    floor, cur = COMP_FLOORS["US-Remote"]
+    return (f"no salary in the feed or anywhere in the ad; a US role is only worth taking "
+            f"at confirmed pay (floor {floor} {cur})")
 
 
 def deep_score_disqualifier(job, obs):
@@ -816,6 +882,19 @@ def deep_score_disqualifier(job, obs):
     if obs.get("language_hard_requirement"):
         return "language-required", ("deep score: posting requires non-English fluency "
                                       "(missed by the wording-based check)")
+    # The other half of us_comp_unstated(). That check now lets a US row through on a pay
+    # figure spotted anywhere in the ad, because the alternative was dropping every US role
+    # from a feed with no salary column. This is where that leniency is settled: the scorer
+    # has now read the whole posting, and if it found no stated salary then the figure the
+    # regex saw was an ARR number or a stipend, and the role is unconfirmed after all --
+    # exactly the case the rule exists for. A row whose FEED carried a salary is untouched
+    # here; it was never relying on the ad.
+    if (job.get("market") == "US-Remote" and not (job.get("salary") or "").strip()
+            and not obs.get("salary_stated")):
+        floor, cur = COMP_FLOORS["US-Remote"]
+        return "us-comp-unstated", (f"the ad mentions money but states no salary for the "
+                                    f"role; a US role is only worth taking at confirmed "
+                                    f"pay (floor {floor} {cur})")
     note = salary_floor_flag(job.get("market"), obs)
     if note:
         # Two stage names for one check, because they mean different things and both are
@@ -879,6 +958,18 @@ def score_flags(job, obs):
         # decides, not the noun in the title.
         flags.append(f"title band: {band} -- check the JD for actual scope and comp")
 
+    # A band that straddles the market's floor. The role is kept -- only a band entirely
+    # below the floor is disqualifying, because a posting is not an offer and the whole
+    # negotiation happens inside the range -- but the bottom being under the floor is a
+    # real risk and Tom decides on it, which means he has to see it.
+    floor, cur, _kind = floor_for(market)
+    if floor and obs.get("salary_stated"):
+        low, high = salary_band(obs)
+        currency_matches = (obs.get("salary_currency") or "").upper() in ("", cur)
+        if currency_matches and 0 < low < floor <= high:
+            flags.append(f"band {int(low)}-{int(high)} {cur} starts below your "
+                         f"{floor} {cur} floor -- only the top half clears it")
+
     # CSM track: a primary target in NL, a weaker one elsewhere unless the company is a
     # genuine standout (see the CSM track weighting section of profile.md). The model is
     # told this in the profile and reflects it in the dimensions; this is just the note.
@@ -919,6 +1010,7 @@ SCORE_SCHEMA = {
         "language_hard_requirement": {"type": "boolean"},
         "salary_stated": {"type": "boolean"},
         "salary_min_base": {"type": "number"},
+        "salary_max_base": {"type": "number"},
         "salary_currency": {"type": "string"},
         "posting_location": {"type": "string"},
         "flags": {"type": "array", "items": {"type": "string"}},
@@ -926,7 +1018,8 @@ SCORE_SCHEMA = {
     },
     "required": ["dimensions", "function_match", "company_standout",
                  "language_hard_requirement", "salary_stated", "salary_min_base",
-                 "salary_currency", "posting_location", "flags", "verdict"],
+                 "salary_max_base", "salary_currency", "posting_location", "flags",
+                 "verdict"],
     "additionalProperties": False,
 }
 
@@ -986,7 +1079,7 @@ Calibration, so the dimension scores land on a consistent scale: 8-10 is a bulls
 
 Do NOT compute a total. The weighted total is computed in code from the six dimension scores you give, and for every role that actually gets scored nothing overrides it afterwards -- there are no caps or ceilings. Every consideration that should move the score has to land inside a dimension: if the posting reads junior, that belongs in Seniority Fit; if the function is off-target, that belongs in Domain and Career Trajectory.
 
-Two facts are handled differently: a stated salary below the market's floor (a visa floor in Europe, and in the US Tom's own floor for whether the role is worth taking at all), and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
+Two facts are handled differently: a stated salary below the market's floor (a visa floor in Europe, and in the US Tom's own floor for whether the role is worth taking at all), and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_max_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
 
 Thin evidence: some rows arrive with no retrievable posting text at all, and those say "EVIDENCE: THIN" where the description would be. Treat that as a real constraint on how high you can score, not as a neutral absence. Do not fill the gap with what a role of that title usually involves -- the whole point of reading the posting is that titles mislead, and on these rows you have not read one. Score each dimension on what is actually stated and no further, cap the total's optimism accordingly, and note the missing evidence in your verdict. A thin row that looks like a 7 is a 7 you cannot support; 5 to 6 is the honest range unless the title and market alone genuinely settle it. Both hard disqualifier checks are also unrun on these rows, so do not treat a silent posting as a clean one.
 
@@ -996,7 +1089,7 @@ Alongside the dimensions, report these observations from the posting:
 - function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
-- salary_stated / salary_min_base / salary_currency: the annual base-salary floor of any stated range, as a number, with its ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. If no salary is stated, set salary_stated false, salary_min_base 0, salary_currency "". Report only a figure the POSTING states; never carry over an estimate from a job board. A stated figure below the market's floor DROPS the role -- see above.
+- salary_stated / salary_min_base / salary_max_base / salary_currency: the annual base salary the posting states, as the BOTTOM and the TOP of its range, with the ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. A single figure rather than a range goes in both. If no salary is stated, set salary_stated false, both numbers 0, salary_currency "". Report only figures the POSTING states; never carry over an estimate from a job board. Reporting both halves matters: a band is only disqualifying when ALL of it is below the market's floor, so a top-of-band you leave at 0 throws away a role that pays fine at the top -- see above.
 - posting_location: the work location the POSTING itself states, copied as it is written ("Toronto, ON", "Amsterdam, Netherlands", "Remote - US"). This is a transcription, not an opinion: report what the ad says even when it disagrees with the market you were given, and especially then. Give the location of the job, not the company's headquarters, and where several offices are listed give the one the role is actually based in. Use "" when the posting genuinely does not say, which is common -- do not infer one from the company, the currency or the language of the ad.
 
 The market (NL / BE / UK-London / IE / CA / US-Remote) has already been resolved in code and is given to you in the job details. Trust it for SCORING. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted. If the posting's own location contradicts that market, posting_location is where that goes and the only place it goes: report what the ad says there, score the market you were given, and let code reconcile the two. Do not mention the disagreement in a dimension score, in flags or in the verdict. Where it sits in Tom's preference ordering is the whole of the Location & Visa dimension -- see that dimension's guidance, and note that the ordering is about where he wants to live, not about which market is easiest to get hired in.
@@ -1133,7 +1226,7 @@ def notify_strong_matches(jobs):
               and market_tier(j.get("market")) <= NTFY_MAX_TIER]
     if not strong:
         return
-    strong.sort(key=lambda j: j.get("score", 0), reverse=True)
+    strong.sort(key=lambda j: j.get("score") or 0, reverse=True)
     body = "\n".join(f"{j['score']} — {j['title']} @ {j.get('company') or j['source']}"
                      for j in strong[:10])
     try:
@@ -3057,13 +3150,20 @@ def job_message(job):
             # abroad, so it is only emitted when there is something to say.
             + (f"Transfer: this employer also posts roles in {job['transfer_markets']}\n"
                if job.get("transfer_markets") else "")
-            # A stub is not a description, and saying so is the whole point of this branch.
-            # revopsroles rows arrive carrying a ~50-character synthesized summary
-            # ("Category: CS Ops; Seniority: Senior") and the old code emitted that under
-            # "Description:" as though it were the posting. The model had no way to know,
-            # and it showed: stub rows scored a 6.03 mean against 5.78 for rows with a real
-            # JD, with 22 of 59 clearing the gate. Absence of evidence was reading as
-            # absence of problems.
+            # A BACKSTOP now, not the normal path. A row with no posting text is set aside
+            # unscored before it ever reaches the scorer (see main()), so this branch should
+            # not fire on an ordinary run -- it is kept because `job_message` is called from
+            # places that do not own that decision (the repair command's rescore, --dry),
+            # and because a silent 50-character "Description:" is the one failure mode
+            # worth never being one refactor away from.
+            #
+            # What it is guarding against: revopsroles rows arrive carrying a ~50-character
+            # synthesized summary ("Category: CS Ops; Seniority: Senior") and the old code
+            # emitted that under "Description:" as though it were the posting. The model had
+            # no way to know, and it showed: stub rows scored a 6.03 mean against 5.78 for
+            # rows with a real JD, with 22 of 59 clearing the gate. Absence of evidence was
+            # reading as absence of problems -- which is why the answer ended up being not
+            # to score them at all.
             + ("EVIDENCE: THIN. No real posting text could be retrieved for this role -- "
                "what follows is all that is known, and it is a few words of metadata "
                "rather than a job description. Score conservatively and do NOT infer "
@@ -3116,6 +3216,10 @@ def parse_score_result(job, data):
         # than assuming the money is fine.
         "comp": {"stated": bool(data.get("salary_stated")),
                  "min_base": _as_float(data.get("salary_min_base")),
+                 # The top of the band, kept because it is now what the floor is judged
+                 # against -- storing only the bottom would leave applyq.py re-deriving
+                 # comp risk from the same half-figure this stopped gating on.
+                 "max_base": _as_float(data.get("salary_max_base")),
                  "currency": str(data.get("salary_currency") or "").upper()[:3]},
         # Structured as well as flagged, because the apply queue has to ACT on this one
         # rather than just show it: it asks Tom which market is right before building a CV
@@ -3166,7 +3270,7 @@ def cmd_selftest():
         if not dims:
             continue
         new = round(weighted_total(dims), 1)
-        old = j.get("score", 0)
+        old = j.get("score") or 0
         if abs(new - old) > 0.05:
             moved += 1
             up += new > old
@@ -3355,7 +3459,11 @@ def cmd_backfill_jd(days, fetch=None):
     jobs = load_json("docs/jobs.json", [])
     targets = backfill_targets(jobs, days)
     if not targets:
-        print(f"Nothing to backfill in the last {days} days.")
+        print(f"Nothing to re-fetch in the last {days} days.")
+        hit = set_aside_thin(jobs, days)
+        if hit:
+            json.dump(jobs, open("docs/jobs.json", "w"), indent=1)
+            print(f"{len(hit)} row(s) scored without a posting were unscored and set aside.")
         return
     print(f"{len(targets)} thin or truncated rows in the last {days} days. Re-fetching.\n")
     by_id, crossed = {}, set()
@@ -3391,6 +3499,63 @@ def cmd_backfill_jd(days, fetch=None):
           f"sample they had and say so in the dashboard's copy block.")
     if was_stub:
         rescore_recovered(jobs, [j for j in jobs if id(j) in crossed])
+
+    # Whatever is still thin was scored without a posting, and that score is the thing Tom
+    # asked to stop seeing. Last, so it only ever catches rows the recovery above could not
+    # save, and re-read from disk because rescore_recovered() may have rewritten the file.
+    jobs = load_json("docs/jobs.json", [])
+    hit = set_aside_thin(jobs, days)
+    if hit:
+        print(f"\n{len(hit)} row(s) had a score built on no posting. Unscored and moved to "
+              f"the dashboard's own section for you to judge by eye.")
+        json.dump(jobs, open("docs/jobs.json", "w"), indent=1)
+
+
+SET_ASIDE_VERDICT = ("Not scored. No posting text could be retrieved from the source, "
+                     "from the copies other feeds had, from the company's own board, or "
+                     "from a web search. What is on this card is everything that is known.")
+SET_ASIDE_FLAG = "no posting text found -- nothing here has been screened or scored"
+
+
+def as_set_aside(job):
+    """Turn a row into an unscored, set-aside one, in place. Returns the row.
+
+    One definition for both callers: main() uses it on a row the recovery routes just gave
+    up on, and set_aside_thin() on a row that was scored under the old rules before any of
+    this existed. `found_at` is deliberately NOT touched -- it drives the 7-day age filter,
+    and refreshing it would resurrect a fortnight of expired postings."""
+    job.update({"score": None, "score_raw": None, "caps_applied": [], "dimensions": {},
+                "tier": job.get("market") or "", "evidence": "thin",
+                "flags": [SET_ASIDE_FLAG], "verdict": SET_ASIDE_VERDICT})
+    # A stale score's supporting detail would otherwise sit on the card next to "not
+    # scored", which is worse than either on its own.
+    for k in ("comp", "market_conflict"):
+        job.pop(k, None)
+    return job
+
+
+def set_aside_thin(jobs, days, now=None):
+    """Convert rows already on the dashboard that were SCORED without a posting.
+
+    The scan stopped producing these the moment the set-aside branch landed, but a scored
+    stub is carried forward verbatim by every later run -- so without this the dashboard
+    keeps showing an 8.2 built on 54 characters until it ages out, which is the exact thing
+    Tom asked to stop seeing.
+
+    Bounded to the same window the dashboard renders, and it only ever touches a row that
+    is thin RIGHT NOW: run the recovery first (cmd_backfill_jd does, above) and a row that
+    got its ad keeps its score and is not a candidate here."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=days)).isoformat()
+    hit = [j for j in jobs
+           if (j.get("found_at") or "") >= cutoff
+           and is_thin(j.get("description"))
+           and j.get("score") is not None]
+    for j in hit:
+        print(f"  unscored  was {j.get('score')} on {len(j.get('description') or '')} "
+              f"chars  {(j.get('company') or '?')[:28]} | {(j.get('title') or '')[:40]}")
+        as_set_aside(j)
+    return hit
 
 
 def rescore_recovered(jobs, stale):
@@ -3679,6 +3844,13 @@ def main():
     # with the post-score lookup further down -- so a company probed here is not probed
     # again there.
     rescues, rescued = 0, 0
+    # Web searches for a missing posting. Counted from pass A now rather than pass B: a row
+    # with no posting text is set aside instead of screened, so if the search still ran in
+    # stage 2 it would never run at all.
+    searches, searched_ok = 0, 0
+    # Rows that reached the end of every recovery route still carrying no posting. They are
+    # NOT scored and NOT dropped -- see the set-aside branch below.
+    set_aside = []
     # Imported here, not at the top. findform imports this module -- it needs market_of()
     # to tell whether a board's posting is in one of Tom's markets -- so a top-level
     # import either way round is a cycle. It resolves at runtime today because both sides
@@ -3712,6 +3884,30 @@ def main():
                 print(f"  jd    recovered {len(desc)} chars for {j['title']} "
                       f"@ {j.get('company')}")
 
+        # Last resort for a row still carrying no posting: pay for a web search. This is the
+        # only place in the pipeline that spends tokens to get EVIDENCE rather than to form
+        # a judgement, and it is the last thing tried before a row is set aside unscored.
+        #
+        # It used to sit in stage 2, spent only on rows that had survived the Haiku screen
+        # and won a scoring slot. That ordering cannot survive setting stubs aside: a row
+        # with no text no longer reaches stage 2, so the search would never run for exactly
+        # the rows it exists for. Screening a stub was never worth much either -- the screen
+        # reads the description, and on these rows there is not one.
+        if (api_key and not dry and is_thin(j["description"])
+                and searches < MAX_JD_SEARCHES_PER_RUN):
+            searches += 1
+            url = search_jd_url(api_key, j)
+            desc, confirmed = verify_jd(url, j) if url else ("", "")
+            if desc:
+                j["description"] = desc
+                j["apply_url"] = j.get("apply_url") or confirmed
+                searched_ok += 1
+                print(f"  jd    web search recovered {len(desc)} chars for {j['title']} "
+                      f"@ {j.get('company')}")
+            elif url:
+                print(f"  jd    web search found a page for {j['title']} that could not be "
+                      f"confirmed as the same role; left thin")
+
         j["desc_chars"] = len(j["description"])   # kept so a score can be audited later
 
         # Hard disqualifiers, read off the full description before either model sees it.
@@ -3735,6 +3931,28 @@ def main():
         if SPONSOR_REQUIRED and raw == "not_found":
             record_drop(j, "sponsor-required", f"company not on the {which} sponsor register")
             seen.add(j["id"]); continue
+
+        # Every recovery route is now spent and there is still no posting to read. Set the
+        # row aside rather than scoring it.
+        #
+        # This replaces scoring it under EVIDENCE: THIN, and it is Tom's call: a number
+        # produced from a title, a company and a location is not a worse score, it is a
+        # different kind of object, and putting it in the same ranked list as scores built
+        # on real postings makes the list lie. It was also costing real money to say
+        # nothing -- a Haiku screen and an Opus call per stub -- and cutting both ways: a
+        # stub scored 8.2 sits above real 7s it should not outrank, and a stub scored 5.2
+        # is a role Tom never looks at on evidence that would not support the judgement.
+        #
+        # Not dropped either, which is the other half. A drop means "ruled out", and
+        # nothing here rules anything out -- the two hard disqualifier checks could not run
+        # on text this short, so the role is unexamined rather than rejected. It goes on
+        # the dashboard in its own section for Tom to judge by eye, carrying everything
+        # that IS known: title, company, location, salary, sponsor badge, apply link.
+        if is_thin(j["description"]):
+            as_set_aside(j)
+            j["found_at"] = now_iso()
+            set_aside.append(j); seen.add(j["id"])
+            continue
 
         if dry or not api_key:
             j.update({"score": 0, "score_raw": 0, "caps_applied": [], "dimensions": {},
@@ -3761,7 +3979,6 @@ def main():
 
     # PASS B: deep score, best first, until the budget runs out.
     survivors.sort(key=lambda j: priority(j, deferrals), reverse=True)
-    searches, searched_ok = 0, 0
     for j in survivors:
         if len(scored) >= MAX_SCORED_PER_RUN:
             # Out of budget. NOT added to seen, so this row comes back next run, and its
@@ -3769,41 +3986,6 @@ def main():
             deferrals[j["id"]] = min(deferrals.get(j["id"], 0) + 1, DEFER_CAP)
             continue
 
-        # Last resort for a row still carrying no posting: pay for a web search.
-        #
-        # Here rather than in pass A on purpose. This is the only place in the pipeline
-        # that spends tokens to get EVIDENCE rather than to form a judgement, so it is
-        # spent only on rows that already survived the Haiku screen and have won a
-        # deep-scoring slot -- never on one about to be killed or deferred. The queue has
-        # already put them in Tom's own preference order, so the budget lands on the rows
-        # that matter most.
-        if (api_key and not dry and is_thin(j.get("description"))
-                and searches < MAX_JD_SEARCHES_PER_RUN):
-            searches += 1
-            url = search_jd_url(api_key, j)
-            desc, confirmed = verify_jd(url, j) if url else ("", "")
-            if desc:
-                j["description"] = desc
-                j["desc_chars"] = len(desc)
-                j["apply_url"] = j.get("apply_url") or confirmed
-                searched_ok += 1
-                print(f"  jd    web search recovered {len(desc)} chars for {j['title']} "
-                      f"@ {j.get('company')}")
-                # Re-run the two hard disqualifiers now there is finally text to read.
-                # Skipping this would score a role the pipeline would have refused had the
-                # posting arrived by any other route.
-                quote = says_no_sponsorship(desc) or requires_other_language(desc)
-                if quote:
-                    stage = ("no-sponsorship" if says_no_sponsorship(desc)
-                             else "language-required")
-                    record_drop(j, stage, f'JD (web search): "{quote}"')
-                    seen.add(j["id"])
-                    print(f"  drop  {j['title']} @ {j.get('company')} "
-                          f"({stage}, found in the recovered JD)")
-                    continue
-            elif url:
-                print(f"  jd    web search found a page for {j['title']} that could not be "
-                      f"confirmed as the same role; left thin")
         try:
             result = score_job(api_key, system_score, j)
         except Exception as e:
@@ -3835,8 +4017,14 @@ def main():
               f"@ {j.get('company') or j['source']} | {j['sponsor'] or 'n/a'}{caps}")
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)).isoformat()
-    merged = scored + [j for j in existing if j.get("found_at", "") >= cutoff]
-    merged.sort(key=lambda j: (j.get("score", 0), j.get("found_at", "")), reverse=True)
+    # Set-aside rows ride in the same file as scored ones, deliberately. They need the
+    # apply-link lookup, the age filter, the dedupe and the Hide/Mark-applied machinery
+    # that all key off this file; a separate file would be a second copy of all of it. The
+    # dashboard tells them apart by `evidence` and renders them in their own section.
+    merged = scored + set_aside + [j for j in existing if j.get("found_at", "") >= cutoff]
+    # `or 0` rather than a default: a set-aside row's score is None, which is not missing,
+    # and None does not compare against a float.
+    merged.sort(key=lambda j: (j.get("score") or 0, j.get("found_at", "")), reverse=True)
 
     # Which board a role's application actually lives on, and whether /submit can fill it
     # without being asked -- read off the url and also_seen this run's dedupe already
@@ -3877,7 +4065,11 @@ def main():
     todo = [j for j in merged
             if not j.get("ats")
             and j.get("found_at", "") >= cutoff_seen
-            and (j.get("score") or 0) >= FLOOR]
+            # A set-aside row has no score to clear the floor with, and it is the row that
+            # needs this lookup MOST: judging it by eye means opening the actual ad, and
+            # the board link is the only route to one -- its own url is the advert that
+            # could not be read in the first place.
+            and ((j.get("score") or 0) >= FLOOR or j.get("evidence") == "thin")]
     # Best row first, by the same ordering the scoring budget uses, and within that the
     # rows whose only link is a job-board advert. A row already pointing at a company ATS
     # has somewhere to apply even if this lookup never runs; an "aggregator only" row has
@@ -3924,6 +4116,13 @@ def main():
     src_status["apply links"] = ", ".join(f"{k} {v}" for k, v in sorted(states.items()))
 
     src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
+    if set_aside:
+        # Its own line because this number going UP is the signal that the recovery routes
+        # have stopped working, and a set-aside row is invisible in every other counter:
+        # it is not a drop, not a kill, and not a score.
+        src_status["set aside"] = (
+            f"{len(set_aside)} row(s) had no posting text after every recovery route and "
+            f"were not scored; they are on the dashboard for you to judge")
     if searches:
         src_status["jd web search"] = (
             f"{searches} searched, {searched_ok} confirmed and used"
@@ -3976,8 +4175,8 @@ def main():
               open("docs/status.json", "w"), indent=1)
     if not dry:
         notify_strong_matches(scored)
-    print(f"Done. {len(scored)} new on dashboard, {len(merged)} total, "
-          f"{sum(DROP_COUNTS.values())} dropped this run.")
+    print(f"Done. {len(scored)} new on dashboard, {len(set_aside)} set aside unscored, "
+          f"{len(merged)} total, {sum(DROP_COUNTS.values())} dropped this run.")
 
 if __name__ == "__main__":
     main()

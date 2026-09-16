@@ -31,6 +31,10 @@
          display:flex; align-items:center; justify-content:center; border-radius:9px;
          background:var(--teal); color:#fff; flex-shrink:0}
   .score.s-apply{background:var(--good)} .score.s-border{background:var(--warn)}
+  /* Deliberately not on the good/warn scale: an unscored row is off the scale, not at the
+     bottom of it. Muted so it reads as "nothing here yet" rather than as a low score. */
+  .score.s-none{background:transparent; border:1px dashed var(--line); color:var(--sub);
+                font-size:22px; font-weight:400}
   .hd{flex:1; min-width:0}
   .title{font-weight:650; font-size:15.5px; line-height:1.35}
   .company{color:var(--sub); font-size:13px; margin-top:1px}
@@ -111,6 +115,7 @@
   </div>
 
   <div id="border-wrap"></div>
+  <div id="aside-wrap"></div>
   <div id="excluded-wrap"></div>
   <div id="reviewed-wrap"></div>
 
@@ -195,7 +200,11 @@ function packetFor(j){
          "Market: " + (j.tier || j.market || "?"));
   const d = j.dimensions || {};
   const dimStr = DIMS.map(([k,l])=>`${l} ${d[k] ?? "?"}`).join(", ");
-  L.push(`Radar score: ${(j.score ?? 0).toFixed(1)}  (${dimStr})`);
+  // A set-aside row was never scored, and "0.0" would read as "the radar rated this
+  // zero" -- the opposite of what happened, and a reason to skip a role nobody assessed.
+  L.push(isSetAside(j)
+    ? "Radar score: NOT SCORED (no posting text was ever retrieved; not screened either)"
+    : `Radar score: ${(j.score ?? 0).toFixed(1)}  (${dimStr})`);
   if(j.verdict) L.push("Radar verdict: " + j.verdict);
   // UK and NL only. Ireland runs permits rather than a register, and neither North
   // American market needs sponsorship at all, so the field is noise there.
@@ -203,8 +212,12 @@ function packetFor(j){
   const c = j.comp || {};
   // Only a figure the posting itself states ever lands here -- scan.py discards board
   // estimates (salary_is_predicted) precisely so this line cannot be mistaken for one.
+  // The whole band, not just the bottom. The floor check reads the top now, and a bare
+  // bottom figure is what made "$120,000 - $150,000" look like a $120,000 role.
+  const fmt = n => Number(n).toLocaleString("en-US");
   L.push(c.stated && c.min_base
-    ? `Comp stated in the posting: ${c.currency||""} ${Number(c.min_base).toLocaleString("en-US")} base`
+    ? `Comp stated in the posting: ${c.currency||""} ${fmt(c.min_base)}`
+      + (c.max_base && c.max_base > c.min_base ? `-${fmt(c.max_base)}` : "") + " base"
     : "Comp stated in the posting: no");
   if(j.market_conflict){
     L.push(`LOCATION CONFLICT: the posting says ${j.market_conflict.stated} ` +
@@ -303,7 +316,8 @@ function fresh(iso){
   if(d < 1) return "today"; if(d < 2) return "yesterday";
   return Math.floor(d) + "d ago";
 }
-function scoreClass(s){ return s >= 8 ? "s-apply" : s >= GATE ? "" : "s-border"; }
+function scoreClass(s){ return s == null ? "s-none"
+                       : s >= 8 ? "s-apply" : s >= GATE ? "" : "s-border"; }
 
 // Where a row's market sits in Tom's ordering. Read from status.json (scan.py's
 // MARKET_TIER) with a fallback that sorts an unknown market LAST rather than first, so a
@@ -311,9 +325,15 @@ function scoreClass(s){ return s >= 8 ? "s-apply" : s >= GATE ? "" : "s-border";
 let MARKET_TIER = {}, TIER_UNKNOWN = 9;
 function tierOf(j){ return MARKET_TIER[j.tier || j.market || ""] ?? TIER_UNKNOWN; }
 
+// A row set aside for having no posting text. It is not scored and not rejected -- the
+// recovery routes all came back empty, so nothing about it has been examined.
+function isSetAside(j){ return j.evidence === "thin" || j.score == null; }
+
 function card(j, reviewed){
   const id = String(j.id||"");
-  const s = (j.score ?? 0).toFixed(1);
+  // "—" rather than 0.0. A set-aside row has no score, and rendering one as the bottom of
+  // the scale is the exact misreading this whole section exists to stop.
+  const s = isSetAside(j) ? "—" : (j.score ?? 0).toFixed(1);
   const el = document.createElement("div"); el.className = "job" + (reviewed ? " reviewed" : "");
   const dims = (j.dimensions && Object.keys(j.dimensions).length)
     ? `<div class="dims">${DIMS.map(([k,l])=>`${l} <b>${(j.dimensions[k]??0)}</b>`).join("")}</div>` : "";
@@ -502,6 +522,12 @@ function renderAll(){
   // point. Within a tier nothing but the score reorders it.
   jobs = [...jobs].sort((a,b)=> (tierOf(a) - tierOf(b)) || ((b.score??0) - (a.score??0)));
 
+  // Split off before anything is bucketed by score. A set-aside row has no score, and
+  // `?? 0` would file it under "scored below the floor" -- which is the one thing it is
+  // not. It was never scored at all.
+  const setAside = jobs.filter(isSetAside);
+  jobs = jobs.filter(j=>!isSetAside(j));
+
   const apply = jobs.filter(j=>(j.score??0) >= GATE);
   const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);
   const lowScored = jobs.filter(j=>(j.score??0) < FLOOR);
@@ -511,6 +537,7 @@ function renderAll(){
   document.getElementById("meta").textContent =
       `Netherlands · Ireland · London · Belgium · Canada · US remote`
       + `  ·  ${apply.length} to apply, ${border.length} borderline`
+      + (setAside.length ? `, ${setAside.length} unscored` : "")
       + (staleCount ? `  ·  ${staleCount} older than ${MAX_AGE_DAYS}d hidden` : "")
       + `  ·  last run ${lr}`;
 
@@ -527,6 +554,29 @@ function renderAll(){
     const box = document.createElement("div"); box.style.marginTop = "10px";
     border.forEach(j=>box.appendChild(card(j, false)));
     d.appendChild(box); borderWrap.appendChild(d);
+  }
+
+  // Between borderline and excluded on purpose: these are not rejects, and burying them
+  // under "Excluded" would say they had been looked at and turned down. Open by default
+  // the first time, because a collapsed section is a section nobody reads and the whole
+  // point of these rows is that only Tom can judge them.
+  const asideWrap = document.getElementById("aside-wrap");
+  const asideWasOpen = asideWrap.querySelector("details")?.open;
+  asideWrap.innerHTML = "";
+  if(setAside.length){
+    const d = document.createElement("details"); d.className = "borderline";
+    d.open = asideWasOpen ?? true;
+    d.innerHTML = `<summary>${setAside.length} unscored — no job description could be `
+      + `found, so these were not screened or scored. Worth your own eyes.</summary>`;
+    const box = document.createElement("div"); box.style.marginTop = "10px";
+    const note = document.createElement("div"); note.className = "note";
+    note.textContent = "Every recovery route came back empty for these: the source's own "
+      + "page, the copies other feeds had, the company's own board, and a web search. "
+      + "Nothing has been ruled out — the sponsorship and language checks need posting "
+      + "text to run, so they never ran. Open the link and judge it yourself.";
+    box.appendChild(note);
+    setAside.forEach(j=>box.appendChild(card(j, false)));
+    d.appendChild(box); asideWrap.appendChild(d);
   }
 
   renderExcluded(lowScored);

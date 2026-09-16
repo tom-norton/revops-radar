@@ -195,11 +195,26 @@ Cloudflare** below.
     without both.** A search that finds the wrong posting costs a refused match and a row
     that stays thin, which is the state it was already in, rather than a confident score
     built on another role's requirements.
-12d. Anything still thin reaches the scorer marked **`EVIDENCE: THIN`** instead of being
-    handed a 50-character summary in the shape of a description. The prompt tells it to
-    treat that as a real constraint: score only what is stated, do not fill the gap with
-    what a role of that title usually involves, name the missing evidence in the verdict,
-    and understand that 5–6 is the honest range for a row nobody has actually read.
+12d. Anything still thin is **set aside, not scored and not dropped** — the one outcome
+    that says what is actually true about it. It used to be scored under an `EVIDENCE: THIN`
+    warning, and that was the wrong shape of answer: a number produced from a title, a
+    company and a location is not a *worse* score, it is a different kind of object, and
+    ranking it against scores built on real postings makes the list lie in both directions.
+    A stub scored 8.2 sat above real 7s it should not outrank; a stub scored 5.2 was a role
+    that never got looked at on evidence that could not support the judgement. It was also
+    paying a Haiku screen and an Opus call per row to say nothing.
+    Not *dropped* either, and that half matters as much. A drop means "ruled out", and
+    nothing about these rows has been ruled out — the two hard disqualifiers in step 13
+    need posting text to fire, so on a stub neither ran. The role is **unexamined, not
+    rejected**. It goes to the dashboard's own **"unscored"** section carrying everything
+    that is known (title, company, location, salary, sponsor badge, and an apply link the
+    board lookup goes and finds for it), with a dash where the score would be rather than a
+    `0.0`, for Tom to judge by eye. The status footer counts them on their own line, because
+    this number climbing is the signal that 12a–12c have stopped working.
+    Rows already on the dashboard that were scored this way are converted by
+    `scan.py --backfill-jd`, after it has tried to recover their ad. On the current corpus
+    that is **62 rows across 45 days** — 34 revopsroles, 16 Adzuna and 12 hiring.cafe, so
+    this was never only a revopsroles problem.
 13. Two **hard disqualifiers are then read off the full text in code, before either model
     call**: an ad that rules out visa sponsorship, and an ad that requires fluency in a
     language other than English. Both drop the job and log the ad's own sentence to
@@ -208,7 +223,22 @@ Cloudflare** below.
     ever sees a sampled copy of the posting. They also **re-run on any text recovered by 12b
     or 12c**, since a stub is too short for either to fire — without that, a role the
     pipeline would have refused had its ad arrived by the ordinary route would get scored
-    just because the ad turned up late.
+    just because the ad turned up late. (They read whatever 12a–12c recovered because all
+    three now run *before* this step, rather than 12c running after the screen and needing
+    its own second pass.)
+13c. **The US "confirmed pay" rule asks the ad, not the feed.** A US role is only worth
+    taking at pay Tom can see, so a US row with no salary is dropped — but reading "no
+    salary *field*" as "no salary" made that a filter on which source found the role.
+    LinkedIn publishes no salary column at all and Adzuna's figures are mostly modelled
+    estimates that `adzuna_salary()` discards, so a US ad that states its band in the
+    posting — which US ads increasingly must, under pay-transparency laws — was dropped
+    unread. `us_comp_unstated()` now scans the description for a pay figure first
+    (`jd_pay_figures()`, windowed to 40k–1M so an ARR number, an hourly rate or a $2,500
+    stipend is not mistaken for a salary) and lets the row through if it finds one. The
+    rule itself is unchanged: the deep scorer reads the real numbers, and
+    `deep_score_disqualifier()` drops the row there if it turns out the posting states no
+    salary after all. A false positive in the regex costs one step; a false negative cost a
+    real role, silently.
 
 13b. **A feed can be wrong about where a job is**, and hiring.cafe was: it put a Canadian
     role in Dublin. That is not a cosmetic label, because the market picks the CV's contact
@@ -233,8 +263,8 @@ Cloudflare** below.
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout.
 16. **Two more hard disqualifiers, this time from what Opus reports** rather than a text
-    match: a stated salary below the market's visa floor, and a posting that makes a
-    non-English language a hard requirement. These catch what the regex checks in step 13
+    match: a stated salary band entirely below the market's floor, and a posting that makes
+    a non-English language a hard requirement. These catch what the regex checks in step 13
     miss — an oddly-worded requirement, a salary buried in prose — by actually reading the
     posting instead of matching a sentence. `deep_score_disqualifier()` drops the role the
     same way steps 12–13 do: not scored, not shown, logged to `docs/excluded.json` under
@@ -243,6 +273,17 @@ Cloudflare** below.
     are discarded** (`salary_is_predicted`), because they are modelled from the title and
     location rather than published by the employer, and a GBP figure is never compared
     against a EUR floor.
+    **The top of the band decides, not the bottom.** This read the bottom, and a posting is
+    not an offer: `$120,000 - $150,000` against the $130,000 US floor was dropped outright
+    on the 120, even though most of that band clears the floor and the entire negotiation
+    happens inside it. A band is disqualifying only when **all** of it is below the floor —
+    then no amount of negotiating reaches it, and that is the fact worth acting on. A band
+    that straddles the floor is kept and **flagged** on the card (`band 120000-150000 USD
+    starts below your 130000 USD floor`), so Tom sees the risk instead of never seeing the
+    role. Opus now reports `salary_max_base` alongside `salary_min_base` for this; a row
+    scored before that field existed falls back to its bottom figure, which reproduces the
+    old answer exactly rather than reading a missing top as zero and disqualifying the
+    whole stored corpus in one pass.
 17. **The score itself is computed in Python**, not by the model, for every role that
     survives to be scored — `weighted_total()` does the arithmetic, so the number is
     reproducible from the six dimension scores instead of being whatever total the model
