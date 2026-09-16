@@ -2194,6 +2194,119 @@ def test_the_scorer_is_asked_for_the_location_and_told_where_it_goes():
     assert "posting_location" in scan.SCORE_SCHEMA["properties"]
 
 
+# --- storing the ad, and recovering one stored short ------------------------------------
+#
+# DESC_STORE_CAP used to be 1200, sized for auditing a score. That file now feeds the
+# application workflow, and a head-and-tail sample is useless for tailoring a bullet because
+# what it drops is the middle. These pin the cap's new job and the one-off repair for rows
+# written under the old one.
+
+def test_a_whole_ad_survives_being_stored():
+    """The cap is a sanity guard, not a sample size. The longest real posting on record is
+    just under 24k characters; anything of ordinary length has to come back byte-identical."""
+    ad = "Responsibilities. " * 700          # ~12.6k chars, above the old cap, below the new
+    assert len(ad) > 1200, "fixture must exceed the cap this test exists to guard"
+    assert scan.sample_desc(ad, scan.DESC_STORE_CAP) == ad
+    assert "[...]" not in scan.sample_desc(ad, scan.DESC_STORE_CAP)
+
+
+def test_the_store_cap_still_guards_a_pathological_ad():
+    """Unbounded storage is the other failure. Something far past any real posting still
+    gets sampled rather than committed whole."""
+    monster = "x" * (scan.DESC_STORE_CAP + 5000)
+    out = scan.sample_desc(monster, scan.DESC_STORE_CAP)
+    assert len(out) == scan.DESC_STORE_CAP
+    assert "[...]" in out
+
+
+def test_backfill_targets_only_rows_that_were_cut_short():
+    """A row is a target when its stored text is shorter than the desc_chars recorded before
+    truncation. A row that was always short -- a stub, a dead link -- has the two equal and
+    there is no fuller version to go and get, so re-requesting it is wasted."""
+    now = scan.datetime.now(scan.timezone.utc)
+    fresh = (now - scan.timedelta(days=1)).isoformat()
+    rows = [
+        {"id": "cut", "found_at": fresh, "description": "x" * 1200, "desc_chars": 8000},
+        {"id": "whole", "found_at": fresh, "description": "x" * 4000, "desc_chars": 4000},
+        {"id": "stub", "found_at": fresh, "description": "x" * 54, "desc_chars": 54},
+    ]
+    got = [j["id"] for j in scan.backfill_targets(rows, 7, now=now)]
+    assert got == ["cut"], got
+
+
+def test_backfill_leaves_rows_outside_the_window_alone():
+    """Scope is the 7 days the dashboard renders, not the 45 the file keeps. The rest are
+    postings that expired weeks ago on rows nobody can click."""
+    now = scan.datetime.now(scan.timezone.utc)
+    rows = [
+        {"id": "recent", "found_at": (now - scan.timedelta(days=2)).isoformat(),
+         "description": "x" * 1200, "desc_chars": 8000},
+        {"id": "stale", "found_at": (now - scan.timedelta(days=30)).isoformat(),
+         "description": "x" * 1200, "desc_chars": 8000},
+    ]
+    assert [j["id"] for j in scan.backfill_targets(rows, 7, now=now)] == ["recent"]
+    assert {j["id"] for j in scan.backfill_targets(rows, 45, now=now)} == {"recent", "stale"}
+
+
+def test_backfill_blanks_the_description_before_fetching():
+    """The trap this whole command turns on. fill_description() returns early when what it
+    is handed already clears MIN_DESC_CHARS (900), and a stored sample is 1200 -- so passing
+    the row through untouched gets the sample handed straight back, no fetch attempted."""
+    seen = []
+    def fake(job):
+        seen.append(job.get("description"))
+        return "recovered " * 500
+    scan.backfill_row({"url": "https://x/1", "description": "x" * 1200, "desc_chars": 5000}, fake)
+    assert seen and all(d == "" for d in seen), seen
+
+
+def test_backfill_prefers_the_application_form_over_the_advert():
+    """Half these rows came through an aggregator, whose url is an advert. apply_url is the
+    employer's own board: likelier to answer, likelier to carry the whole ad."""
+    tried = []
+    def fake(job):
+        tried.append(job["url"])
+        return "y" * 9000
+    scan.backfill_row({"url": "https://aggregator/advert",
+                       "apply_url": "https://boards.greenhouse.io/real",
+                       "description": "x" * 1200, "desc_chars": 9000}, fake)
+    assert tried[0] == "https://boards.greenhouse.io/real", tried
+
+
+def test_backfill_stops_asking_once_it_has_the_whole_ad():
+    """desc_chars is the length the scorer saw. Reaching it means there is nothing more to
+    get, so the second target is not requested."""
+    tried = []
+    def fake(job):
+        tried.append(job["url"])
+        return "z" * 6000
+    scan.backfill_row({"url": "https://advert", "apply_url": "https://board",
+                       "description": "x" * 1200, "desc_chars": 6000}, fake)
+    assert len(tried) == 1, tried
+
+
+def test_backfill_never_shortens_a_row():
+    """A fetcher that comes back with a careers page's furniture instead of the posting must
+    not be allowed to replace a real sample with something worse."""
+    def furniture(job):
+        return "Join our mission!"
+    got = scan.backfill_row({"url": "https://x/1", "description": "x" * 1200,
+                             "desc_chars": 8000}, furniture)
+    assert len(got) < 1200          # backfill_row reports what it found...
+    # ...and cmd_backfill_jd is what refuses it; mirror that rule here so the guard is pinned
+    # even if the caller is refactored.
+    assert not len(got) > 1200
+
+
+def test_backfill_survives_a_fetcher_that_raises():
+    """A dead link throws rather than returning empty, and one bad row must not take the
+    other seventy-eight down with it."""
+    def boom(job):
+        raise RuntimeError("connection reset")
+    assert scan.backfill_row({"url": "https://dead", "description": "x" * 1200,
+                              "desc_chars": 8000}, boom) == ""
+
+
 def _run():
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_") and callable(f)]

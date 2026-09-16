@@ -214,19 +214,20 @@ function packetFor(j){
   if((j.flags||[]).length) L.push("Flags:", ...(j.flags||[]).map(f=>"  - " + f));
   L.push("Posting: " + (j.url || "?"));
   if(j.apply_url && j.apply_url !== j.url) L.push("Application form: " + j.apply_url);
-  // docs/jobs.json keeps only a 1200-character head-and-tail sample of each ad
-  // (scan.py's DESC_STORE_CAP, marked with a [...] in the middle) -- enough to audit a
-  // score, not enough to tailor against. The scorer read a 6000-character sample from
-  // memory; this file never had it. Say so rather than letting the skill treat a sample
-  // as the ad, because the part that gets dropped is the middle, and the middle is the
-  // responsibilities and requirements that bullet tailoring keys off.
+  // The stored ad is the whole ad now -- scan.py's DESC_STORE_CAP is 30000, past the
+  // longest posting on record -- so the complete branch is the normal one. The sampled
+  // branch survives for two shrinking cases: rows scored under the old 1200-char cap that
+  // `scan.py --backfill-jd` could not re-fetch, and a freak posting longer than the guard.
+  // It stays because it is still true when it fires, and a sample presented as an ad is
+  // the one thing worse than a short one: what a head-and-tail cut drops is the middle,
+  // which is where the responsibilities are.
   const stored = j.description || "";
   const full = j.desc_chars ?? stored.length;
   const sampled = stored.includes("\n[...]\n");
   if(sampled){
-    L.push("", `JD: SAMPLE ONLY -- ${stored.length} of ${full} characters. The middle of ` +
-               `the ad is missing, which is usually the responsibilities and requirements. ` +
-               `Open the posting above and paste the full text before tailoring bullets.`);
+    // Keep this prefix exactly as it is. SKILL.md's Step 0 table matches on it.
+    L.push("", `JD: SAMPLE ONLY -- ${stored.length} of ${full} characters, middle missing. ` +
+               `Paste the full ad from the posting link if you need the requirements.`);
   } else {
     L.push("", `JD (${full} chars, complete):`);
   }
