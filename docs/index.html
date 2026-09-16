@@ -54,9 +54,8 @@
         background:transparent; color:var(--sub); cursor:pointer}
   .actions button:hover{border-color:var(--teal); color:var(--teal)}
   .actions button[data-act="applied"]:hover{border-color:var(--good); color:var(--good)}
-  .actions button[data-act="queue"]{border-color:var(--teal); color:var(--teal)}
-  .actions button[data-act="queue"]:hover{background:var(--teal); color:#fff}
-  .tag.queued{border-color:var(--teal); color:var(--teal)}
+  .actions button[data-act="copy"]{border-color:var(--teal); color:var(--teal)}
+  .actions button[data-act="copy"]:hover{background:var(--teal); color:#fff}
   .tag.fillable{border-color:var(--good); color:var(--good); font-weight:650}
   .tag.board{color:var(--mut)}
   .actions .status{font-size:11px; padding:3px 8px; border-radius:20px; color:var(--sub)}
@@ -100,7 +99,7 @@
 <body>
   <h1><span>RevOps</span> Radar</h1>
   <div class="meta" id="meta">Loading…</div>
-  <div class="note" id="synclabel">Hide / Apply / Mark applied are saved in this browser only — they won't follow you to another device.</div>
+  <div class="note" id="synclabel">Hide / Mark applied are saved in this browser only — they won't follow you to another device.</div>
 
   <div id="apply-wrap">
     <h2 id="apply-h">Apply — 6.0 and up</h2>
@@ -143,11 +142,6 @@ function loadSet(key){
 function saveSet(key,set){ localStorage.setItem(key, JSON.stringify([...set])); }
 let hiddenIds = loadSet("rr_hidden");
 let appliedIds = loadSet("rr_applied");
-// Roles handed to the apply queue. applyq.py reads this same Firebase array on a
-// 15-minute cron, works one role at a time, and asks whatever it needs over Telegram.
-// Queued is not the same as applied: the role stays in its section, tagged, until the
-// application actually goes out.
-let queuedIds = loadSet("rr_queued");
 // Persisted like the others, but local-only on purpose: it changes what's on screen, not
 // what happened to a role, so it never needs to follow you to another device.
 let fillableOnly = localStorage.getItem("rr_fillableOnly") === "1";
@@ -165,17 +159,110 @@ let syncApi = false; // becomes true once Firebase responds
 // a strict enhancement layer, never a hard dependency.
 const FIREBASE_STATE_URL = "https://revops-radar-2822a-default-rtdb.europe-west1.firebasedatabase.app/revops-radar-state.json";
 
-// Optional relay that asks GitHub to run the apply queue immediately. Without it, tapping
-// Apply just sits in the queue until GitHub's scheduler gets round to firing -- measured at
-// 4 of an expected 60 firings over 15 hours, with gaps up to 5h45m. Set this to the
-// Worker's URL once deployed; empty means the queue still works, just slowly.
-const RELAY_URL = "https://revops-relay.tomnorton92.workers.dev";
-function pokeRelay(){
-  if(!RELAY_URL) return;
-  // Fire and forget. The queue write to Firebase is what actually matters; this only
-  // decides whether the run starts in seconds or in hours, so a failure is not worth
-  // surfacing to the person who just tapped a button.
-  fetch(RELAY_URL + "/queue", {method:"POST", mode:"no-cors"}).catch(()=>{});
+// The apply queue is mothballed -- applications are made by hand again, through the
+// job-application-workflow skill in a Claude project. So the button that used to queue a
+// role now hands it over instead: one tap puts everything the skill would otherwise have
+// to be told onto the clipboard.
+//
+// The point of the block is that the skill no longer scores. It reads the number the radar
+// already computed, which is why the dimensions and the flags travel with it and not just
+// the description: a flag is the difference between "tailor against this ad" and "the ad
+// was never retrieved, go and get it".
+
+// scan.py's MIN_DESC_CHARS. A row under it was never really read, whatever else is on it.
+const MIN_DESC_CHARS = 900;
+function isThin(j){
+  return (j.desc_chars ?? (j.description||"").length) < MIN_DESC_CHARS
+      || (j.flags||[]).some(f=>/thin evidence/i.test(f));
+}
+
+function packetFor(j){
+  const L = [];
+  // Ahead of everything, because it changes what the rest of the block is for. A
+  // revopsroles.com stub arrives as ~50 characters of synthesized summary; tailoring a CV
+  // against that is tailoring against a title. The skill is told to stop and ask for the
+  // real ad, and this is the line it reads to know that.
+  if(isThin(j)){
+    L.push("WARNING: the radar never retrieved the real posting for this role.",
+           "The text below is a stub, not the ad. Open the posting link, copy the real",
+           "description, and paste it in place of the JD section before tailoring anything.",
+           "The sponsorship and language checks did not run on this row either.", "");
+  }
+  L.push("RADAR ROLE",
+         "Company: " + (j.company || "?"),
+         "Title: " + (j.title || "?"),
+         "Location: " + (j.location || "?"),
+         "Market: " + (j.tier || j.market || "?"));
+  const d = j.dimensions || {};
+  const dimStr = DIMS.map(([k,l])=>`${l} ${d[k] ?? "?"}`).join(", ");
+  L.push(`Radar score: ${(j.score ?? 0).toFixed(1)}  (${dimStr})`);
+  if(j.verdict) L.push("Radar verdict: " + j.verdict);
+  // UK and NL only. Ireland runs permits rather than a register, and neither North
+  // American market needs sponsorship at all, so the field is noise there.
+  if(j.sponsor && /^(UK|NL)$/.test(j.sponsor_region||"")) L.push("Sponsor: " + j.sponsor);
+  const c = j.comp || {};
+  // Only a figure the posting itself states ever lands here -- scan.py discards board
+  // estimates (salary_is_predicted) precisely so this line cannot be mistaken for one.
+  L.push(c.stated && c.min_base
+    ? `Comp stated in the posting: ${c.currency||""} ${Number(c.min_base).toLocaleString("en-US")} base`
+    : "Comp stated in the posting: no");
+  if(j.market_conflict){
+    L.push(`LOCATION CONFLICT: the posting says ${j.market_conflict.stated} ` +
+           `(${j.market_conflict.resolves_to}), the radar has it as ${j.tier||j.market||"?"}. ` +
+           `Resolve this before building anything -- it picks the CV contact block and the floor.`);
+  }
+  if((j.flags||[]).length) L.push("Flags:", ...(j.flags||[]).map(f=>"  - " + f));
+  L.push("Posting: " + (j.url || "?"));
+  if(j.apply_url && j.apply_url !== j.url) L.push("Application form: " + j.apply_url);
+  // docs/jobs.json keeps only a 1200-character head-and-tail sample of each ad
+  // (scan.py's DESC_STORE_CAP, marked with a [...] in the middle) -- enough to audit a
+  // score, not enough to tailor against. The scorer read a 6000-character sample from
+  // memory; this file never had it. Say so rather than letting the skill treat a sample
+  // as the ad, because the part that gets dropped is the middle, and the middle is the
+  // responsibilities and requirements that bullet tailoring keys off.
+  const stored = j.description || "";
+  const full = j.desc_chars ?? stored.length;
+  const sampled = stored.includes("\n[...]\n");
+  if(sampled){
+    L.push("", `JD: SAMPLE ONLY -- ${stored.length} of ${full} characters. The middle of ` +
+               `the ad is missing, which is usually the responsibilities and requirements. ` +
+               `Open the posting above and paste the full text before tailoring bullets.`);
+  } else {
+    L.push("", `JD (${full} chars, complete):`);
+  }
+  L.push(stored || "(none retrieved)");
+  return L.join("\n");
+}
+
+function copyPacket(j, btn){
+  const text = packetFor(j);
+  const done = (ok)=>{
+    // The label is the only feedback there is, and a copy that silently failed looks
+    // exactly like one that worked until you paste. So say which happened.
+    const was = btn.textContent;
+    btn.textContent = ok ? "Copied" : "Copy failed";
+    setTimeout(()=>{ btn.textContent = was; }, 1600);
+  };
+  // navigator.clipboard needs a secure context and is absent on some mobile browsers, so
+  // fall through to the old selection trick rather than leaving the button dead.
+  if(navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(text).then(()=>done(true), ()=>done(fallbackCopy(text)));
+  } else {
+    done(fallbackCopy(text));
+  }
+}
+function fallbackCopy(text){
+  try{
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed"; ta.style.top = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }catch(e){ return false; }
 }
 
 async function syncFromServer(){
@@ -189,24 +276,19 @@ async function syncFromServer(){
       // Firebase omits empty-array fields entirely, so treat missing as []
       (Array.isArray(server.hidden) ? server.hidden : []).forEach(id=>hiddenIds.add(id));
       (Array.isArray(server.applied) ? server.applied : []).forEach(id=>appliedIds.add(id));
-      // The poller removes an id from `queued` the moment it picks it up, so the server's
-      // list is authoritative here -- unioning would put a finished role back in the queue
-      // on every page load.
-      queuedIds = new Set(Array.isArray(server.queued) ? server.queued.map(String) : []);
       saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
-      saveSet("rr_queued", queuedIds);
     }
     const note = document.getElementById("synclabel");
-    if(note) note.textContent = "Hide / Apply / Mark applied sync across your devices.";
+    if(note) note.textContent = "Hide / Mark applied sync across your devices.";
   }catch(e){ /* Firebase unreachable -- stay on localStorage only */ }
 }
-// PATCH, not PUT. applyq.py writes `queued` from the other side, and a PUT from here
-// would delete whatever it had just written -- including a role it is mid-interview on.
+// Still PATCH, not PUT, even though nothing writes `queued` from the other side any more.
+// A PUT would delete the node's other keys, and the mothballed apply queue's state is worth
+// leaving intact for whenever it comes back.
 function pushState(){
   if(!syncApi) return;
   fetch(FIREBASE_STATE_URL, {method:"PATCH", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({hidden:[...hiddenIds], applied:[...appliedIds],
-                          queued:[...queuedIds]})}).catch(()=>{});
+    body: JSON.stringify({hidden:[...hiddenIds], applied:[...appliedIds]})}).catch(()=>{});
 }
 
 // Titles, companies and verdicts come from scraped HTML and go into innerHTML, so they get
@@ -254,7 +336,7 @@ function card(j, reviewed){
   // asks before it builds anything; this is so the disagreement is visible without opening
   // the role at all.
   const conflictTag = j.market_conflict
-    ? `<span class="tag conflict" title="The posting says ${esc(j.market_conflict.stated)}. /market ${esc(id)} ${esc(j.market_conflict.resolves_to)} corrects it."
+    ? `<span class="tag conflict" title="The posting says ${esc(j.market_conflict.stated)}. Resolve this before tailoring: the market picks the CV contact block and the salary floor."
        >&#9888; says ${esc(j.market_conflict.resolves_to)}, not ${esc(j.tier||"?")}</span>`
     : "";
   // Only on US rows, and only when the employer's own board shows they hire somewhere Tom
@@ -265,8 +347,6 @@ function card(j, reviewed){
          title="This employer also posts roles here, so an internal move later is a route abroad"
        >&#8599; also hires in ${esc(j.transfer_markets)}</span>`
     : "";
-  const queued = marked(queuedIds, j);
-  const queuedTag = queued ? `<span class="tag queued">in the apply queue</span>` : "";
   // Which board the application actually lives on, and whether /submit can fill it
   // without being asked. Read off scan.py's own classification (submit.application_status,
   // written into ats/ats_fillable at scan time) rather than guessed here: it is the same
@@ -305,10 +385,9 @@ function card(j, reviewed){
     ? `<div class="actions"><span class="status">${marked(appliedIds, j) ? "Applied" : "Hidden"}</span>
         <button data-act="restore" data-id="${id}">Restore</button></div>`
     : `<div class="actions">
-        ${queued
-          ? `<span class="status">Queued${RELAY_URL ? "" : " — waiting for the next scheduled run"}</span>
-             <button data-act="unqueue" data-id="${id}">Remove</button>`
-          : `<button data-act="queue" data-id="${id}">Apply</button>`}
+        <button data-act="copy" data-id="${id}"
+          title="Copy the score, flags and the ad, ready to paste into the Claude project"
+        >Copy for Claude</button>
         <button data-act="hide" data-id="${id}">Hide</button>
         <button data-act="applied" data-id="${id}">Mark applied</button>
       </div>`;
@@ -321,7 +400,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${marketTag}${conflictTag}${transferTag}${queuedTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${marketTag}${conflictTag}${transferTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
@@ -476,19 +555,18 @@ document.body.addEventListener("click", (e)=>{
   const id = btn.dataset.id, act = btn.dataset.act;
   if(act === "hide"){ hiddenIds.add(id); saveSet("rr_hidden", hiddenIds); }
   else if(act === "applied"){ appliedIds.add(id); saveSet("rr_applied", appliedIds); }
-  else if(act === "queue"){ queuedIds.add(id); saveSet("rr_queued", queuedIds); pokeRelay(); }
-  else if(act === "unqueue"){
+  else if(act === "copy"){
     const job = allJobs.find(j=>String(j.id||"") === id);
-    (job ? idsOf(job) : [id]).forEach(x=>queuedIds.delete(x));
-    saveSet("rr_queued", queuedIds); }
+    // Copying is not state: nothing to save, nothing to sync, and no reason to re-render
+    // the list out from under a button that is mid-feedback.
+    if(job) copyPacket(job, btn);
+    return; }
   else if(act === "restore"){
     // Clear every id this row stands for, or an absorbed duplicate's old mark would put it
     // straight back into the hidden/applied section on the next render.
     const job = allJobs.find(j=>String(j.id||"") === id);
-    (job ? idsOf(job) : [id]).forEach(x=>{ hiddenIds.delete(x); appliedIds.delete(x);
-                                           queuedIds.delete(x); });
-    saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
-    saveSet("rr_queued", queuedIds); }
+    (job ? idsOf(job) : [id]).forEach(x=>{ hiddenIds.delete(x); appliedIds.delete(x); });
+    saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds); }
   pushState();
   renderAll();
 });

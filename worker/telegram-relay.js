@@ -32,6 +32,16 @@ const OWNER = "tom-norton";
 const REPO = "revops-radar";
 const APPLY_WORKFLOW = "apply.yml";
 const SCAN_WORKFLOW = "scan.yml";
+
+// The apply half is mothballed: applications are made by hand again, through the
+// job-application-workflow skill in a Claude project. Both routes that can start apply.yml
+// are switched off here rather than deleted, because the code they guard is still correct
+// and the whole thing comes back by flipping this to true and restoring the cron in
+// .github/workflows/apply.yml.
+//
+// The scan is NOT affected. scheduled() below still dispatches SCAN_WORKFLOW on time, which
+// is the reason this Worker exists at all -- GitHub's own cron for the scan runs hours late.
+const APPLY_RELAY_ENABLED = false;
 const REF = "main";
 const FIREBASE_STATE_URL =
   "https://revops-radar-2822a-default-rtdb.europe-west1.firebasedatabase.app/revops-radar-state.json";
@@ -133,7 +143,7 @@ export default {
 
     if (request.method !== "POST") {
       // A GET is almost always someone checking the Worker is alive.
-      return new Response("revops-radar relay: POST /telegram or POST /queue\n", {
+      return new Response("revops-radar relay: scan schedule only; apply routes are mothballed\n", {
         status: 200,
       });
     }
@@ -164,6 +174,14 @@ export default {
       // rather than rejected: a non-text message is nothing to act on, not an error.
       if (!text || !chat) return new Response("ok", { status: 200 });
 
+      // Mothballed. Still a 200, and deliberately: Telegram retries anything else, so
+      // refusing here would turn every message Tom sends into a retry storm against a bot
+      // that is not listening. The secret check above still runs first, so the guard that
+      // matters stays exercised while this is off.
+      if (!APPLY_RELAY_ENABLED) {
+        return new Response("apply queue is mothballed; not dispatching\n", { status: 200 });
+      }
+
       await dispatch(env, APPLY_WORKFLOW, { message: text, chat_id: chat });
       return new Response("ok", { status: 200 });
     }
@@ -179,6 +197,15 @@ export default {
       // this. Past that, the workflow's concurrency group caps a flood at one running run
       // plus one queued.
       const cors = { "Access-Control-Allow-Origin": "*" };
+
+      // Mothballed. The dashboard no longer calls this -- its button copies the role to the
+      // clipboard for the skill instead of queueing it -- but an old tab or a bookmarked
+      // page still might, so answer rather than 404.
+      if (!APPLY_RELAY_ENABLED) {
+        return new Response("apply queue is mothballed; not dispatching\n",
+                            { status: 200, headers: cors });
+      }
+
       let queued = [];
       try {
         const state = await fetch(FIREBASE_STATE_URL).then((r) => r.json());
