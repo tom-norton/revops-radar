@@ -2,8 +2,10 @@
 """
 RevOps Radar - daily job scanner for Tom Norton.
 
-Markets: Netherlands (anywhere), Belgium (anywhere), UK (London area only), Ireland (Dublin).
-Germany, Spain, and remote-anywhere/EMEA are deliberately excluded.
+Markets: Netherlands (anywhere), Belgium (anywhere), UK (London area and commuter belt
+only), Ireland (anywhere in the country), Canada (anywhere), and the US (remote only, and
+only when the posting states a salary). Germany, Spain, other UK cities, and
+remote-anywhere/EMEA are deliberately excluded. MARKET_TIER holds the ordering.
 
 Data layer (multi-source so no single source can break the run):
   - Adzuna API      : NL + UK (no Ireland coverage in the Adzuna API)
@@ -121,7 +123,7 @@ OR_KEYWORDS = ("revenue operations OR sales operations OR gtm OR go-to-market OR
 # Reed (UK). Free key acts as the HTTP basic-auth username, blank password.
 REED_KEYWORDS = OR_KEYWORDS
 
-# JobSpy / Indeed for Ireland (Dublin). Best-effort: never breaks the run.
+# JobSpy / Indeed for Ireland (anywhere in the country). Best-effort: never breaks the run.
 JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
                 "revenue strategy", "customer success operations"]
 # The US subset, kept as a filter over the list above so a term added there cannot be
@@ -1075,19 +1077,21 @@ MARKETS_SENTENCE = ("Netherlands (anywhere), Belgium (anywhere), UK London area 
                     "(anywhere, remote or on-site), and the US (REMOTE ONLY, anywhere in "
                     "the country, core RevOps or senior customer success only, and the "
                     "posting must state a salary)")
-REJECT_SENTENCE = ("Germany, Spain, other UK cities, on-site or hybrid US roles, "
-                   "remote-from-anywhere, and remote-EMEA roles")
-
 SCREEN_SYSTEM = f"""You are a fast pre-screen for a job-search pipeline. Decide if a role is worth a full evaluation for this candidate:
 
 11 years B2B SaaS (Customer Success + Account Management), pivoting into Revenue Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior-IC level. Also open to Senior/Principal Customer Success Manager roles. US citizen, so any European role needs employer visa sponsorship; also a Canadian citizen by descent, so Canadian roles need no sponsorship.
 
-Target markets ONLY: {MARKETS_SENTENCE}. Reject {REJECT_SENTENCE}.
+THE LOCATION IS ALREADY SETTLED. Every role you see has been through a location gate in code, and the job details tell you which market it resolved to. That decision is final and it is not yours to review. Never kill a role for where it is, for being outside a target market, for being remote or not remote, for being North American, or because the posting does not state a location. If you find yourself writing a reason with a place name in it, you are killing the wrong role. (Tom's markets, for context only, since you are not being asked to check them: {MARKETS_SENTENCE}.)
 
-You may kill a role for exactly TWO reasons. Nothing else is grounds for a kill.
+You may kill a role for exactly ONE reason:
 
-1. LOCATION - the role is not in one of the target markets above. Europe is the priority and the US is a distant last resort, but that is a question of SCORE, not of keep/kill: a US or Canadian role that reached you has already passed both a remote check and a narrow RevOps title gate in code, so never kill one for being North American, or for being ranked low. The deep scorer handles the ranking.
-2. FUNCTION - the role is unambiguously outside the candidate's target functions. That means: engineering or data engineering, product management, finance or accounting, quota-carrying sales (AE, SDR, BDR, account executive, business development), deal desk / quote-to-cash / billing / order management, HR or People Ops, procurement, legal, and operations that are not commercial in nature (retail store ops, restaurant ops, manufacturing, supply chain, logistics, facilities, clinical, NGO programme delivery).
+FUNCTION - the role is unambiguously outside the candidate's target functions. That means: engineering or data engineering, product management, finance or accounting, quota-carrying sales (AE, SDR, BDR, account executive, business development), deal desk / quote-to-cash / billing / order management, HR or People Ops, procurement, legal, and operations that are not commercial in nature (retail store ops, restaurant ops, manufacturing, supply chain, logistics, facilities, clinical, NGO programme delivery).
+
+Nothing else is grounds for a kill. Specifically, and these are all real kills you have made that cost Tom a role he would have looked at:
+- NOT the location, the country, the work pattern, or a missing location. See above.
+- NOT the industry or the domain. Cleantech, healthcare, logistics, energy, finance, manufacturing, the public sector: all keeps, as long as the ROLE is commercial operations. "Not B2B SaaS" is a scoring question -- the deep scorer has a Domain dimension and marks it down there -- never a kill.
+- NOT the employer: its size, its funding stage, how strong the brand is, or where it is headquartered.
+- NOT the pay, or that no pay is stated.
 
 NEVER KILL ON SENIORITY. This is the single most important rule here, and getting it wrong is expensive. Analyst, Senior Analyst, Specialist, Coordinator, Associate, Senior Associate, Business Partner, Lead, Manager, Senior Manager, Principal, Director and Head of are ALL keeps. Do not kill something for being "too junior", "entry level", "below Manager", "Director+ exceeds target", or any variant of that reasoning. A title is not a seniority: an "Analyst" or "Associate" at a strong employer routinely carries manager-level scope and pay well above a junior band, and a "Head of" at a 40-person startup is often a hands-on Manager role. The deep scorer reads the full posting - the scope, the reporting line, the years-of-experience band, the stated salary - and weighs seniority properly there. You cannot see enough to make that call. The ONLY seniority-shaped exception: genuine internships, working-student roles, apprenticeships and graduate schemes may be killed.
 
@@ -1100,9 +1104,9 @@ IN SCOPE - never kill these on function. A title filter in code has already deci
 - Renewals and renewal management, sales enablement, revenue enablement
 - Senior / Principal / Enterprise / Strategic Customer Success
 
-Renewals is NOT quota-carrying sales for this purpose. Enablement is NOT marketing-ops admin. Systems ownership is NOT engineering. Kill one of these only when the location is wrong or the employer is plainly outside B2B tech and the work is plainly not commercial (a supermarket's "Sales Operations Manager" running store rotas, for instance).
+Renewals is NOT quota-carrying sales for this purpose. Enablement is NOT marketing-ops admin. Systems ownership is NOT engineering. Kill one of these only when the work itself is plainly not commercial operations -- a supermarket's "Sales Operations Manager" running store rotas, for instance. The employer being outside B2B tech is not enough on its own; the work is what decides.
 
-Be lenient - when unsure, KEEP. A wrong keep costs one cheap scoring call. A wrong kill loses a job Tom would have applied to, and he never sees it.
+Be lenient - when unsure, KEEP. A wrong keep costs one cheap scoring call. A wrong kill loses a job Tom would have applied to, and he never sees it. Your reason must name the function you read the role as; a reason that names a place, an industry or a seniority band is a kill you should not have made.
 
 Reply with ONLY this JSON: {{"keep": true or false, "reason": "<max 12 words>"}}"""
 
@@ -1143,7 +1147,7 @@ Salary: if not stated, do NOT penalise on salary; judge comp risk from the senio
 
 Working pattern: in Europe and Canada, on-site or hybrid in the resolved market is normal and expected -- the candidate is relocating for the role and needs an employer with an office there. Do NOT treat an on-site or hybrid requirement, a named-office requirement, or the absence of remote flexibility as a risk in those markets, and do not raise a flag about it. The US is the exception and inverts this: a US role only reaches you at all if code read it as remote, so remote is the baseline there rather than a bonus, and a US posting that turns out on reading to require regular office attendance IS worth a flag.
 
-flags: short risk notes, [] if none. Do not add a flag for missing comp, a title band, or the CSM-outside-NL case -- those are added in code from the observations above, and duplicating them crowds out anything genuinely new you noticed. Never add a flag for language or salary either way -- report them accurately in the fields above and say nothing more; code decides whether the role is dropped.
+flags: short risk notes, one sentence and under 25 words each, [] if none. Write each one whole -- it is displayed as written, and a note that stops mid-thought is worse than no note. Do not add a flag for missing comp, a title band, or the CSM-outside-NL case -- those are added in code from the observations above, and duplicating them crowds out anything genuinely new you noticed. Never add a flag for language or salary either way -- report them accurately in the fields above and say nothing more; code decides whether the role is dropped.
 verdict: one blunt sentence, max 22 words."""
 
 # ---------------------------------------------------------------- helpers
@@ -1462,12 +1466,19 @@ def title_seniority(tokens):
     """Rank of the most senior band named in a title; 1 when none is."""
     return max((rank for words, rank in SENIORITY_BANDS if tokens & words), default=1)
 
-def dedupe_city(location):
+def dedupe_city(location, market=""):
     """The city bucket two rows must share before they can be compared at all. A named
     target city wins; failing that, the first word of the location that names a place, so
-    Staines rows can dedupe against each other without Staines and Slough merging. A
-    location that names only a country or a region yields "", which leaves the key
-    incomplete and the row un-dedupable."""
+    Staines rows can dedupe against each other without Staines and Slough merging.
+
+    When the location names no place at all -- "Ireland", "Netherlands", a bare country --
+    the resolved market stands in as the bucket. That used to yield "", which left the key
+    incomplete and the row permanently un-dedupable: hiring.cafe and LinkedIn both filed
+    Qualio's Senior CSM under "Ireland" and the dashboard carried it twice, once scored 6.5
+    and once 6.3. Falling back to the market cannot merge two different Dutch cities --
+    a row that names Amsterdam gets "amsterdam", not the market -- so what it merges is two
+    rows that both decline to say anything more precise than the country, and those are the
+    same posting whenever the company and the title also match (see same_role())."""
     loc = location or ""
     m = DEDUPE_CITY.search(loc)
     if m:
@@ -1475,7 +1486,8 @@ def dedupe_city(location):
     for w in re.split(r"[^a-z]+", loc.lower()):
         if len(w) > 2 and w not in PLACE_NOISE:
             return w
-    return ""
+    market = MARKET_ALIASES.get(market or "", market or "")
+    return f"market:{market.lower()}" if market else ""
 
 def role_key(j):
     """(company words, title words, city, seniority, company initials) identity of a
@@ -1483,7 +1495,12 @@ def role_key(j):
     because the whole point is that two rows can name the same job with different numbers
     of words."""
     tt = title_tokens(j.get("title"))
-    return (company_tokens(j.get("company")), tt, dedupe_city(j.get("location")),
+    # The stored market where there is one, resolved from the row otherwise, so a row
+    # fetched this run buckets the same way as the dashboard row it is a duplicate of.
+    market = (j.get("market")
+              or market_of(j.get("country") or "", j.get("location") or "") or "")
+    return (company_tokens(j.get("company")), tt,
+            dedupe_city(j.get("location"), market),
             title_seniority(tt), company_initials(j.get("company")))
 
 def role_key_complete(k):
@@ -1639,6 +1656,27 @@ def dupe_reason(winner):
     where = f"{winner.get('company') or '?'} - {winner.get('title') or '?'}"
     return f"same posting as {where} ({winner.get('source') or 'dashboard'}), already kept"
 
+def dedupe_by_id(rows):
+    """One row per id, first occurrence kept. Returns (rows, dropped).
+
+    The role-level dedupe in same_role() is the clever one: it decides whether two
+    different ids describe the same posting. This is the blunt one underneath it, and it
+    exists because the clever one cannot fire when the key is incomplete -- a row whose
+    location names no city has no bucket, so two copies of one id sat side by side on the
+    dashboard for three weeks. An identical id is the same posting by definition, whatever
+    its location string says, and nothing downstream should ever have to reason about it."""
+    seen, kept, dropped = set(), [], []
+    for r in rows:
+        rid = str(r.get("id") or "")
+        if rid and rid in seen:
+            dropped.append(r)
+            continue
+        if rid:
+            seen.add(rid)
+        kept.append(r)
+    return kept, dropped
+
+
 def merge_found_into_dashboard(existing, found):
     """Fold one run's fetches into the dashboard, one row per posting -- covers both this
     run's cross-source duplicates and any still sitting on the dashboard from before this
@@ -1744,8 +1782,35 @@ def market_of(country, location):
 # is a financial-runway backstop Tom does not want to move to, so it sits alone at the
 # bottom. Tiers decide dashboard order and who gets first claim on the deep-scoring budget;
 # the fit score itself is untouched by them.
-MARKET_TIER = {"NL": 1, "IE": 2, "UK-London": 2, "BE": 3, "CA": 3, "US-Remote": 4}
+MARKET_TIER = {"NL": 1, "IE": 2, "UK-London": 2, "BE": 3, "CA": 3, "US-Remote": 4,
+               # An alias, not a seventh market. Ireland was Dublin-only until it widened
+               # to the whole country, and 62 rows scored before that still say
+               # "IE-Dublin". They are Irish rows and belong in tier 2 with the rest.
+               # Listed here as well as rewritten on load (normalise_market) because this
+               # dict is what the dashboard reads out of status.json: without it a legacy
+               # row falls to TIER_UNKNOWN and renders below the US roles, tagged as a
+               # market nobody recognises.
+               "IE-Dublin": 2}
 TIER_UNKNOWN = 9        # a market the table forgot sorts last rather than first
+
+# Market names that are no longer written, and what they mean now. market_of() has never
+# returned one of these -- they exist only on rows already on the dashboard -- so the
+# rewrite happens once, when those rows are read back in.
+MARKET_ALIASES = {"IE-Dublin": "IE"}
+
+
+def normalise_market(job):
+    """Rewrite a stored row's legacy market name in place, and return the row.
+
+    A row carries the market twice: `market`, which the pipeline reads (score_flags,
+    market_conflict, the salary floor, the CV's contact block), and `tier`, which the
+    dashboard renders and the Copy-for-Claude block hands to the skill. Both are rewritten,
+    because leaving either behind means half the system is judging an Irish role against a
+    market that no longer exists."""
+    for key in ("market", "tier"):
+        if job.get(key) in MARKET_ALIASES:
+            job[key] = MARKET_ALIASES[job[key]]
+    return job
 
 
 def market_tier(market):
@@ -2461,7 +2526,14 @@ def rescue_description(job, companies, cache, fetch=None):
 JD_SEARCH_MODEL = "claude-sonnet-5"
 JD_SEARCH_MAX_TOKENS = 1500
 JD_SEARCH_MAX_USES = 3        # web_search calls inside one request
-MAX_JD_SEARCHES_PER_RUN = 3   # requests per scan; ~$0.01-0.02 each
+# Off. Measured over 12 runs: the search ran 11 times and verify_jd() confirmed the page
+# ZERO times, at a Sonnet call plus 20-40k tokens of search results apiece. The code is
+# left in place because the failure is in the confirmation, not the search -- verify_jd()
+# wants schema.org JobPosting JSON-LD and most ATS pages do not publish it -- so loosening
+# that check is what would make this worth paying for again. Until then a row with no
+# posting text goes to the set-aside section, which is where all 11 of them ended up
+# anyway, for nothing.
+MAX_JD_SEARCHES_PER_RUN = 0   # requests per scan; ~$0.01-0.02 each when enabled
 
 JD_SEARCH_SYSTEM = """You find the canonical URL of one specific job posting. You do not evaluate it, summarise it, or comment on it.
 
@@ -3030,10 +3102,11 @@ APIFY_HIRINGCAFE_SEARCHES = {
     # US RevOps: remote, transparent salaries only, and a compensation bound.
     #
     # maxCompensationLowEnd is Tom's own setting, kept verbatim at his explicit direction.
-    # Reading the field name against its three siblings (minCompensationLowEnd,
-    # minCompensationHighEnd, maxCompensationHighEnd) it looks like an UPPER bound on the
-    # bottom of the posted range, which would invert the filter. If the US feed ever comes
-    # back full of underpaid roles, this is the first thing to check.
+    # It is INERT, whichever way hiring.cafe reads it: the US rows this search returns
+    # arrive with bottom-of-band figures from 95k to 200k, so it is bounding nothing. What
+    # actually holds the US floor is code -- COMP_FLOORS, judged against the TOP of the
+    # band (salary_floor_flag), plus us_comp_unstated() dropping a US role that states no
+    # pay at all. Left in place because it costs nothing; do not rely on it.
     "us-revops": {
         "locations": [_hc_grand_rapids()],
         "commitmentTypes": ["Full Time"],
@@ -3130,6 +3203,12 @@ def fetch_apify_hiringcafe(token, diag=None):
     budget, is the direct fix and also gives a raw count per search (diag) instead of one
     opaque total, so a search silently going quiet again is visible in the status footer."""
     out = []
+    # Ids already returned by an earlier search in THIS run. The five searches overlap by
+    # design -- cs-nl and revops-nl both match a Dutch CS Ops role -- and every other
+    # fetcher scopes its ids to a single query, so this was the one source that could hand
+    # the same posting to the pipeline twice. It cost two Opus calls and put two identical
+    # cards on the dashboard (Qualio's Senior CSM, 26 Aug).
+    seen_ids = set()
     per_url_budget = max(1, APIFY_MAX_ITEMS // len(APIFY_HIRINGCAFE_SEARCHES))
     for label, state in APIFY_HIRINGCAFE_SEARCHES.items():
         url = hiringcafe_url(state)
@@ -3160,6 +3239,10 @@ def fetch_apify_hiringcafe(token, diag=None):
         # hc_search_work_mode().
         search_mode = hc_search_work_mode(state)
         for j in items:
+            jid = "hc-" + str(j.get("id", ""))[:60]
+            if jid in seen_ids:
+                continue
+            seen_ids.add(jid)
             info = j.get("job_information", {}) or {}; proc = j.get("v5_processed_job_data", {}) or {}
             title = info.get("title") or proc.get("core_job_title", "")
             loc = proc.get("formatted_workplace_location", "")
@@ -3220,8 +3303,13 @@ def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_sys
     for _turn in range(SERVER_TOOL_MAX_TURNS if tools else 1):
         body = {
             "model": model, "max_tokens": max_tokens,
+            # A one-hour TTL rather than the default five minutes. The deep-score prefix
+            # is ~9.8k tokens of rubric and profile.md, rewritten identically every run,
+            # and runs land roughly an hour apart -- so at five minutes every run paid to
+            # write the cache and no run ever read it. An hour makes the next run's first
+            # call a cache read, and a rescore in between free.
             "system": ([{"type": "text", "text": system,
-                         "cache_control": {"type": "ephemeral"}}]
+                         "cache_control": {"type": "ephemeral", "ttl": "1h"}}]
                        if cache_system else system),
             "messages": messages,
         }
@@ -3422,7 +3510,11 @@ def parse_score_result(job, data):
         flags.append(f"pay not confirmed in the ad; {job['salary']} came from the feed"
                      if job.get("salary") else
                      "no pay stated in the ad or the feed, verify vs floor")
-    flags += [str(f)[:70] for f in (data.get("flags") or [])]
+    # 160, not 70. At 70 characters six out of ten stored flags ended mid-word -- "Requires
+    # 10+ years in sales/finance ops -- Tom has 11 yrs CS/AM, not de" -- and these are the
+    # most useful text on the card: they are the reason a 6.8 is a 6.8. The prompt asks for
+    # under 25 words, so this is a guard against a runaway sentence rather than a budget.
+    flags += [str(f)[:160] for f in (data.get("flags") or [])]
     return {
         # score_raw and caps_applied are still written so rows scored under the old cap
         # engine keep rendering alongside new ones. caps_applied is always empty now.
@@ -3590,7 +3682,15 @@ def cmd_dedupe():
     A normal run does this too -- see the dedupe stage in main() -- so this exists for the
     case where you want the dashboard cleaned now rather than at the next scan, and for
     seeing exactly what a change to same_role() would collapse before letting a run do it."""
-    jobs = load_json("docs/jobs.json", [])
+    rows = [normalise_market(j) for j in load_json("docs/jobs.json", [])]
+    # Exact-id duplicates first. They are not a judgement call, so they are reported on
+    # their own line rather than as a keep/drop pair -- there is no pair, it is one row
+    # stored twice.
+    jobs, id_dupes = dedupe_by_id(rows)
+    for d in id_dupes:
+        record_drop(d, "dedupe", "same id stored twice")
+        print(f"  dupe {d.get('score', '-'):>4}  {d.get('company')} | {d.get('title')} "
+              f"| id {d.get('id')} was on the dashboard twice\n")
     kept, dropped = collapse_duplicates(jobs)
     for loser, winner in dropped:
         record_drop(loser, "dedupe", dupe_reason(winner))
@@ -3598,16 +3698,17 @@ def cmd_dedupe():
               f"{winner.get('title')} | {winner.get('location')} [{winner.get('source')}]")
         print(f"  drop {loser.get('score', '-'):>4}  {loser.get('company')} | "
               f"{loser.get('title')} | {loser.get('location')} [{loser.get('source')}]\n")
-    if not dropped:
+    collapsed = len(id_dupes) + len(dropped)
+    if not collapsed:
         print("No duplicates on the dashboard.")
         return
     prev = load_json("docs/excluded.json", {})
     prev["rows"] = trim_drop_rows(DROPS + prev.get("rows", []))
     prev["counts"] = {**prev.get("counts", {}),
-                      "dedupe": prev.get("counts", {}).get("dedupe", 0) + len(dropped)}
+                      "dedupe": prev.get("counts", {}).get("dedupe", 0) + collapsed}
     json.dump(kept, open("docs/jobs.json", "w"), indent=1)
     json.dump(prev, open("docs/excluded.json", "w"), indent=1)
-    print(f"{len(jobs)} rows -> {len(kept)}: {len(dropped)} duplicates collapsed. "
+    print(f"{len(rows)} rows -> {len(kept)}: {collapsed} duplicates collapsed. "
           f"The ids they were shown under are carried on the surviving row, so a Hide or "
           f"Mark applied recorded against one still holds.")
 
@@ -3925,7 +4026,11 @@ def main():
 
     os.makedirs("docs", exist_ok=True)
     seen = set(json.load(open("seen.json"))) if os.path.exists("seen.json") else set()
-    existing = [j for j in (json.load(open("docs/jobs.json")) if os.path.exists("docs/jobs.json") else [])
+    # normalise_market on the way in, so nothing downstream ever meets a market name the
+    # code has retired. The file is rewritten at the end of every run, so one scan fixes
+    # the stored rows permanently rather than re-deciding this on every load forever.
+    existing = [normalise_market(j)
+                for j in (json.load(open("docs/jobs.json")) if os.path.exists("docs/jobs.json") else [])
                 if not str(j.get("id", "")).startswith("demo-")]
     src_status, diag, found = {}, {}, []
 
@@ -4035,6 +4140,16 @@ def main():
     # "Amazon" don't match each other, only both match LinkedIn's "Amazon Web Services
     # (AWS)"), so comparing the dashboard and the fetches as two separate passes can pair a
     # fuller name with whichever partial name it meets first and never revisit the other.
+    # Exact-id duplicates first, before the role-level matching gets a say. Two rows with
+    # one id are one posting whatever their location strings claim, and scoring the second
+    # copy is a wasted Opus call and a second card.
+    found, id_dupes = dedupe_by_id(found)
+    if id_dupes:
+        for d in id_dupes:
+            record_drop(d, "dedupe", "same id already fetched this run")
+        src_status["duplicate ids"] = (
+            f"{len(id_dupes)} row(s) arrived twice under one id and were folded")
+
     existing, found, dedupe_drops = merge_found_into_dashboard(existing, found)
     for loser, winner in dedupe_drops:
         record_drop(loser, "dedupe", dupe_reason(winner))
@@ -4275,6 +4390,12 @@ def main():
     # that all key off this file; a separate file would be a second copy of all of it. The
     # dashboard tells them apart by `evidence` and renders them in their own section.
     merged = scored + set_aside + [j for j in existing if j.get("found_at", "") >= cutoff]
+    # Last guard before the file is written. `existing` can carry a duplicate id from
+    # before dedupe_by_id existed, and a row that is on the dashboard twice is scored
+    # twice, shown twice, and hidden only once.
+    merged, merged_dupes = dedupe_by_id(merged)
+    if merged_dupes:
+        print(f"  dedupe {len(merged_dupes)} duplicate id(s) already on the dashboard")
     # `or 0` rather than a default: a set-aside row's score is None, which is not missing,
     # and None does not compare against a float.
     merged.sort(key=lambda j: (j.get("score") or 0, j.get("found_at", "")), reverse=True)

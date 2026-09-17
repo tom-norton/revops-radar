@@ -111,7 +111,7 @@
   <div class="note" id="synclabel">Hide / Mark applied are saved in this browser only — they won't follow you to another device.</div>
 
   <div id="apply-wrap">
-    <h2 id="apply-h">Apply — 6.0 and up</h2>
+    <h2 id="apply-h">Apply — 6.5 and up</h2>
     <label class="fillfilter">
       <input type="checkbox" id="fillableOnly">
       Auto-fillable only <span class="tag fillable" style="margin-left:4px">&check;</span>
@@ -129,7 +129,7 @@
 <script>
 // Defaults only. scan.py writes the real values into status.json so the bands live in one
 // place; if status.json is older than this page these are what you get.
-let GATE = 6.0, FLOOR = 5.0;
+let GATE = 6.5, FLOOR = 6.0;
 // How far back the dashboard shows. The data keeps 45 days (scan.py's KEEP_DAYS) because
 // the scan dedupes each run against everything already on the dashboard -- drop a row from
 // jobs.json and the same role comes back tomorrow looking new -- so this is a view filter

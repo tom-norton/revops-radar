@@ -482,18 +482,87 @@ def test_a_row_without_a_place_is_never_deduped():
     A city outside DEDUPE_CITY used to leave the key incomplete too, which meant no row in
     Nijverdal, Delft or Staines was ever deduped against anything -- the live dashboard was
     carrying byte-identical pairs because of it. Such a city now buckets on its own name,
-    which is what keeps Staines and Slough apart while still collapsing Staines twice. A
-    location naming only a country stays incomplete: "Netherlands" must not become a bucket
-    that two different Dutch cities fall into."""
+    which is what keeps Staines and Slough apart while still collapsing Staines twice.
+
+    A location naming only a country buckets on the market it resolves to, which is a
+    change: it used to stay incomplete. Two rows saying only "Ireland" are not two Irish
+    cities, they are one posting described twice -- and they still only merge when the
+    company and the title agree as well. A location that resolves to no market at all
+    ("Remote - EMEA") is still incomplete and still never deduped."""
     assert not _complete({"company": "", "title": "T", "location": "Amsterdam"})
     assert not _complete({"company": "X", "title": "", "location": "Amsterdam"})
-    assert not _complete({"company": "X", "title": "T", "location": "Netherlands"})
-    assert not _complete({"company": "X", "title": "T", "location": "United Kingdom"})
     assert not _complete({"company": "X", "title": "T", "location": "Remote - EMEA"})
+    assert not _complete({"company": "X", "title": "T", "location": ""})
     assert _complete({"company": "X", "title": "T", "location": "Amsterdam"})
     assert _complete({"company": "X", "title": "T", "location": "Groningen"})
+    assert _complete({"company": "X", "title": "T", "location": "Ireland"})
     assert scan.dedupe_city("Staines, Surrey") == scan.dedupe_city("Staines-upon-Thames, England")
     assert scan.dedupe_city("Groningen") != scan.dedupe_city("Maastricht")
+    # the market bucket is a last resort, never a bucket a named city falls into
+    assert scan.dedupe_city("Amsterdam", "NL") != scan.dedupe_city("Rotterdam", "NL")
+    assert scan.dedupe_city("Amsterdam", "NL") != scan.dedupe_city("Netherlands", "NL")
+    # and a legacy market name buckets with the one it is an alias for
+    assert scan.dedupe_city("Ireland", "IE-Dublin") == scan.dedupe_city("Ireland", "IE")
+
+
+def test_two_country_only_rows_for_one_role_collapse():
+    """The live case: hiring.cafe and LinkedIn both filed Qualio's Senior CSM under
+    "Ireland", neither named a city, and the dashboard carried it twice -- scored 6.5 in
+    one copy and 6.3 in the other."""
+    hc = {"company": "Qualio", "title": "Senior Customer Success Manager",
+          "location": "Ireland", "market": "IE"}
+    li = {"company": "Qualio", "title": "Senior Customer Success Manager",
+          "location": "Ireland", "market": "IE-Dublin"}
+    assert _same(hc, li)
+    # a different role at the same company still does not
+    assert not _same(hc, {"company": "Qualio", "title": "Revenue Operations Manager",
+                          "location": "Ireland", "market": "IE"})
+    # nor two genuinely different Dutch cities
+    assert not _same({"company": "Adyen", "title": "RevOps Manager",
+                      "location": "Amsterdam", "market": "NL"},
+                     {"company": "Adyen", "title": "RevOps Manager",
+                      "location": "Rotterdam", "market": "NL"})
+
+
+def test_one_id_is_one_row():
+    """hiring.cafe's five searches overlap, and two of them returning the same posting used
+    to cost two Opus calls and put two identical cards on the dashboard."""
+    rows = [{"id": "a", "score": 7}, {"id": "b"}, {"id": "a", "score": 7}, {"id": "c"}]
+    kept, dropped = scan.dedupe_by_id(rows)
+    assert [r["id"] for r in kept] == ["a", "b", "c"]
+    assert [r["id"] for r in dropped] == ["a"]
+    # the first copy is the one kept, so a row that has already been scored keeps its score
+    assert kept[0] is rows[0]
+    # a row with no id at all is never folded away -- it is not a duplicate of anything
+    kept, dropped = scan.dedupe_by_id([{"id": ""}, {"id": ""}])
+    assert len(kept) == 2 and not dropped
+
+
+def test_a_legacy_irish_market_is_rewritten_and_sorts_with_ireland():
+    """Ireland was Dublin-only until it widened to the whole country. Rows scored before
+    that still say "IE-Dublin", which MARKET_TIER did not know: they sorted at
+    TIER_UNKNOWN, below the US rows, and rendered with the warning tag for a market the
+    dashboard does not recognise."""
+    assert scan.market_tier("IE-Dublin") == scan.market_tier("IE") == 2
+    row = scan.normalise_market({"market": "IE-Dublin", "tier": "IE-Dublin"})
+    assert row["market"] == "IE" and row["tier"] == "IE"
+    # and a row that was already current is untouched
+    assert scan.normalise_market({"market": "NL", "tier": "NL"})["market"] == "NL"
+
+
+def test_the_screen_may_only_kill_on_function():
+    """Two thirds of screened rows were being killed, and the stored reasons included
+    "Location not specified; likely US-based", "Cleantech, not B2B SaaS" and "JetBrains is
+    based in Czech Republic" -- all of them re-deciding a location the code had already
+    accepted, or marking down a domain the deep scorer scores properly."""
+    p = scan.SCREEN_SYSTEM
+    assert "exactly ONE reason" in p
+    assert "THE LOCATION IS ALREADY SETTLED" in p
+    assert "NOT the location" in p and "NOT the industry or the domain" in p
+    assert "NEVER KILL ON SENIORITY." in p
+    # the old wording made LOCATION a numbered kill ground; nothing may put it back
+    assert "1. LOCATION" not in p
+    assert "You may kill a role for exactly TWO reasons" not in p
 
 
 def test_same_role_collapses_a_shortened_company_name():
@@ -721,8 +790,9 @@ def test_only_the_wanted_markets_ring_the_phone():
     while still being somewhere he does not want to move, so it stays on the dashboard and
     does not ring."""
     assert scan.NTFY_MAX_TIER == 2
-    ring = [m for m, t in scan.MARKET_TIER.items() if t <= scan.NTFY_MAX_TIER]
-    assert set(ring) == {"NL", "IE", "UK-London"}
+    ring = {scan.MARKET_ALIASES.get(m, m)
+            for m, t in scan.MARKET_TIER.items() if t <= scan.NTFY_MAX_TIER}
+    assert ring == {"NL", "IE", "UK-London"}
     for market in ("CA", "US-Remote", "BE"):
         assert scan.market_tier(market) > scan.NTFY_MAX_TIER, market
 
@@ -807,7 +877,9 @@ def test_score_request_body_is_well_formed():
         assert k not in sent, f"{k} is rejected on Opus 5"
     # system must be a block list carrying the cache breakpoint, not a bare string
     assert isinstance(sent["system"], list)
-    assert sent["system"][0]["cache_control"] == {"type": "ephemeral"}
+    # An hour, not the default five minutes: runs land about an hour apart, so a
+    # five-minute cache was written every run and read by none of them.
+    assert sent["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert "profile" in sent["system"][0]["text"].lower()
     oc = sent["output_config"]
     assert oc["effort"] in ("low", "medium", "high", "xhigh", "max")
