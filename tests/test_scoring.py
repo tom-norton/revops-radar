@@ -2439,6 +2439,55 @@ def test_backfill_survives_a_fetcher_that_raises():
                               "desc_chars": 8000}, boom) == ""
 
 
+def test_a_work_mode_field_only_ever_speaks_for_a_us_row():
+    """The leak, and its guard rails. market_of() can only look inside the location string,
+    and almost no source puts the work mode there -- so a US row is gated on location plus
+    work mode. Europe and Canada are untouched: remote wording next to a bare European
+    country is how remote-EMEA reqs get REJECTED, so tagging one would drop a real role."""
+    assert scan.market_of("", scan.gate_location("Grand Rapids, MI", "Remote")) == "US-Remote"
+    assert scan.market_of("", scan.gate_location("New York, NY", "Remote")) == "US-Remote"
+    # onsite stays out -- the tag states the fact, it does not assume it
+    assert scan.market_of("", scan.gate_location("New York, NY", "Onsite")) is None
+    # Canada accepts remote and onsite alike, so the tag could only do harm
+    assert scan.gate_location("Toronto, ON", "Remote") == "Toronto, ON"
+    # Europe: untagged, so these keep resolving exactly as they did
+    for loc in ("Amsterdam", "Ireland", "London", "Brussels"):
+        assert scan.gate_location(loc, "Remote") == loc, loc
+    assert scan.market_of("", scan.gate_location("Ireland", "Remote")) == "IE"
+    # no work mode, no change, whatever the row is
+    assert scan.gate_location("New York, NY", "") == "New York, NY"
+
+
+def test_the_us_hiringcafe_searches_already_asked_for_remote():
+    """Those rows are remote BY CONSTRUCTION -- hiring.cafe applied the filter at source --
+    and the pipeline was re-deriving it from a location string that never carried it. If
+    this ever returns "" for a US search, the US funnel is back to zero."""
+    for label in ("us-revops", "us-cs"):
+        search = scan.APIFY_HIRINGCAFE_SEARCHES[label]
+        assert scan.hc_search_work_mode(search) == "Remote", label
+    # and the European searches must never come back claiming remote: they pass
+    # ("Hybrid", "Onsite", "Field"), and a mixed search says nothing about a single row
+    for label in ("revops", "cs-eu-ca", "cs-nl"):
+        assert scan.hc_search_work_mode(scan.APIFY_HIRINGCAFE_SEARCHES[label]) == "", label
+    # a search with no locations at all claims nothing either
+    assert scan.hc_search_work_mode({}) == ""
+    assert scan.hc_search_work_mode({"locations": [{"workplace_types": ["Remote"]},
+                                                   {"workplace_types": ["Hybrid"]}]}) == ""
+
+
+def test_a_rows_own_work_mode_is_preferred_and_absence_costs_nothing():
+    """hiring.cafe's key for this is not pinned by a fixture, so the row field REFINES the
+    search-level answer rather than being relied on. A missing key returns "" and the
+    search's guarantee still stands."""
+    assert scan.hc_row_work_mode({"workplace_type": "Remote"}) == "Remote"
+    assert scan.hc_row_work_mode({"formatted_workplace_type": "Hybrid"}) == "Hybrid"
+    assert scan.hc_row_work_mode({"workplace_types": ["Onsite"]}) == "Onsite"
+    # ambiguous or absent says nothing rather than guessing
+    assert scan.hc_row_work_mode({"workplace_types": ["Remote", "Hybrid"]}) == ""
+    assert scan.hc_row_work_mode({}) == ""
+    assert scan.hc_row_work_mode({"workplace_type": ""}) == ""
+
+
 @contextlib.contextmanager
 def _patched(obj, name, value):
     """Swap one attribute for the body of a test and put the original back afterwards, so a

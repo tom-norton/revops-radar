@@ -346,15 +346,58 @@ US_REMOTE = re.compile(
 REMOTE_ELSEWHERE = re.compile(r"\bemea\b|\beurope\b|\bapac\b|\blatam\b|\bglobal\b", re.I)
 
 
+def ca_context(loc, cc=""):
+    """Does this row look Canadian at all, before the remote question is asked."""
+    return bool(CA_COUNTRY.search(loc) or CA_PROVINCE.search(loc) or CA_CITY.search(loc)
+                or cc == "ca")
+
+
+def us_context(loc, cc=""):
+    """Does this row look American at all, before the remote question is asked.
+
+    Split out of north_america_of() because gate_location() needs exactly this question and
+    nothing else: it decides whether a source's work-mode field is allowed to speak, and
+    that permission is US-only. Two copies of "does this look American" would be one copy
+    too many."""
+    return bool(US_COUNTRY.search(loc) or US_COUNTRY_ABBR.search(loc)
+                or US_STATE.search(loc) or cc == "us")
+
+
+def gate_location(location, work_mode, cc=""):
+    """What the location gate should see, for a source that states the work mode in a FIELD
+    rather than inside the location string.
+
+    This is the single biggest leak in the pipeline, and it is a plumbing bug rather than a
+    policy one. market_of() requires the word "remote" INSIDE the location string, because
+    that is the only place it can look. Almost no source puts it there: hiring.cafe sends
+    "Grand Rapids, MI" for a role its own search already filtered to Remote. So a run would
+    take 360 raw Adzuna US rows, 80 Indeed, ~70 hiring.cafe and LinkedIn's whole US geoId
+    and keep essentially none of them -- the single US row on the dashboard came from
+    revopsroles, which is the one source whose work-mode tag was wired in like this. One
+    source had the plumbing, one source produced output.
+
+    US ONLY, and that restriction is the whole point. In Europe remote wording is a reason
+    to REJECT -- market_of() returns None for a bare country next to "remote", which is how
+    remote-EMEA reqs are kept out -- so tagging an "Ireland" row "(Remote)" would drop a
+    genuine Irish role that is currently kept. Canada needs no help either: its branch
+    accepts remote and onsite alike, so the tag could only do harm. Hence the two guards:
+    the row has to look American, and it must not look Canadian instead.
+
+    The location itself is never modified on the row. This is only what the GATE sees; the
+    card still shows the place, which is what Tom reads."""
+    loc = location or ""
+    mode = (work_mode or "").strip()
+    if not mode or not us_context(loc, cc) or ca_context(loc, cc):
+        return loc
+    return f"{loc} ({mode})"
+
+
 def north_america_of(loc, cc):
     """'CA' / 'US-Remote' / None for a row that looks North American, before Europe is
     considered. Returns None both for "not North America" and for a US row that fails the
     remote requirement -- the caller cannot act differently on those two, because a US
     onsite role is as out of scope as a German one."""
-    ca_ctx = bool(CA_COUNTRY.search(loc) or CA_PROVINCE.search(loc) or CA_CITY.search(loc)
-                  or cc == "ca")
-    us_ctx = bool(US_COUNTRY.search(loc) or US_COUNTRY_ABBR.search(loc)
-                  or US_STATE.search(loc) or cc == "us")
+    ca_ctx, us_ctx = ca_context(loc, cc), us_context(loc, cc)
 
     # Canada wins a tie: "Vancouver, WA" and "Ontario, CA" both carry a US state code, and
     # the state code is the more specific signal, so only treat the row as Canadian when
@@ -2733,19 +2776,11 @@ def fetch_revopsroles(gmail_address, gmail_app_password, diag=None):
                 if salary:
                     with_salary += 1
                 # The work mode is a TAG in this digest, not part of the location string,
-                # and market_of() only reads the location. For the US that loses real rows:
-                # remote is the REQUIREMENT there, so "Austin, United States" tagged
-                # "Remote" is a US remote role that matching on the location alone drops as
-                # on-site. So the tag is appended to what the gate sees, while `loc` itself
-                # is stored unchanged because that is what Tom reads on the card.
-                #
-                # US ONLY, and that restriction is the whole point. In Europe remote
-                # wording is a reason to REJECT -- market_of() returns None for a bare
-                # country next to "remote", which is how remote-EMEA reqs are kept out --
-                # so appending "(Remote)" to an "Ireland" row would drop a genuine Irish
-                # role that is currently kept. Canada needs no help either: its branch
-                # accepts remote already.
-                gate_loc = f"{loc} ({work_mode})" if work_mode and cc == "us" else loc
+                # and market_of() only reads the location. gate_location() is where that is
+                # reconciled -- it started here, as this source's own fix, and is now what
+                # every source with a work-mode field uses. The reasoning (US only, never
+                # Canada, never Europe) lives there.
+                gate_loc = gate_location(loc, work_mode, cc)
                 reason = prefilter(title, gate_loc, cc)
                 if reason:
                     record_drop({"id": f"rr-{jid}", "title": title, "location": loc,
@@ -2760,6 +2795,7 @@ def fetch_revopsroles(gmail_address, gmail_app_password, diag=None):
                     "id": f"rr-{jid}", "company": company,
                     "title": title, "location": loc, "country": cc,
                     "market": market_of(cc, gate_loc),
+                    "work_mode": work_mode,
                     "url": src_url, "source": "revopsroles", "salary": salary,
                     "posted_at": posted,
                     "_detail": src_url, "_fallback_desc": summary,
@@ -2984,6 +3020,44 @@ def hiringcafe_url(search_state):
     return f"https://hiringcafe.com/?{qs}"
 APIFY_MAX_ITEMS = 200   # across all four searches combined; ~$0.25/run at $1.25/1000 results
 
+# hiring.cafe states the work mode as structured data, not inside the location string, and
+# these are the keys it has been seen to use for it. Tried in order; the value is used as
+# written ("Remote", "Hybrid", "Onsite"). An absent key costs nothing -- the search-level
+# answer below is the guaranteed one, and this only ever refines it.
+HC_WORK_MODE_KEYS = ("workplace_type", "formatted_workplace_type", "workplace_types")
+
+
+def hc_row_work_mode(proc):
+    """One row's work mode as hiring.cafe reports it, or "" if it does not."""
+    for key in HC_WORK_MODE_KEYS:
+        value = proc.get(key)
+        if isinstance(value, (list, tuple)):
+            value = value[0] if len(value) == 1 else ""
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def hc_search_work_mode(search):
+    """"Remote" when EVERY location in this search asked hiring.cafe for remote roles only.
+
+    This is the fact that was being thrown away. The US searches set
+    workplace_types: ["Remote"] (see _hc_grand_rapids), so every row they return is remote
+    by construction -- hiring.cafe applied the filter at source. Then market_of() re-derived
+    it from `formatted_workplace_location`, which says "Grand Rapids, MI", and binned the
+    lot. The search already knew; nothing asked it.
+
+    Conservative on purpose. It returns "" the moment any location in the search allows
+    anything other than Remote, because a mixed search says nothing about an individual
+    row -- the European searches pass ("Hybrid", "Onsite", "Field") and must not come back
+    from here claiming their rows are remote."""
+    locations = search.get("locations") or []
+    if not locations:
+        return ""
+    modes = [tuple(loc.get("workplace_types") or ()) for loc in locations]
+    return "Remote" if all(m == ("Remote",) for m in modes) else ""
+
+
 def fetch_apify_hiringcafe(token, diag=None):
     """Runs Tom's saved hiring.cafe searches through the Apify actor
     memo23/apify-hiring-cafe-scraper. Each search already encodes its own
@@ -3026,11 +3100,20 @@ def fetch_apify_hiringcafe(token, diag=None):
         if diag is not None:
             diag[f"hiringcafe:{label}"] = f"raw {len(items)}"
         bump_raw("hiring.cafe", len(items))
+        # What this search asked hiring.cafe for, so a row it returns can be gated on the
+        # fact rather than on a location string that never carried it. See
+        # hc_search_work_mode().
+        search_mode = hc_search_work_mode(state)
         for j in items:
             info = j.get("job_information", {}) or {}; proc = j.get("v5_processed_job_data", {}) or {}
             title = info.get("title") or proc.get("core_job_title", "")
             loc = proc.get("formatted_workplace_location", "")
-            reason = prefilter(title, loc)
+            # The row's own answer where it has one, the search's where it does not. Both
+            # say the same thing on a US row; the row field is preferred only because it is
+            # evidence about THIS posting rather than about the query that found it.
+            work_mode = hc_row_work_mode(proc) or search_mode
+            gate_loc = gate_location(loc, work_mode)
+            reason = prefilter(title, gate_loc)
             if reason:
                 record_drop({"id": "hc-" + str(j.get("id", ""))[:60], "title": title,
                              "location": loc, "company": proc.get("company_name", ""),
@@ -3042,7 +3125,12 @@ def fetch_apify_hiringcafe(token, diag=None):
                 sal = f"{int(proc['yearly_min_compensation'])}-{int(proc.get('yearly_max_compensation') or proc['yearly_min_compensation'])} {cur}".strip()
             out.append({"id": "hc-" + str(j.get("id", ""))[:60], "company": proc.get("company_name", ""),
                         "title": title, "location": loc, "country": "",
-                        "market": market_of("", loc), "salary": sal,
+                        # `location` stays as the feed wrote it -- that is what Tom reads on
+                        # the card. `work_mode` is kept because it is the only thing that
+                        # explains why a "New York, NY" row resolved to US-Remote, and a
+                        # market nobody can account for is one nobody can debug.
+                        "work_mode": work_mode,
+                        "market": market_of("", gate_loc), "salary": sal,
                         "url": j.get("apply_url") or "", "source": "hiring.cafe",
                         "description": strip_html(info.get("description", "")),
                         "posted_at": proc.get("estimated_publish_date", "")})

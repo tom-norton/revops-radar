@@ -115,6 +115,29 @@ Cloudflare** below.
 
 **Filtering:**
 8. A free **title + location filter** drops anything off-function or off-market before a token is spent.
+8b. **A source that states the work mode in a field gets to use it** (`gate_location()`).
+    `market_of()` can only look inside the location string, and US remote is the one market
+    where that matters: remote is the *requirement* there, and almost no source writes it
+    into the location. hiring.cafe sends `Grand Rapids, MI` for a role its own search
+    already filtered to Remote. The result was a run taking 360 raw Adzuna US rows, 80
+    Indeed, ~70 hiring.cafe and LinkedIn's entire US geoId and keeping **one** — from
+    revopsroles, the only source whose work-mode tag had been wired in. One source had the
+    plumbing, one source produced output.
+    So the work mode is appended to what the **gate** sees, never to the location stored on
+    the row. **US only**, and that restriction is the whole point: in Europe remote wording
+    next to a bare country is how remote-EMEA reqs get *rejected*, so tagging an "Ireland"
+    row would drop a real Irish role, and Canada accepts remote and onsite alike so the tag
+    could only do harm.
+    For hiring.cafe the fact comes from the **search itself** — `us-revops` and `us-cs` set
+    `workplace_types: ["Remote"]`, so their rows are remote by construction and
+    `hc_search_work_mode()` reads that off the query rather than guessing. A row-level field
+    refines it where hiring.cafe provides one, but nothing depends on that key existing.
+    **LinkedIn, Adzuna and Indeed cannot be fixed this way**, and it is worth being plain
+    about it: LinkedIn's guest cards carry no work-mode field at all and its `f_WT` filter
+    is ignored by that endpoint (remote-only and onsite-only return the identical ten job
+    IDs — verified), while Adzuna and JobSpy have no such field either. Matching on the word
+    "remote" in the title would be a poor substitute, since titles rarely carry it. Those
+    three need the work mode read off the **posting**, which is a separate change.
 9. An **age filter** drops anything older than 7 days when the source gives a posted date.
 10. **Cross-source, cross-run dedupe** collapses the same role found via multiple sources
     or on different days into one dashboard entry — before it is screened or scored, so a
