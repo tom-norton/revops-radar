@@ -108,7 +108,10 @@ jobs:
         id: recent
         if: github.event_name == 'schedule'
         run: |
-          last=$(git log -1 --format=%ct -- docs/status.json)
+          # The scan's own commit, by message, rather than any commit touching
+          # docs/status.json -- a hand edit to that file is not a scan and must not
+          # make the backstop stand down.
+          last=$(git log -1 --format=%ct --grep="^scan:")
           if [ -z "$last" ]; then
             echo "no scan commit in history; running"
             exit 0
