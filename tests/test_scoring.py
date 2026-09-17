@@ -819,7 +819,29 @@ def test_score_request_body_is_well_formed():
     # score_raw survives only so rows written under the old cap engine still render.
     assert out["score"] == out["score_raw"]
     assert out["caps_applied"] == [] and out["tier"] == "NL"
-    assert "comp not listed, verify vs floor" in out["flags"]
+    # The job in this test carries no feed salary either, so the flag says so outright
+    # rather than pointing at a figure that is not there.
+    assert "no pay stated in the ad or the feed, verify vs floor" in out["flags"]
+
+
+def test_the_comp_flag_says_which_fact_is_missing():
+    """"comp not listed" on a row whose feed says 110000-130000 USD reads as "nobody
+    published a number". What actually happened is that the ad the scorer read did not
+    carry the figure the feed had, and those need different follow-up."""
+    job = {"market": "US-Remote", "title": "Revenue Operations Manager",
+           "salary": "110000-130000 USD"}
+    data = {"dimensions": {k: 7 for k in scan.RUBRIC_KEYS}, "function_match": "core",
+            "company_standout": True, "language_hard_requirement": False,
+            "salary_stated": False, "salary_min_base": 0, "salary_max_base": 0,
+            "salary_currency": "", "flags": [], "verdict": "ok"}
+    flags = scan.parse_score_result(job, data)["flags"]
+    assert any("110000-130000 USD came from the feed" in f for f in flags), flags
+    assert not any("no pay stated in the ad or the feed" in f for f in flags), flags
+    # With nothing anywhere it says that instead. Shown on an NL row, because a US row with
+    # no pay anywhere is DROPPED rather than flagged -- that is the confirmed-pay rule, and
+    # this flag only ever reaches a market where an unstated salary is survivable.
+    bare = scan.parse_score_result({"market": "NL", "title": "RevOps Manager"}, data)
+    assert any("no pay stated in the ad or the feed" in f for f in bare["flags"])
 
 
 def test_score_job_returns_disqualified_instead_of_a_score():
@@ -2486,6 +2508,71 @@ def test_a_rows_own_work_mode_is_preferred_and_absence_costs_nothing():
     assert scan.hc_row_work_mode({"workplace_types": ["Remote", "Hybrid"]}) == ""
     assert scan.hc_row_work_mode({}) == ""
     assert scan.hc_row_work_mode({"workplace_type": ""}) == ""
+
+
+def test_sampling_never_drops_the_pay_out_of_a_long_ad():
+    """Samsara's ad runs to 9,163 characters and states "Annual OTE Salary $111,562.50 -
+    $168,750 USD" in the middle third, exactly where the old 70/30 head-and-tail split threw
+    text away. The scorer reported no salary for a role whose pay is written on the page."""
+    head = "Who we are. " * 350
+    pay = " Annual OTE Salary $111,562.50 - $168,750 USD. "
+    tail = " Equal opportunity boilerplate and fraud warning. " * 60
+    ad = head + pay + tail
+    assert len(ad) > scan.DESC_CHAR_CAP
+    out = scan.sample_desc(ad)
+    assert len(out) <= scan.DESC_CHAR_CAP, len(out)
+    assert scan.jd_pay_figures(out) == [111562.0, 168750.0], scan.jd_pay_figures(out)
+    # both ends still survive -- the pay block is paid for out of the head, not instead of
+    # the tail, because sponsorship and language terms live at the end
+    assert out.startswith("Who we are.")
+    assert out.rstrip().endswith("fraud warning.")
+
+
+def test_sampling_is_unchanged_when_the_ad_states_no_pay():
+    """No pay block, no third segment: the plain head-and-tail behaviour is what most ads
+    still get, and it must not move."""
+    ad = "x" * 20000
+    out = scan.sample_desc(ad)
+    assert len(out) == scan.DESC_CHAR_CAP
+    assert "[...]" in out
+    short = "a short ad"
+    assert scan.sample_desc(short) == short
+
+
+def test_the_last_money_in_an_ad_is_the_one_kept():
+    """An ad mentions money early for other reasons. Versapay opens with "$257B annually";
+    the compensation block sits near the end, above the boilerplate."""
+    ad = ("We process $257B annually. " * 200) + " Base pay: $110,000 - $130,000 a year. " \
+         + ("Equal opportunity employer. " * 200)
+    out = scan.sample_desc(ad)
+    assert "110,000" in out and "130,000" in out
+
+
+def test_an_aggregator_ad_with_no_salary_is_not_good_enough_for_a_us_row():
+    """Versapay's Indeed copy runs to 5,364 characters, nowhere near thin, and states no
+    pay -- while the Lever posting it links to states 110,000-130,000. Long is not the same
+    as usable when the row is gated on a number the summary dropped."""
+    long_no_pay = "We process $257B annually and value diversity. " * 120
+    assert len(long_no_pay) > scan.MIN_DESC_CHARS
+    assert scan.needs_better_ad({"market": "US-Remote", "description": long_no_pay})
+    # the same ad WITH a salary in it is good enough
+    assert not scan.needs_better_ad(
+        {"market": "US-Remote", "description": long_no_pay + " $110,000 - $130,000 a year"})
+    # Europe is excluded: most European ads state no pay, and an unstated European salary
+    # costs the role nothing, so chasing it is work with no decision attached
+    for market in ("NL", "UK-London", "IE", "BE", "CA"):
+        assert not scan.needs_better_ad({"market": market, "description": long_no_pay}), market
+    # a stub is still a stub in every market
+    assert scan.needs_better_ad({"market": "NL", "description": "Category: RevOps"})
+
+
+def test_states_salary_ignores_money_that_is_not_somebody_pay():
+    """The trigger turns on this distinction. PAY_MENTION is deliberately loose because it
+    only picks what to keep in a sample; states_salary() decides whether a row stops
+    looking, so it uses the windowed test."""
+    assert not scan.states_salary("Versapay processes over 110M transactions and $257B annually.")
+    assert scan.states_salary("The base pay range is $110,000 - $130,000 a year.")
+    assert bool(scan.PAY_MENTION.search("$257B annually"))      # loose, on purpose
 
 
 @contextlib.contextmanager
