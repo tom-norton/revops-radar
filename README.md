@@ -113,6 +113,12 @@ Cloudflare** below.
    whereas in Europe remote wording next to a bare country is how remote-EMEA reqs get
    rejected, so doing it everywhere would drop genuine Irish and Dutch roles.
 
+**On the card:** pay is shown as a tag — solid when the scorer read it off the posting,
+outlined and marked `(feed)` when it came from the job feed and the ad did not confirm it.
+The dashboard had never rendered `salary` at all, so a Versapay row whose feed said
+`110000-130000 USD` displayed "comp not listed" and nothing else. The flag now names which
+fact is missing rather than flattening both into one sentence.
+
 **Filtering:**
 8. A free **title + location filter** drops anything off-function or off-market before a token is spent.
 8b. **A source that states the work mode in a field gets to use it** (`gate_location()`).
@@ -249,6 +255,28 @@ Cloudflare** below.
     just because the ad turned up late. (They read whatever 12a–12c recovered because all
     three now run *before* this step, rather than 12c running after the screen and needing
     its own second pass.)
+12e. **The sample the scorer reads can no longer drop the pay.** `sample_desc()` fits an ad
+    into `DESC_CHAR_CAP` (6,000) by keeping head and tail, because sponsorship and language
+    terms live in the closing block. That is still not enough: Samsara's ad runs to 9,163
+    characters and states `Annual OTE Salary $111,562.50 — $168,750 USD` in the **middle
+    third**, exactly what the 70/30 split threw away, so the scorer reported no salary for a
+    role whose pay is written on the page. Across the corpus **10 of the 43 ads that state
+    pay lost the figure this way — a 23% miss rate on the one fact that gates the US market
+    outright**, while the tail landed on fraud-warning boilerplate. A pay figure in the
+    dropped middle is now carved out and kept as a third segment, paid for out of the head,
+    and the *last* match wins because ads mention money early for other reasons (Versapay
+    opens with "$257B processed annually"). 43 of 43 now survive, within the same cap.
+12f. **An aggregator's ad is a summary, and the part it drops first is the pay.** Versapay's
+    Indeed copy runs to 5,364 characters — nowhere near thin — and states no salary, while
+    the Lever posting that same row links to states `$110,000 - $130,000 a year`. So
+    `needs_better_ad()` triggers the step 12b board lookup on the *missing fact* rather than
+    on length: a **US** row whose ad states no pay is not a usable ad however long it is,
+    since the row can neither be scored nor disqualified on it. The board's copy is only
+    taken when it actually states the pay the summary dropped. **Europe is excluded on
+    purpose** — most European ads state no salary and an unstated one costs the role
+    nothing there, so chasing it would be 254 of 529 rows of work with no decision attached.
+    The test is `jd_pay_figures()` (windowed 40k–1M), not the looser `PAY_MENTION` used for
+    sampling, precisely so "$257B annually" does not read as a salary and stop the search.
 13c. **The US "confirmed pay" rule asks the ad, not the feed.** A US role is only worth
     taking at pay Tom can see, so a US row with no salary is dropped — but reading "no
     salary *field*" as "no salary" made that a filter on which source found the role.

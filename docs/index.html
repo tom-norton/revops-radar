@@ -31,6 +31,11 @@
          display:flex; align-items:center; justify-content:center; border-radius:9px;
          background:var(--teal); color:#fff; flex-shrink:0}
   .score.s-apply{background:var(--good)} .score.s-border{background:var(--warn)}
+  /* Pay read off the posting reads as solid; pay taken from a feed is outlined, because
+     the difference between the two is exactly what wants checking before applying. */
+  .tag.pay{background:var(--teal); color:#fff; border-color:var(--teal); font-weight:600}
+  .tag.pay.est{background:transparent; color:var(--teal); border-style:dashed;
+               font-weight:500}
   /* Deliberately not on the good/warn scale: an unscored row is off the scale, not at the
      bottom of it. Muted so it reads as "nothing here yet" rather than as a low score. */
   .score.s-none{background:transparent; border:1px dashed var(--line); color:var(--sub);
@@ -343,6 +348,23 @@ function card(j, reviewed){
     spon = `<span class="tag ${good?'spon':'nospon'}">${j.sponsor}</span>`;
   }
   const flags = (j.flags||[]).map(f=>`<span class="tag flag">${esc(f)}</span>`).join("");
+  // Pay, which this card has never shown. `salary` is populated on a few hundred rows and
+  // was rendered nowhere, so a Versapay row whose feed said 110000-130000 USD displayed
+  // "comp not listed" and nothing else. Where it came from is part of the fact: a figure
+  // the scorer read in the ad is confirmed, a figure off the feed still wants checking.
+  const payTag = (() => {
+    const c = j.comp || {};
+    const fmt = n => Number(n).toLocaleString("en-US");
+    if(c.stated && c.min_base){
+      const band = fmt(c.min_base)
+        + (c.max_base && c.max_base > c.min_base ? `–${fmt(c.max_base)}` : "");
+      return `<span class="tag pay" title="Read off the posting by the scorer">`
+           + `${esc(c.currency||"")} ${band}</span>`;
+    }
+    if(j.salary) return `<span class="tag pay est" title="From the job feed, not confirmed `
+      + `in the posting text">${esc(j.salary)} (feed)</span>`;
+    return "";
+  })();
   // The market, marked by tier so the backups read as backups at a glance rather than
   // needing the reader to remember which of six names is which.
   const tier = tierOf(j);
@@ -421,7 +443,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${marketTag}${conflictTag}${transferTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${marketTag}${payTag}${conflictTag}${transferTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>

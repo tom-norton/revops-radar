@@ -2542,6 +2542,61 @@ def verify_jd(url, job):
     return desc, url
 
 
+def states_salary(desc):
+    """Does this text state a figure that could be somebody's annual salary.
+
+    jd_pay_figures() and not PAY_MENTION, and the difference is the whole point. PAY_MENTION
+    asks "is this the paragraph where the money is", which is the right question when
+    deciding what to keep in a sample and a question a false positive answers cheaply.
+    Here a false positive is expensive: it says the ad states the pay when it does not, and
+    the row stops looking. Versapay's Indeed copy opens with "$257B processed annually" and
+    never states a salary -- PAY_MENTION sees money on that line, jd_pay_figures() does not,
+    because 257B is nowhere near a salary and its 40k-1M window says so."""
+    return bool(jd_pay_figures(desc))
+
+
+def silence_on_pay_is_a_gate(market):
+    """Is an ad that states NO pay disqualifying in this market.
+
+    Only in the US, and the distinction matters more than it looks. Europe has visa floors,
+    but they fire on a salary that IS stated and below them; an unstated European salary
+    costs the role nothing, because most European ads state none -- the row is kept and
+    flagged. So chasing a missing figure there is work with no decision attached to it: it
+    turned out to be 254 of the current 529 rows, nearly all of them European ads that say
+    nothing about money because that is the convention.
+
+    In the US it is the opposite. us_comp_unstated() DROPS a row with no pay anywhere, and
+    the comp floor gates the rest, so an ad with no figure in it is an ad the row cannot be
+    decided on either way. That is worth a board lookup; the European case is not."""
+    return market == "US-Remote"
+
+
+def needs_better_ad(job):
+    """True when the text in hand is not good enough to decide this row on.
+
+    Thin is the obvious case. The other one is Tom's, and Versapay is the example: its
+    Indeed copy runs to 5,364 characters -- nowhere near thin -- and states no pay at all,
+    while the Lever posting that same row links to states 110,000-130,000. An aggregator's
+    rendering of an ad is a summary of it, and the part summaries drop first is the
+    compensation block.
+
+    So for a US row, an ad with no figure in it is not a usable ad however long it is: the
+    row cannot be scored on it and cannot be disqualified on it either. Going to the
+    employer's own board is the same move rescue_description() already makes for a stub,
+    triggered on the fact that is missing rather than on the length. Europe is deliberately
+    excluded -- see silence_on_pay_is_a_gate()."""
+    return is_thin(job.get("description")) or ad_hides_the_pay(job)
+
+
+def ad_hides_the_pay(job):
+    """The second half of needs_better_ad(), on its own because the repair command wants
+    exactly this half: a readable ad that does not answer the question the row is gated on.
+    The thin half is handled there by its own rule about absorbed duplicates."""
+    return (silence_on_pay_is_a_gate(job.get("market"))
+            and not is_thin(job.get("description"))
+            and not states_salary(job.get("description")))
+
+
 def is_thin(desc):
     """True when what we have is not really a posting.
 
@@ -3209,11 +3264,52 @@ def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_sys
                        if b.get("type") == "text")
     raise RuntimeError(f"server-tool call did not finish in {SERVER_TOOL_MAX_TURNS} turns")
 
+# Money as an ad writes it, in any of Tom's currencies. Broader than US_PAY_FIGURE on
+# purpose: that one answers "is this a US salary", this one answers "is this the paragraph
+# where the money is", and for the second question a false positive costs a few hundred
+# characters of context while a false negative costs the figure entirely.
+PAY_MENTION = re.compile(
+    r"[$£€]\s?\d[\d,. ]*\d"                    # $111,562.50   € 70 000   £85,000
+    r"|\b\d{2,3},\d{3}\b"                      # 111,562
+    r"|\b(?:USD|EUR|GBP|CAD|CHF)\s?\d"          # USD 130000
+    r"|\d\s?(?:USD|EUR|GBP|CAD|CHF)\b", re.I)  # 168750 USD
+# Characters kept either side of a pay figure that sampling would otherwise drop. Enough
+# for the label above it ("Annual OTE Salary", "The base pay range for this role is") and
+# the qualifiers below it, since both change what the number means.
+PAY_WINDOW = 400
+
+
+def pay_block(desc, start, end):
+    """(from, to) around the compensation figure in desc[start:end], or None.
+
+    The LAST match wins. An ad mentions money early for other reasons -- Versapay opens
+    with "$257B processed annually" -- while the compensation block sits near the end,
+    just above the equal-opportunity boilerplate."""
+    last = None
+    for m in PAY_MENTION.finditer(desc, start, end):
+        last = m
+    if last is None:
+        return None
+    return (max(start, last.start() - PAY_WINDOW), min(end, last.end() + PAY_WINDOW))
+
+
 def sample_desc(desc, cap=None):
-    """Fit a description into `cap` characters keeping both ends. A plain head slice drops
-    the closing block, and that is where sponsorship terms, language requirements and comp
-    are stated -- the two rows this pipeline got wrong were both decided by a sentence in
-    the last fifth of the ad."""
+    """Fit a description into `cap` characters keeping both ends, plus the pay block.
+
+    A plain head slice drops the closing block, and that is where sponsorship terms,
+    language requirements and comp are stated -- the two rows this pipeline got wrong were
+    both decided by a sentence in the last fifth of the ad. Hence head + tail.
+
+    Head + tail is still not enough, and Samsara is the proof. Its ad runs to 9,163
+    characters and states "Annual OTE Salary $111,562.50 - $168,750 USD", and that sentence
+    sat in the middle third that the 70/30 split threw away -- so the scorer reported no
+    salary for a role whose pay is written on the page. Across the corpus, 10 of the 43 ads
+    that state pay lost the figure this way: a 23% miss rate on the one fact that gates the
+    US market outright. The tail was landing on the fraud-warning boilerplate instead.
+
+    So a pay figure in the dropped middle is carved out and kept as a third segment, paid
+    for out of the head. Segments that end up adjacent are merged rather than separated by
+    a marker that would imply a gap where there is none."""
     cap = cap or DESC_CHAR_CAP
     desc = desc or ""
     if len(desc) <= cap:
@@ -3221,7 +3317,38 @@ def sample_desc(desc, cap=None):
     marker = "\n[...]\n"
     head = int((cap - len(marker)) * DESC_HEAD_SHARE)
     tail = cap - len(marker) - head
-    return desc[:head] + marker + desc[-tail:]
+
+    block = pay_block(desc, head, len(desc) - tail)
+    if block is None:
+        return desc[:head] + marker + desc[-tail:]
+
+    # Re-budget around the pay block: it is the reason this function exists, so it is
+    # taken out first and the two ends share what is left.
+    budget = cap - (block[1] - block[0]) - 2 * len(marker)
+    if budget < len(marker) * 2:
+        # A pathological pay window leaves no room for context. The ends are worth more
+        # than a wider quote around the number, so fall back rather than starve them.
+        return desc[:head] + marker + desc[-tail:]
+    head = int(budget * DESC_HEAD_SHARE)
+    tail = budget - head
+    spans = _merge_spans([(0, head), block, (len(desc) - tail, len(desc))])
+    out = []
+    for i, (a, b) in enumerate(spans):
+        if i and a > spans[i - 1][1]:
+            out.append(marker)
+        out.append(desc[a:b])
+    return "".join(out)
+
+
+def _merge_spans(spans):
+    """Sorted, non-overlapping (start, end) pairs. Touching spans become one."""
+    out = []
+    for a, b in sorted(spans):
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
 
 def job_message(job):
     desc = sample_desc(job.get("description"))
@@ -3288,7 +3415,13 @@ def parse_score_result(job, data):
     # and must not be pushed off the end of the list by the model's own commentary.
     flags = score_flags(job, data)
     if not data.get("salary_stated"):
-        flags.append("comp not listed, verify vs floor")
+        # Two different facts, and flattening them into one sentence was misleading on 41
+        # rows. "comp not listed" on a Versapay row whose feed says 110000-130000 USD reads
+        # as "nobody published a number", when what happened is that the ad the scorer read
+        # did not carry the one the feed had. Say which.
+        flags.append(f"pay not confirmed in the ad; {job['salary']} came from the feed"
+                     if job.get("salary") else
+                     "no pay stated in the ad or the feed, verify vs floor")
     flags += [str(f)[:70] for f in (data.get("flags") or [])]
     return {
         # score_raw and caps_applied are still written so rows scored under the old cap
@@ -3500,7 +3633,13 @@ def backfill_targets(jobs, days, now=None):
     out = [j for j in jobs
            if (j.get("found_at") or "") >= cutoff
            and (len(j.get("description") or "") < (j.get("desc_chars") or 0)
-                or (is_thin(j.get("description")) and j.get("also_seen")))]
+                or (is_thin(j.get("description")) and j.get("also_seen"))
+                # A US row whose stored ad is readable but states no pay. Long is not the
+                # same as usable here: the row is gated on a number an aggregator's summary
+                # dropped, and backfill_row() tries apply_url first, which is the
+                # employer's own posting. The thin case is the clause above, which needs
+                # its own rule about where there is anywhere new to look.
+                or ad_hides_the_pay(j))]
     return sorted(out, key=lambda j: j.get("found_at") or "", reverse=True)
 
 def backfill_row(job, fetch=None):
@@ -3588,10 +3727,25 @@ def cmd_backfill_jd(days, fetch=None):
     if was_stub:
         rescore_recovered(jobs, [j for j in jobs if id(j) in crossed])
 
-    # Whatever is still thin was scored without a posting, and that score is the thing Tom
-    # asked to stop seeing. Last, so it only ever catches rows the recovery above could not
-    # save, and re-read from disk because rescore_recovered() may have rewritten the file.
+    # Rows the SAMPLING bug decided wrongly. Their stored ad states the pay and the scorer
+    # recorded none, because the 70/30 head-and-tail split threw the compensation block
+    # away before the model saw it. Nothing needs re-fetching for these -- the text has
+    # been on disk all along -- but the score and the comp on the row were formed without
+    # a figure the ad carries, and on a US row that figure is a hard gate.
     jobs = load_json("docs/jobs.json", [])
+    missed_pay = [j for j in jobs
+                  if (j.get("found_at") or "") >= (
+                      datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+                  and j.get("score") is not None
+                  and jd_pay_figures(j.get("description"))
+                  and not (j.get("comp") or {}).get("stated")]
+    if missed_pay:
+        print(f"\n{len(missed_pay)} row(s) state their pay in an ad the scorer was shown "
+              f"only part of.")
+        rescore_recovered(jobs, missed_pay)
+        jobs = load_json("docs/jobs.json", [])
+
+
     hit = set_aside_thin(jobs, days)
     if hit:
         print(f"\n{len(hit)} row(s) had a score built on no posting. Unscored and moved to "
@@ -3961,16 +4115,27 @@ def main():
         # description, so on a stub neither can fire -- a role whose JD rules out
         # sponsorship was passing both checks silently. Recovering the text first is what
         # makes them work at all on these rows, and that is worth more than the score.
-        if is_thin(j["description"]) and rescues < MAX_JD_RESCUES_PER_RUN:
+        if needs_better_ad(j) and rescues < MAX_JD_RESCUES_PER_RUN:
             rescues += 1
             desc, apply_url = rescue_description(j, companies, board_cache)
             if apply_url:
                 j["apply_url"] = apply_url       # the real posting, not the advert
-            if desc:
+            # Only take the board's copy when it is actually better. On a stub anything
+            # readable wins, but on a Versapay-shaped row -- a long aggregator summary with
+            # no money in it -- the test is whether the employer's own ad states the pay
+            # the summary dropped. Swapping a longer ad for a shorter one that answers the
+            # question the row is gated on is the point; swapping it for one that does not
+            # would just be churn.
+            better = desc and (is_thin(j["description"])
+                               or (states_salary(desc)
+                                   and not states_salary(j["description"])))
+            if better:
+                had = len(j["description"])
                 j["description"] = desc
                 rescued += 1
-                print(f"  jd    recovered {len(desc)} chars for {j['title']} "
-                      f"@ {j.get('company')}")
+                print(f"  jd    recovered {len(desc)} chars (was {had}) for {j['title']} "
+                      f"@ {j.get('company')}"
+                      + ("" if had < MIN_DESC_CHARS else " -- aggregator copy stated no pay"))
 
         # Last resort for a row still carrying no posting: pay for a web search. This is the
         # only place in the pipeline that spends tokens to get EVIDENCE rather than to form
