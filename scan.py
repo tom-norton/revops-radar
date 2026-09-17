@@ -10,9 +10,13 @@ remote-anywhere/EMEA are deliberately excluded. MARKET_TIER holds the ordering.
 Data layer (multi-source so no single source can break the run):
   - Adzuna API      : NL + UK (no Ireland coverage in the Adzuna API)
   - Reed API        : UK depth (free key, https://www.reed.co.uk/developers)
-  - JobSpy / Indeed : Dublin/Ireland coverage (the Adzuna gap)
-  - Company ATS      : Greenhouse / Lever / Ashby for named companies (clean names,
-                       full descriptions, strong sponsor matching) - companies.json
+  - JobSpy / Indeed : Netherlands, Belgium, Ireland (no Adzuna endpoint for IE, and
+                      one Adzuna feed was the whole of the NL coverage), plus Indeed
+                      and Google Jobs for Canada and the US
+  - Company ATS      : any of findform.BOARDS -- Greenhouse / Lever / Ashby with their
+                       own fetchers, and SmartRecruiters / Recruitee / Workable /
+                       Personio / Teamtailor through findform.board_jobs() (clean names,
+                       strong sponsor matching) - companies.json
   - hiring.cafe      : via the Apify actor memo23/apify-hiring-cafe-scraper, run
                        against Tom's saved hiring.cafe searches (the direct API
                        blocks datacenter IPs, so this replaced that attempt)
@@ -2150,6 +2154,14 @@ def fetch_reed(api_key):
 # small-company ATS rows the big aggregators miss. Indeed rides along for the US and Canada
 # because the call is already being made.
 JOBSPY_TARGETS = [
+    # The Netherlands is the goal market and had no Indeed feed at all: Adzuna's `nl`
+    # endpoint was the only thing covering it, against Indeed + Reed + Adzuna + LinkedIn
+    # all pointed at London. That asymmetry is most of why 57% of the board is London and
+    # 19% is NL, and it is a source gap rather than a market that has no jobs in it.
+    {"cc": "nl", "location": "Netherlands", "country_indeed": "Netherlands",
+     "sites": ["indeed", "google"], "currency": "EUR", "terms": None},
+    {"cc": "be", "location": "Belgium", "country_indeed": "Belgium",
+     "sites": ["indeed", "google"], "currency": "EUR", "terms": None},
     {"cc": "ie", "location": "Ireland", "country_indeed": "Ireland",
      "sites": ["indeed"], "currency": "EUR", "terms": None},
     {"cc": "ca", "location": "Canada", "country_indeed": "Canada",
@@ -2164,7 +2176,7 @@ JOBSPY_TARGETS = [
 
 
 def fetch_jobspy(diag=None):
-    """Indeed (plus Google Jobs in North America) via JobSpy. Best-effort: import and
+    """Indeed (plus Google Jobs everywhere except Ireland) via JobSpy. Best-effort: import and
     scrape may both fail on CI IPs, and neither is allowed to break the run.
 
     Searches whole countries, never a single city. Scoping Ireland to "Dublin, Ireland"
@@ -2340,7 +2352,58 @@ def fetch_ashby(name, slug):
                     "description": strip_html(j.get("descriptionPlain") or "")})
     return out
 
+def fetch_board(name, slug, ats):
+    """A watched company whose board is one of the five types with no dedicated fetcher
+    here -- SmartRecruiters, Recruitee, Workable, Personio, Teamtailor -- read through the
+    same findform.board_jobs() the apply-link lookup already uses.
+
+    companies.json could only name greenhouse/lever/ashby before this, which quietly
+    decided WHICH employers could be watched: Recruitee, Workable, Personio and Teamtailor
+    are the Dutch scaleup norm, so the one market Tom actually wants to move to was the
+    one this list could not reach. bunq, Channable and Lansweeper are all Recruitee.
+
+    Thinner rows than the three dedicated fetchers return: a board read this way carries no
+    description and no posted date, so the description is fetched downstream like any other
+    row and the age filter fails open (recent_enough() keeps a row with no date). The
+    company name, the title and the location -- the three things that decide whether a row
+    is worth reading at all -- are exactly as clean as the dedicated fetchers'."""
+    import findform
+    rows = findform.board_jobs(ats, slug)
+    bump_raw("ats", len(rows))
+    out = []
+    for j in rows:
+        title, loc = j.get("title", ""), j.get("location", "")
+        # The board and the slug stay readable at the front of the id; the URL tail is
+        # what makes it unique. A bare tail would be unreadable in the drop log.
+        jid = f"bd-{ats[:2]}-{slug[:14]}-" + re.sub(r"\W+", "-",
+                                                    j.get("url", "") or title)[-46:]
+        reason = prefilter(title, loc)
+        if reason:
+            record_drop({"id": jid, "title": title, "location": loc, "company": name,
+                         "source": ats}, "prefilter", reason)
+            continue
+        # The advert is what Tom reads and what the description fetchers can parse (these
+        # pages carry JobPosting JSON-LD; the form behind them does not). The form is kept
+        # separately, which is the same split the board lookup writes for every other row.
+        advert = j.get("linked_from") or j.get("url", "")
+        row = {"id": jid, "company": name, "title": title, "location": loc,
+               "country": "", "market": market_of("", loc),
+               "url": advert, "source": ats, "posted_at": ""}
+        if j.get("url") and j["url"] != advert:
+            row["apply_url"] = j["url"]
+        out.append(row)
+    return out
+
+
 ATS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby}
+
+
+def fetch_company(c):
+    """One watched company's open roles, whichever board it runs."""
+    ats = c.get("ats", "")
+    if ats in ATS:
+        return ATS[ats](c.get("name", ""), c.get("slug", ""))
+    return fetch_board(c.get("name", ""), c.get("slug", ""), ats)
 
 # ---------------------------------------------------------------- LinkedIn (public guest search)
 
@@ -4061,8 +4124,8 @@ def main():
         print("Verifying optional ATS slugs...")
         for c in companies:
             try:
-                n = len(ATS[c["ats"]](c["name"], c["slug"]))
-                print(f"  OK   {c['name']:<20} matched {n}")
+                n = len(fetch_company(c))
+                print(f"  OK   {c['name']:<20} {c['ats']:<16} matched {n}")
             except Exception as e:
                 print(f"  FAIL {c['name']:<20} {e}")
         return
@@ -4104,17 +4167,17 @@ def main():
     try:
         diag = {}
         jobs = fetch_jobspy(diag); found += jobs
-        src_status["Indeed/JobSpy (IE+CA+US)"] = (
+        src_status["Indeed/JobSpy (NL+BE+IE+CA+US)"] = (
             f"{src_line('indeed', len(jobs))} | "
             + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items()))
     except Exception as e:
-        src_status["Indeed/JobSpy (IE+CA+US)"] = f"skipped: {e}"
+        src_status["Indeed/JobSpy (NL+BE+IE+CA+US)"] = f"skipped: {e}"
 
     # 4. Company ATS feeds (Greenhouse/Lever/Ashby)
     ats_n = 0
     for c in companies:
         try:
-            jobs = ATS[c["ats"]](c["name"], c["slug"]); found += jobs; ats_n += len(jobs)
+            jobs = fetch_company(c); found += jobs; ats_n += len(jobs)
         except Exception:
             pass
     src_status[f"Company ATS ({len(companies)} watched)"] = src_line("ats", ats_n)

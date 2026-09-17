@@ -852,6 +852,53 @@ def test_the_dashboard_shows_both_halves_and_the_gaps():
         assert needle in page, needle
 
 
+def test_every_market_has_a_source_that_covers_it():
+    """The board was 57% London and 19% Netherlands, and that is a sourcing fact rather
+    than a market fact: Indeed, Reed, Adzuna-UK and LinkedIn all pointed at London while
+    one Adzuna feed was the whole of the Dutch coverage. A market with no source is a
+    market that cannot show up however good its jobs are."""
+    jobspy = {t["cc"] for t in scan.JOBSPY_TARGETS}
+    for cc in ("nl", "be", "ie", "ca", "us"):
+        assert cc in jobspy, cc
+    for t in scan.JOBSPY_TARGETS:
+        assert t["sites"] and t["country_indeed"] and t["currency"], t
+
+
+def test_companies_may_run_any_board_the_code_can_read():
+    """companies.json could only name greenhouse/lever/ashby, which decided which
+    EMPLOYERS could be watched: Recruitee, Workable, Personio and Teamtailor are the Dutch
+    scaleup norm, so the goal market was the one the watchlist could not reach."""
+    import findform
+    companies = json.load(open(os.path.join(os.path.dirname(__file__), "..",
+                                            "companies.json")))["companies"]
+    for c in companies:
+        assert c["ats"] in findform.BOARDS, c
+        assert c["name"] and c["slug"], c
+    # no duplicate watch entries -- a company listed twice is fetched twice every run
+    slugs = [(c["ats"], c["slug"]) for c in companies]
+    assert len(slugs) == len(set(slugs))
+    # and the goal markets are actually represented on the list
+    assert len(companies) >= 40
+    assert {"DataSnipper", "Mollie", "Qualio", "Klaviyo"} <= {c["name"] for c in companies}
+
+
+def test_fetch_company_routes_a_board_to_something_that_can_read_it():
+    """The three boards with their own fetchers keep them (they carry the description and
+    the detail URL); everything else goes through findform."""
+    seen = {}
+    real_board, real_ats = scan.fetch_board, dict(scan.ATS)
+    try:
+        scan.fetch_board = lambda name, slug, ats: seen.setdefault("generic", (name, slug, ats)) or []
+        scan.ATS["greenhouse"] = lambda name, slug: seen.setdefault("greenhouse", (name, slug)) or []
+        scan.fetch_company({"name": "Adyen", "ats": "greenhouse", "slug": "adyen"})
+        scan.fetch_company({"name": "bunq", "ats": "recruitee", "slug": "bunq"})
+    finally:
+        scan.fetch_board = real_board
+        scan.ATS.clear(); scan.ATS.update(real_ats)
+    assert seen["greenhouse"] == ("Adyen", "adyen")
+    assert seen["generic"] == ("bunq", "bunq", "recruitee")
+
+
 def test_the_dashboard_is_handed_the_market_ordering_rather_than_keeping_a_copy():
     """docs/index.html sorts by tier then score, and reads the tier table out of
     status.json for the same reason it reads gate and floor from there: a second copy in
@@ -1867,7 +1914,7 @@ def test_jobspy_targets_are_whole_countries_not_cities():
     Dublin-only narrowing the location gate used to do."""
     for t in scan.JOBSPY_TARGETS:
         assert "," not in t["location"], t["location"]
-        assert t["cc"] in ("ie", "ca", "us")
+        assert t["cc"] in ("nl", "be", "ie", "ca", "us")
         assert t["sites"] and t["currency"]
     # Google Jobs is what replaces hiring.cafe's long-tail reach in North America: it
     # indexes Greenhouse/Lever/Ashby posting pages directly.

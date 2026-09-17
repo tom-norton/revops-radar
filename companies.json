@@ -1,5 +1,5 @@
 {
-  "_comment": "Companies whose ATS boards are scanned directly, on top of Adzuna/Reed/Indeed/hiring.cafe/LinkedIn. These give clean company names and full job descriptions (better sponsor matching), and they close the Ireland gap since many US SaaS firms hire RevOps/CS in Dublin via Greenhouse/Ashby. The location filter in scan.py keeps only NL / Belgium / London / Dublin roles, so a broad list is safe. 'ats' must be greenhouse/lever/ashby; the slug is in the careers URL. Run `python scan.py --verify` to test entries. All slugs below were verified live.",
+  "_comment": "Companies whose ATS boards are scanned directly, on top of Adzuna/Reed/Indeed/hiring.cafe/LinkedIn. These give clean company names and full job descriptions (better sponsor matching), and they are a big part of the Netherlands and Ireland coverage, where the aggregator feeds are thinnest. The location filter in scan.py keeps only NL / Belgium / London / Ireland / Canada / remote-US roles, so a broad list is safe. 'ats' may be any board findform.BOARDS knows: greenhouse, ashby and lever have their own fetchers in scan.py; smartrecruiters, recruitee, workable, personio and teamtailor are read through findform.board_jobs(). The slug is in the careers URL. Run `python scan.py --verify` to test entries. Every slug below was verified live, and the NL/IE/BE block was chosen by counting how many roles each board actually had in those markets on the day it was added.",
   "companies": [
     { "name": "Adyen", "ats": "greenhouse", "slug": "adyen" },
     { "name": "MongoDB", "ats": "greenhouse", "slug": "mongodb" },
@@ -19,6 +19,33 @@
     { "name": "Udemy", "ats": "greenhouse", "slug": "udemy" },
     { "name": "GitLab", "ats": "greenhouse", "slug": "gitlab" },
     { "name": "Notion", "ats": "ashby", "slug": "notion" },
-    { "name": "OpenAI", "ats": "ashby", "slug": "openai" }
+    { "name": "OpenAI", "ats": "ashby", "slug": "openai" },
+
+    { "name": "DataSnipper", "ats": "ashby", "slug": "datasnipper" },
+    { "name": "Mollie", "ats": "ashby", "slug": "mollie" },
+    { "name": "Bynder", "ats": "ashby", "slug": "bynder" },
+    { "name": "Miro", "ats": "ashby", "slug": "miro" },
+    { "name": "Mendix", "ats": "lever", "slug": "mendix" },
+    { "name": "Nebius", "ats": "greenhouse", "slug": "nebius" },
+    { "name": "Databricks", "ats": "greenhouse", "slug": "databricks" },
+    { "name": "bunq", "ats": "recruitee", "slug": "bunq" },
+    { "name": "Channable", "ats": "recruitee", "slug": "channable" },
+    { "name": "Sana Commerce", "ats": "smartrecruiters", "slug": "sanacommerce" },
+
+    { "name": "Klaviyo", "ats": "greenhouse", "slug": "klaviyo" },
+    { "name": "Squarespace", "ats": "greenhouse", "slug": "squarespace" },
+    { "name": "Qualio", "ats": "greenhouse", "slug": "qualio" },
+    { "name": "Tines", "ats": "greenhouse", "slug": "tines" },
+    { "name": "Flipdish", "ats": "greenhouse", "slug": "flipdish" },
+    { "name": "Vanta", "ats": "ashby", "slug": "vanta" },
+    { "name": "Wayflyer", "ats": "ashby", "slug": "wayflyer" },
+    { "name": "Workhuman", "ats": "ashby", "slug": "workhuman" },
+    { "name": "Sitecore", "ats": "ashby", "slug": "sitecore" },
+    { "name": "CarTrawler", "ats": "lever", "slug": "cartrawler" },
+
+    { "name": "Showpad", "ats": "greenhouse", "slug": "showpad" },
+    { "name": "Deliverect", "ats": "lever", "slug": "deliverect" },
+    { "name": "Alan", "ats": "ashby", "slug": "alan" },
+    { "name": "Lansweeper", "ats": "recruitee", "slug": "lansweeper" }
   ]
 }
