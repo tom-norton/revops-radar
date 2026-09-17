@@ -797,6 +797,61 @@ def test_only_the_wanted_markets_ring_the_phone():
         assert scan.market_tier(market) > scan.NTFY_MAX_TIER, market
 
 
+def test_shot_and_want_split_the_same_six_numbers():
+    """Two questions the blended total cannot tell apart: can I get the interview (Shot),
+    and do I want the job (Want). Nothing new is computed -- the weights are the rubric's
+    own, renormalised within each half -- so a row scored months ago gets both."""
+    assert set(scan.SHOT_DIMS) | set(scan.WANT_DIMS) == set(scan.RUBRIC_KEYS)
+    assert not set(scan.SHOT_DIMS) & set(scan.WANT_DIMS)
+    # a flat row scores the same on both halves as it does overall
+    flat = dims(*([7] * 6))
+    assert scan.shot_want(flat) == (7.0, 7.0)
+    assert scan.weighted_total(flat) == 7.0
+    # the live case: a role Tom wants badly and would struggle to be screened for
+    stripe = dims(experience=5, skills=4, seniority=8, domain=9, location_visa=8,
+                  trajectory=9)
+    shot, want = scan.shot_want(stripe)
+    assert shot < want, (shot, want)
+    assert shot == round((5 * 25 + 4 * 20 + 8 * 15) / 60, 1)
+    assert want == round((9 * 15 + 8 * 15 + 9 * 10) / 40, 1)
+    # a row with no dimensions was never scored; 0.0 would read as a judgement
+    assert scan.shot_want({}) == (None, None)
+    assert scan.shot_want(None) == (None, None)
+
+
+def test_a_scored_row_carries_shot_want_and_the_hard_gaps():
+    """hard_gaps is the honest "would a screener stop here" signal. The model was already
+    writing these into flags as prose; asking for them as a list is what makes them
+    something the CV can be audited against."""
+    obs = dict(NO_OBS, dimensions=dims(experience=4, skills=4),
+               hard_gaps=["5+ years in a dedicated Sales Ops role", "advanced SQL required"],
+               flags=[], verdict="ok", posting_location="")
+    out = scan.parse_score_result(flag_job(), obs)
+    assert out["shot"] == scan.shot_want(out["dimensions"])[0]
+    assert out["want"] == scan.shot_want(out["dimensions"])[1]
+    assert out["hard_gaps"][0].startswith("5+ years")
+    # and an empty list is a real answer, not a missing field
+    out = scan.parse_score_result(flag_job(), dict(obs, hard_gaps=[]))
+    assert out["hard_gaps"] == []
+
+
+def test_the_scorer_is_asked_for_hard_gaps_and_can_answer():
+    """A field in the schema the prompt never explains comes back as whatever the model
+    guesses it means; a field the prompt asks for but the schema rejects fails the call."""
+    assert "hard_gaps" in scan.SCORE_SCHEMA["properties"]
+    assert "hard_gaps" in scan.SCORE_SCHEMA["required"]
+    assert "hard_gaps" in scan.score_system()
+    # required must list every property, or a strict schema rejects the response
+    assert set(scan.SCORE_SCHEMA["required"]) == set(scan.SCORE_SCHEMA["properties"])
+
+
+def test_the_dashboard_shows_both_halves_and_the_gaps():
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    for needle in ["j.shot", "j.want", "j.hard_gaps", "tag gap", "shotOnly"]:
+        assert needle in page, needle
+
+
 def test_the_dashboard_is_handed_the_market_ordering_rather_than_keeping_a_copy():
     """docs/index.html sorts by tier then score, and reads the tier table out of
     status.json for the same reason it reads gate and floor from there: a second copy in

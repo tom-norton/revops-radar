@@ -8,10 +8,12 @@
   :root{
     --teal:#117A82; --ink:#1B2224; --sub:#5D6B6E; --bg:#F7F9F9;
     --card:#FFFFFF; --line:#DCE4E4; --good:#1E874B; --warn:#B8770B; --mut:#8A9699;
+    --gap:#A8412C;
   }
   @media (prefers-color-scheme: dark){
     :root{ --ink:#E8EEEE; --sub:#93A3A5; --bg:#101617; --card:#182022;
-           --line:#263235; --teal:#2FA6AE; --good:#3FBE72; --warn:#E0A93B; --mut:#5D6B6E; }
+           --line:#263235; --teal:#2FA6AE; --good:#3FBE72; --warn:#E0A93B; --mut:#5D6B6E;
+           --gap:#E07A62; }
   }
   *{box-sizing:border-box; margin:0}
   body{background:var(--bg); color:var(--ink);
@@ -40,6 +42,14 @@
      bottom of it. Muted so it reads as "nothing here yet" rather than as a low score. */
   .score.s-none{background:transparent; border:1px dashed var(--line); color:var(--sub);
                 font-size:22px; font-weight:400}
+  /* The score and, under it, the two halves it is made of. Stacked rather than side by
+     side because the column is 58px wide on a phone and "Shot 6.2 · Want 8.5" on one line
+     wraps into nonsense there. */
+  .scorecol{display:flex; flex-direction:column; align-items:center; gap:3px;
+            flex-shrink:0; min-width:58px}
+  .sw{font-size:10.5px; line-height:1.35; color:var(--sub); text-align:center}
+  .sw b{color:var(--ink); font-weight:650}
+  .sw .lo{color:var(--warn)}
   .hd{flex:1; min-width:0}
   .title{font-weight:650; font-size:15.5px; line-height:1.35}
   .company{color:var(--sub); font-size:13px; margin-top:1px}
@@ -50,6 +60,9 @@
   .tag.spon{border-color:var(--good); color:var(--good)}
   .tag.nospon{border-color:var(--warn); color:var(--warn)}
   .tag.flag{border-color:var(--warn); color:var(--warn)}
+  /* A hard gap is not a risk to weigh, it is a stated requirement you do not meet -- the
+     thing a recruiter stops on. Its own colour so it does not read as one more caution. */
+  .tag.gap{border-color:var(--gap); color:var(--gap); font-weight:650}
   .dims{display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:11px;
         font-size:11.5px; color:var(--sub)}
   .dims b{color:var(--ink); font-weight:650}
@@ -116,6 +129,10 @@
       <input type="checkbox" id="fillableOnly">
       Auto-fillable only <span class="tag fillable" style="margin-left:4px">&check;</span>
     </label>
+    <label class="fillfilter">
+      <input type="checkbox" id="shotOnly">
+      Shot 6.5+ only <span style="color:var(--mut)">— roles you would likely get screened for</span>
+    </label>
     <div id="apply"></div>
   </div>
 
@@ -145,6 +162,25 @@ function isRecent(iso){ return ageDays(iso) <= MAX_AGE_DAYS; }
 const DIMS = [["experience","Exp"],["skills","Skills"],["seniority","Sen"],
               ["domain","Domain"],["location_visa","Loc/Visa"],["trajectory","Traj"]];
 
+// The Shot/Want split. scan.py writes `shot` and `want` onto every row it touches, so
+// normally this is just a read. The fallback covers the window between shipping the split
+// and the next scan rewriting jobs.json: the arithmetic is the rubric's own weights,
+// handed over in status.json (scan.py's SHOT_DIMS/WANT_DIMS) rather than copied here,
+// because a second copy of the weights is a copy that drifts.
+let SHOT_WANT = null;
+function shotWant(j){
+  if(j.shot != null && j.want != null) return [j.shot, j.want];
+  const d = j.dimensions, cfg = SHOT_WANT;
+  if(!d || !Object.keys(d).length || !cfg) return [null, null];
+  const half = keys => {
+    const total = keys.reduce((a,k)=>a + (cfg.weights[k]||0), 0);
+    if(!total) return null;
+    const sum = keys.reduce((a,k)=>a + (Number(d[k])||0) * (cfg.weights[k]||0), 0);
+    return Math.round(sum / total * 10) / 10;
+  };
+  return [half(cfg.shot||[]), half(cfg.want||[])];
+}
+
 function loadSet(key){
   try{ return new Set(JSON.parse(localStorage.getItem(key)||"[]")); }
   catch(e){ return new Set(); }
@@ -155,6 +191,9 @@ let appliedIds = loadSet("rr_applied");
 // Persisted like the others, but local-only on purpose: it changes what's on screen, not
 // what happened to a role, so it never needs to follow you to another device.
 let fillableOnly = localStorage.getItem("rr_fillableOnly") === "1";
+// "Only roles I could actually get an interview for." Local-only for the same reason:
+// it changes the view, not what happened to a role.
+let shotOnly = localStorage.getItem("rr_shotOnly") === "1";
 
 // A row that absorbed duplicates carries their ids in dupe_ids. Hide / Mark applied are
 // recorded against whichever id was on screen at the time, so state has to be looked up
@@ -210,6 +249,18 @@ function packetFor(j){
   L.push(isSetAside(j)
     ? "Radar score: NOT SCORED (no posting text was ever retrieved; not screened either)"
     : `Radar score: ${(j.score ?? 0).toFixed(1)}  (${dimStr})`);
+  // The same six dimensions split in two, so the skill knows which problem this role is.
+  // A high Want with a low Shot is a role to fight for on the CV; the reverse is a role
+  // to apply to quickly and not agonise over.
+  const [pShot, pWant] = shotWant(j);
+  if(pShot != null && pWant != null){
+    L.push(`Shot ${pShot.toFixed(1)} (experience, skills, seniority — can you get the interview)`,
+           `Want ${pWant.toFixed(1)} (domain, location, trajectory — do you want the job)`);
+  }
+  if((j.hard_gaps||[]).length){
+    L.push("Hard gaps (stated must-haves you do not meet — address these first):",
+           ...(j.hard_gaps||[]).map(g=>"  - " + g));
+  }
   if(j.verdict) L.push("Radar verdict: " + j.verdict);
   // UK and NL only. Ireland runs permits rather than a register, and neither North
   // American market needs sponsorship at all, so the field is noise there.
@@ -348,6 +399,20 @@ function card(j, reviewed){
     spon = `<span class="tag ${good?'spon':'nospon'}">${j.sponsor}</span>`;
   }
   const flags = (j.flags||[]).map(f=>`<span class="tag flag">${esc(f)}</span>`).join("");
+  // What the ad says it requires and the profile does not have. First in the tag row,
+  // ahead of every risk note, because it is the one thing that decides whether applying
+  // is worth the evening.
+  const gapTags = (j.hard_gaps||[]).map(g=>
+    `<span class="tag gap" title="A stated must-have in this ad that your profile does not meet"
+     >&#9888; ${esc(g)}</span>`).join("");
+  // Shot and Want, computed by scan.py from the stored dimensions. Shown under the score
+  // rather than inside the dimension strip: this is the split the decision turns on, and
+  // the strip is six numbers nobody reads at a glance.
+  const [cShot, cWant] = shotWant(j);
+  const sw = (cShot != null && cWant != null)
+    ? `<div class="sw" title="Shot: experience, skills and seniority — can you get the interview. Want: domain, location and trajectory — do you want the job."
+       ><div class="${cShot < FLOOR ? 'lo' : ''}">Shot <b>${cShot.toFixed(1)}</b></div>`
+      + `<div>Want <b>${cWant.toFixed(1)}</b></div></div>` : "";
   // Pay, which this card has never shown. `salary` is populated on a few hundred rows and
   // was rendered nowhere, so a Versapay row whose feed said 110000-130000 USD displayed
   // "comp not listed" and nothing else. Where it came from is part of the fact: a figure
@@ -436,14 +501,17 @@ function card(j, reviewed){
       </div>`;
   el.innerHTML = `
     <div class="row1">
-      <div class="score ${scoreClass(j.score)}">${s}</div>
+      <div class="scorecol">
+        <div class="score ${scoreClass(j.score)}">${s}</div>
+        ${sw}
+      </div>
       <div class="hd">
         <div class="title">${esc(j.title||"")}</div>
         <div class="company">${esc([j.company, j.location].filter(Boolean).join(" · "))}</div>
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${marketTag}${payTag}${conflictTag}${transferTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${atsTag}${spon}${rawNote}${caps}${flags}</div>
     ${dims}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
@@ -531,6 +599,10 @@ function renderAll(){
   const staleCount = jobs.filter(j=>!isRecent(j.found_at)).length;
   jobs = jobs.filter(j=>isRecent(j.found_at));
   if(fillableOnly) jobs = jobs.filter(j=>j.ats_fillable);
+  // An unscored row has no Shot, and filtering it out would hide the rows that need his
+  // eyes most. They are kept and land in their own section as always.
+  if(shotOnly) jobs = jobs.filter(j=>{ const s = shotWant(j)[0];
+                                      return s == null || s >= GATE; });
 
   // Score order, highest first, and nothing else reorders it. Auto-fillable rows used to
   // float to the top of each section, which quietly put a 6.5 above an 8.4 because one of
@@ -621,6 +693,12 @@ document.getElementById("fillableOnly").addEventListener("change", (e)=>{
   localStorage.setItem("rr_fillableOnly", fillableOnly ? "1" : "0");
   renderAll();
 });
+document.getElementById("shotOnly").checked = shotOnly;
+document.getElementById("shotOnly").addEventListener("change", (e)=>{
+  shotOnly = e.target.checked;
+  localStorage.setItem("rr_shotOnly", shotOnly ? "1" : "0");
+  renderAll();
+});
 
 document.body.addEventListener("click", (e)=>{
   const btn = e.target.closest("button[data-act]");
@@ -661,6 +739,8 @@ Promise.all([
   if(typeof allStatus.floor === "number") FLOOR = allStatus.floor;
   if(allStatus.market_tier && typeof allStatus.market_tier === "object")
     MARKET_TIER = allStatus.market_tier;
+  if(allStatus.shot_want && allStatus.shot_want.weights)
+    SHOT_WANT = allStatus.shot_want;
   jobs.sort((a,b)=> (tierOf(a) - tierOf(b)) || ((b.score??0)-(a.score??0))
                  || String(b.found_at||"").localeCompare(String(a.found_at||"")));
   document.getElementById("apply-h").textContent = `Apply — ${GATE.toFixed(1)} and up`;

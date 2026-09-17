@@ -766,6 +766,39 @@ def weighted_total(dims):
     total = sum(float(dims.get(k, 0) or 0) * w for k, _, w, _ in RUBRIC) / 100.0
     return max(0.0, min(10.0, total))
 
+# The six dimensions answer two different questions, and the weighted total blends them
+# into one number that cannot tell them apart. A Stripe GTM S&O role and a Qualio Senior
+# CSM both scored 6.5-6.8 last week: the Stripe one because Tom badly wants it and would
+# probably not get the screen (advanced SQL and BI required), the Qualio one because he
+# would likely get the screen and does not much want it. Those are opposite problems and
+# the blended score says the same thing about both.
+#
+# So the same six numbers are also reported split. Nothing new is computed and no extra
+# call is made -- the weights are the rubric's own, renormalised within each half -- which
+# is why every row already scored gets a Shot and a Want the moment this ships.
+#
+#   Shot  = can I get the interview   (experience 25, skills 20, seniority 15)
+#   Want  = do I want this role       (domain 15, location 15, trajectory 10)
+SHOT_DIMS = ("experience", "skills", "seniority")
+WANT_DIMS = ("domain", "location_visa", "trajectory")
+
+
+def shot_want(dims):
+    """(shot, want) from stored dimension scores, each 0-10 to one decimal.
+
+    (None, None) when there are no dimensions to read -- a set-aside row was never scored,
+    and a 0.0 there would read as a judgement rather than as an absence."""
+    if not dims:
+        return None, None
+    weights = {k: w for k, _label, w, _guide in RUBRIC}
+
+    def half(keys):
+        total = sum(weights[k] for k in keys)
+        return round(sum(_as_float(dims.get(k)) * weights[k] for k in keys) / total, 1)
+
+    return half(SHOT_DIMS), half(WANT_DIMS)
+
+
 def title_band(title):
     for band, rx in TITLE_BANDS:
         if rx.search(title or ""):
@@ -1058,13 +1091,14 @@ SCORE_SCHEMA = {
         "salary_max_base": {"type": "number"},
         "salary_currency": {"type": "string"},
         "posting_location": {"type": "string"},
+        "hard_gaps": {"type": "array", "items": {"type": "string"}},
         "flags": {"type": "array", "items": {"type": "string"}},
         "verdict": {"type": "string"},
     },
     "required": ["dimensions", "function_match", "company_standout",
                  "language_hard_requirement", "salary_stated", "salary_min_base",
-                 "salary_max_base", "salary_currency", "posting_location", "flags",
-                 "verdict"],
+                 "salary_max_base", "salary_currency", "posting_location", "hard_gaps",
+                 "flags", "verdict"],
     "additionalProperties": False,
 }
 
@@ -1137,6 +1171,7 @@ Alongside the dimensions, report these observations from the posting:
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
 - salary_stated / salary_min_base / salary_max_base / salary_currency: the annual base salary the posting states, as the BOTTOM and the TOP of its range, with the ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. A single figure rather than a range goes in both. If no salary is stated, set salary_stated false, both numbers 0, salary_currency "". Report only figures the POSTING states; never carry over an estimate from a job board. Reporting both halves matters: a band is only disqualifying when ALL of it is below the market's floor, so a top-of-band you leave at 0 throws away a role that pays fine at the top -- see above.
+- hard_gaps: the posting's own stated must-haves that this candidate does not meet, each quoted or paraphrased from the posting in under 12 words ("5+ years in a dedicated Sales Ops role", "advanced SQL required"). This is the screening question, not the fit question: list what a recruiter reading the CV against this ad would find missing, however much you like the rest of the role. A preference, a "nice to have", or a requirement the candidate meets through adjacent experience is NOT a hard gap. [] when there is nothing a screener would stop on -- and [] is a real answer, so do not pad it. Say each gap once; do not repeat it in flags.
 - posting_location: the work location the POSTING itself states, copied as it is written ("Toronto, ON", "Amsterdam, Netherlands", "Remote - US"). This is a transcription, not an opinion: report what the ad says even when it disagrees with the market you were given, and especially then. Give the location of the job, not the company's headquarters, and where several offices are listed give the one the role is actually based in. Use "" when the posting genuinely does not say, which is common -- do not infer one from the company, the currency or the language of the ad.
 
 The market (NL / BE / UK-London / IE / CA / US-Remote) has already been resolved in code and is given to you in the job details. Trust it for SCORING. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted. If the posting's own location contradicts that market, posting_location is where that goes and the only place it goes: report what the ad says there, score the market you were given, and let code reconcile the two. Do not mention the disagreement in a dimension score, in flags or in the verdict. Where it sits in Tom's preference ordering is the whole of the Location & Visa dimension -- see that dimension's guidance, and note that the ordering is about where he wants to live, not about which market is easiest to get hired in.
@@ -3515,11 +3550,19 @@ def parse_score_result(job, data):
     # most useful text on the card: they are the reason a 6.8 is a 6.8. The prompt asks for
     # under 25 words, so this is a guard against a runaway sentence rather than a budget.
     flags += [str(f)[:160] for f in (data.get("flags") or [])]
+    shot, want = shot_want(dims)
     return {
         # score_raw and caps_applied are still written so rows scored under the old cap
         # engine keep rendering alongside new ones. caps_applied is always empty now.
         "score": score, "score_raw": score, "caps_applied": [],
         "dimensions": dims,
+        # The same six numbers, split into "can I get the interview" and "do I want it".
+        # Derived, never reported by the model -- see shot_want().
+        "shot": shot, "want": want,
+        # What a screener would stop on, quoted from the ad. The model already wrote these
+        # into flags as prose; asking for them as a list is what makes them sortable,
+        # countable, and something the CV can be audited against.
+        "hard_gaps": [str(g)[:90] for g in (data.get("hard_gaps") or [])][:6],
         "tier": job.get("market") or "outside target markets",
         "flags": flags[:10], "verdict": str(data.get("verdict", ""))[:180],
         # What the scorer read off the posting about pay, kept on the row so the apply
@@ -4408,6 +4451,13 @@ def main():
     # promise without ever opening a browser. Applied to the whole merged list, not just
     # this run's new rows, so a row that has carried an also_seen link since before this
     # existed gets it filled in on the very next scan rather than staying blank forever.
+    # Shot and Want for every row, not just this run's. They are arithmetic over dimension
+    # scores already stored, so the 495 rows scored before this existed get them here for
+    # free rather than needing a rescore.
+    for j in merged:
+        if j.get("dimensions") and (j.get("shot") is None or j.get("want") is None):
+            j["shot"], j["want"] = shot_want(j["dimensions"])
+
     for j in merged:
         ats, fillable = submit.application_status(j)
         j["ats"] = ats
@@ -4545,7 +4595,15 @@ def main():
                "screen_model": CLAUDE_SCREEN_MODEL,
                # Same reason gate/floor are here: the dashboard reads the ordering from
                # the code rather than keeping its own copy that can drift.
-               "market_tier": MARKET_TIER},
+               "market_tier": MARKET_TIER,
+               # And the same again for the Shot/Want split. Every row gets shot and want
+               # written onto it at scan time, so the page rarely needs these -- but a row
+               # stored before the split existed has neither until the next run rewrites
+               # the file, and the page can do the arithmetic itself from here rather than
+               # showing nothing in the meantime. The weights are the rubric's, not a
+               # second set.
+               "shot_want": {"shot": list(SHOT_DIMS), "want": list(WANT_DIMS),
+                             "weights": {k: w for k, _l, w, _g in RUBRIC}}},
               open("docs/status.json", "w"), indent=1)
     if not dry:
         notify_strong_matches(scored)

@@ -29,5 +29,25 @@
   "BE": 3,
   "CA": 3,
   "US-Remote": 4
+ },
+ "shot_want": {
+  "shot": [
+   "experience",
+   "skills",
+   "seniority"
+  ],
+  "want": [
+   "domain",
+   "location_visa",
+   "trajectory"
+  ],
+  "weights": {
+   "experience": 25,
+   "skills": 20,
+   "seniority": 15,
+   "domain": 15,
+   "location_visa": 15,
+   "trajectory": 10
+  }
  }
 }
