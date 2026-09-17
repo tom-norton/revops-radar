@@ -19,6 +19,8 @@ different ways. `test_language_and_salary_floor_are_not_score_flags` guards agai
 two quietly turning back into flags on a scored row instead of the hard drop Tom asked for.
 """
 
+import contextlib
+import json
 import os
 import sys
 
@@ -1311,9 +1313,12 @@ def test_plain_csm_is_still_netherlands_only():
 # ---- salary floors
 
 
-def _obs(stated, low, cur):
-    return {"salary_stated": stated, "salary_min_base": low, "salary_currency": cur,
-            "language_hard_requirement": False}
+def _obs(stated, low, cur, high=None):
+    """A scorer observation. `high` defaults to `low`, which is both a single stated figure
+    and what a row scored before salary_max_base existed looks like."""
+    return {"salary_stated": stated, "salary_min_base": low,
+            "salary_max_base": low if high is None else high,
+            "salary_currency": cur, "language_hard_requirement": False}
 
 
 def test_us_comp_floor_drops_a_role_only_on_a_figure_stated_in_the_ad():
@@ -1322,9 +1327,77 @@ def test_us_comp_floor_drops_a_role_only_on_a_figure_stated_in_the_ad():
     stage, reason = scan.deep_score_disqualifier(
         {"market": "US-Remote"}, _obs(True, 110000, "USD"))
     assert stage == "below-comp-floor" and "130000 USD" in reason
-    # at or above the floor, and not stated at all, both survive
-    for o in [_obs(True, 130000, "USD"), _obs(True, 145000, "USD"), _obs(False, 0, "")]:
+    for o in [_obs(True, 130000, "USD"), _obs(True, 145000, "USD")]:
         assert scan.deep_score_disqualifier({"market": "US-Remote"}, o) == (None, None)
+    # A US row that states nothing is unconfirmed pay, and that is a drop rather than a
+    # survivor now: us_comp_unstated() lets a row through on a figure seen anywhere in the
+    # ad, so this is where a figure that turned out not to be a salary gets settled.
+    stage, _ = scan.deep_score_disqualifier({"market": "US-Remote"}, _obs(False, 0, ""))
+    assert stage == "us-comp-unstated", stage
+    # ...unless the FEED carried a salary, which never relied on the ad in the first place.
+    assert scan.deep_score_disqualifier(
+        {"market": "US-Remote", "salary": "$150,000"}, _obs(False, 0, "")) == (None, None)
+    # Europe is untouched: an unstated salary there is normal, not a disqualifier.
+    assert scan.deep_score_disqualifier({"market": "NL"}, _obs(False, 0, "")) == (None, None)
+
+
+def test_a_band_is_only_disqualifying_when_all_of_it_is_below_the_floor():
+    """The bug Tom caught. A posting is not an offer: $120k-$150k against a $130k floor was
+    dropped on the 120, throwing away a role where most of the band clears and the whole
+    negotiation happens inside it."""
+    straddles = _obs(True, 120000, "USD", 150000)
+    assert scan.deep_score_disqualifier({"market": "US-Remote"}, straddles) == (None, None)
+    assert scan.salary_floor_flag("US-Remote", straddles) == ""
+    # Entirely below the floor is still a drop -- no amount of negotiating reaches it.
+    stage, reason = scan.deep_score_disqualifier(
+        {"market": "US-Remote"}, _obs(True, 90000, "USD", 110000))
+    assert stage == "below-comp-floor", stage
+    assert "90000-110000" in reason and "entirely below" in reason, reason
+    # A single stated figure behaves exactly as it did before.
+    assert scan.salary_floor_flag("US-Remote", _obs(True, 110000, "USD")) != ""
+    assert scan.salary_floor_flag("US-Remote", _obs(True, 140000, "USD")) == ""
+
+
+def test_a_straddling_band_is_kept_but_flagged():
+    """Kept is not the same as silent. The bottom being under the floor is a real risk and
+    Tom is the one who decides on it, so it has to be on the card."""
+    flags = scan.score_flags({"market": "US-Remote", "title": "Revenue Operations Manager"},
+                             _obs(True, 120000, "USD", 150000))
+    assert any("starts below your" in f and "130000 USD" in f for f in flags), flags
+    # A band clearing the floor outright says nothing.
+    clear = scan.score_flags({"market": "US-Remote", "title": "Revenue Operations Manager"},
+                             _obs(True, 135000, "USD", 160000))
+    assert not any("starts below" in f for f in clear), clear
+
+
+def test_a_row_scored_before_the_band_existed_keeps_its_old_answer():
+    """salary_max_base is new. A stored row has only a bottom, and reading a missing top as
+    zero would disqualify the whole historical corpus in one pass."""
+    old_row = {"salary_stated": True, "salary_min_base": 110000, "salary_currency": "USD",
+               "language_hard_requirement": False}
+    assert scan.salary_band(old_row) == (110000.0, 110000.0)
+    assert scan.deep_score_disqualifier({"market": "US-Remote"}, old_row)[0] == "below-comp-floor"
+
+
+def test_the_ad_is_read_for_pay_before_a_us_row_is_dropped():
+    """A US ad that states its band was being dropped unread because LinkedIn has no salary
+    column and Adzuna's guess is discarded upstream. The feed's silence is not the ad's."""
+    ad = "The base salary range for this role is $120,000 - $150,000 USD plus equity."
+    assert scan.us_comp_unstated({"market": "US-Remote", "description": ad}) == ""
+    assert scan.us_comp_unstated({"market": "US-Remote", "description": "No pay here."})
+    # A feed salary still short-circuits it, and non-US markets are never asked.
+    assert scan.us_comp_unstated({"market": "US-Remote", "salary": "$140k", "description": ""}) == ""
+    assert scan.us_comp_unstated({"market": "NL", "description": "No pay here."}) == ""
+
+
+def test_pay_detection_ignores_money_that_is_not_a_salary():
+    """The window is the whole guard. An ARR number, an hourly rate and a stipend are all
+    dollar figures, and none of them is a salary."""
+    assert scan.jd_pay_figures("We passed $5,000,000 in ARR and offer $50/hour.") == []
+    assert scan.jd_pay_figures("A $2,500 learning stipend and a 401(k).") == []
+    assert scan.jd_pay_figures("Base: $130,000 to $165,000.") == [130000.0, 165000.0]
+    assert scan.jd_pay_figures("Range $120K-$150k.") == [120000.0, 150000.0]
+    assert scan.jd_pay_figures("") == []
 
 
 def test_no_salary_floor_guesses_across_currencies_or_from_an_estimate():
@@ -2064,20 +2137,79 @@ def test_the_search_uses_the_same_title_gate_as_everything_else():
     assert findform.TITLE_MATCH_MIN >= 0.85
 
 
-def test_the_search_is_spent_only_on_rows_that_won_a_scoring_slot():
-    """It is the one place that pays for EVIDENCE rather than judgement, so it must sit in
-    pass B after the Haiku screen and the priority sort -- never on a row about to be
-    killed or deferred."""
+def test_the_search_is_the_last_thing_tried_before_a_row_is_set_aside():
+    """It used to sit in pass B, spent only on rows that had survived the screen and won a
+    scoring slot. That cannot survive setting stubs aside: a row with no text no longer
+    reaches pass B at all, so the search would never run for exactly the rows it exists
+    for. It now sits at the end of pass A's recovery chain -- after the free routes, before
+    the row is given up on."""
     src = open(os.path.join(os.path.dirname(__file__), "..", "scan.py"),
                encoding="utf-8").read()
-    passb = src[src.index("# PASS B: deep score"):]
-    search_at = passb.index("search_jd_url(")
-    assert passb.index("survivors.sort(") < search_at
-    # the budget check comes first, so a row past the cap never triggers a search
-    assert passb.index("len(scored) >= MAX_SCORED_PER_RUN") < search_at
-    # and the disqualifiers are re-run on whatever comes back
-    assert "says_no_sponsorship(desc)" in passb
-    assert "requires_other_language(desc)" in passb
+    passa = src[src.index("for j in new_jobs[:MAX_SCREENED_PER_RUN]"):
+                src.index("# PASS B: deep score")]
+    search_at = passa.index("search_jd_url(")
+    # the free routes are exhausted first: the stored/fetched text, then the company board
+    assert passa.index("fill_description(j)") < search_at
+    assert passa.index("rescue_description(") < search_at
+    # and it runs before the row can be set aside, or the budget would never be spent
+    assert search_at < passa.index("set_aside.append(")
+    # the disqualifiers read whatever it recovered, so they need no second run of their own
+    assert search_at < passa.index("says_no_sponsorship(")
+    assert search_at < passa.index("requires_other_language(")
+
+
+def test_a_row_with_no_posting_is_set_aside_rather_than_scored_or_dropped():
+    """Tom's call, and the two halves matter equally. Not scored: a number built on a title
+    and a location is a different kind of object from one built on a posting, and ranking
+    them together makes the list lie. Not dropped: the hard disqualifiers could not run on
+    text that short, so the role is unexamined, not rejected."""
+    src = open(os.path.join(os.path.dirname(__file__), "..", "scan.py"),
+               encoding="utf-8").read()
+    passa = src[src.index("for j in new_jobs[:MAX_SCREENED_PER_RUN]"):
+                src.index("# PASS B: deep score")]
+    aside = passa.index("set_aside.append(")
+    # before the screen and before any scoring, so neither model is ever paid for a stub
+    assert aside < passa.index("screen_job(")
+    assert "score_job(" not in passa
+    # and it is not a drop: no record_drop between the sponsor check and the set-aside
+    branch = passa[passa.index('if is_thin(j["description"]):'):aside]
+    assert "record_drop(" not in branch, branch
+    # the marker the dashboard reads, via the one shape both callers share
+    assert "as_set_aside(j)" in branch
+    assert scan.as_set_aside({"market": "NL", "score": 8.2})["evidence"] == "thin"
+
+
+def test_set_aside_leaves_nothing_of_the_score_behind():
+    """A stale score's supporting detail next to "not scored" is worse than either alone."""
+    row = scan.as_set_aside({"market": "NL", "score": 8.2, "score_raw": 8.2,
+                             "dimensions": {"experience": 7}, "found_at": "2026-09-01",
+                             "comp": {"stated": True, "min_base": 90000},
+                             "market_conflict": {"stated": "Austin, TX"},
+                             "flags": ["title band: analyst"], "verdict": "Looks good."})
+    assert row["score"] is None and row["score_raw"] is None
+    assert row["dimensions"] == {} and row["flags"] == [scan.SET_ASIDE_FLAG]
+    assert "comp" not in row and "market_conflict" not in row
+    # found_at drives the 7-day age filter; refreshing it would resurrect expired postings
+    assert row["found_at"] == "2026-09-01"
+
+
+def test_a_scored_stub_already_on_the_dashboard_is_converted():
+    """The scan stops producing these, but a scored stub is carried forward verbatim by
+    every later run, so without this an 8.2 built on 54 characters sits there until it ages
+    out. Only rows that are thin right now, and only ones that were actually scored."""
+    now = scan.datetime.now(scan.timezone.utc)
+    fresh = (now - scan.timedelta(days=1)).isoformat()
+    rows = [
+        {"id": "stub", "found_at": fresh, "description": "x" * 54, "score": 8.2},
+        {"id": "real", "found_at": fresh, "description": "x" * 4000, "score": 7.1},
+        {"id": "already-aside", "found_at": fresh, "description": "x" * 54, "score": None},
+        {"id": "stale", "found_at": (now - scan.timedelta(days=30)).isoformat(),
+         "description": "x" * 54, "score": 6.0},
+    ]
+    hit = scan.set_aside_thin(rows, 7, now=now)
+    assert [j["id"] for j in hit] == ["stub"], [j["id"] for j in hit]
+    assert rows[0]["score"] is None and rows[1]["score"] == 7.1
+    assert rows[3]["score"] == 6.0          # outside the window, left alone
 
 
 def test_the_search_budget_is_small_and_bounded():
@@ -2305,6 +2437,158 @@ def test_backfill_survives_a_fetcher_that_raises():
         raise RuntimeError("connection reset")
     assert scan.backfill_row({"url": "https://dead", "description": "x" * 1200,
                               "desc_chars": 8000}, boom) == ""
+
+
+def test_a_work_mode_field_only_ever_speaks_for_a_us_row():
+    """The leak, and its guard rails. market_of() can only look inside the location string,
+    and almost no source puts the work mode there -- so a US row is gated on location plus
+    work mode. Europe and Canada are untouched: remote wording next to a bare European
+    country is how remote-EMEA reqs get REJECTED, so tagging one would drop a real role."""
+    assert scan.market_of("", scan.gate_location("Grand Rapids, MI", "Remote")) == "US-Remote"
+    assert scan.market_of("", scan.gate_location("New York, NY", "Remote")) == "US-Remote"
+    # onsite stays out -- the tag states the fact, it does not assume it
+    assert scan.market_of("", scan.gate_location("New York, NY", "Onsite")) is None
+    # Canada accepts remote and onsite alike, so the tag could only do harm
+    assert scan.gate_location("Toronto, ON", "Remote") == "Toronto, ON"
+    # Europe: untagged, so these keep resolving exactly as they did
+    for loc in ("Amsterdam", "Ireland", "London", "Brussels"):
+        assert scan.gate_location(loc, "Remote") == loc, loc
+    assert scan.market_of("", scan.gate_location("Ireland", "Remote")) == "IE"
+    # no work mode, no change, whatever the row is
+    assert scan.gate_location("New York, NY", "") == "New York, NY"
+
+
+def test_the_us_hiringcafe_searches_already_asked_for_remote():
+    """Those rows are remote BY CONSTRUCTION -- hiring.cafe applied the filter at source --
+    and the pipeline was re-deriving it from a location string that never carried it. If
+    this ever returns "" for a US search, the US funnel is back to zero."""
+    for label in ("us-revops", "us-cs"):
+        search = scan.APIFY_HIRINGCAFE_SEARCHES[label]
+        assert scan.hc_search_work_mode(search) == "Remote", label
+    # and the European searches must never come back claiming remote: they pass
+    # ("Hybrid", "Onsite", "Field"), and a mixed search says nothing about a single row
+    for label in ("revops", "cs-eu-ca", "cs-nl"):
+        assert scan.hc_search_work_mode(scan.APIFY_HIRINGCAFE_SEARCHES[label]) == "", label
+    # a search with no locations at all claims nothing either
+    assert scan.hc_search_work_mode({}) == ""
+    assert scan.hc_search_work_mode({"locations": [{"workplace_types": ["Remote"]},
+                                                   {"workplace_types": ["Hybrid"]}]}) == ""
+
+
+def test_a_rows_own_work_mode_is_preferred_and_absence_costs_nothing():
+    """hiring.cafe's key for this is not pinned by a fixture, so the row field REFINES the
+    search-level answer rather than being relied on. A missing key returns "" and the
+    search's guarantee still stands."""
+    assert scan.hc_row_work_mode({"workplace_type": "Remote"}) == "Remote"
+    assert scan.hc_row_work_mode({"formatted_workplace_type": "Hybrid"}) == "Hybrid"
+    assert scan.hc_row_work_mode({"workplace_types": ["Onsite"]}) == "Onsite"
+    # ambiguous or absent says nothing rather than guessing
+    assert scan.hc_row_work_mode({"workplace_types": ["Remote", "Hybrid"]}) == ""
+    assert scan.hc_row_work_mode({}) == ""
+    assert scan.hc_row_work_mode({"workplace_type": ""}) == ""
+
+
+@contextlib.contextmanager
+def _patched(obj, name, value):
+    """Swap one attribute for the body of a test and put the original back afterwards, so a
+    failing assertion cannot leave scan.get() stubbed for every test that runs after it."""
+    old = getattr(obj, name)
+    setattr(obj, name, value)
+    try:
+        yield
+    finally:
+        setattr(obj, name, old)
+
+
+def test_a_stub_asks_the_duplicates_it_absorbed_for_the_posting():
+    """The fix this was all for. Dedupe collapses copies BEFORE any description is fetched
+    and picks the winner on source rank, so a revopsroles stub outranks the hiring.cafe row
+    carrying the employer's own Ashby link. The link survives on `also_seen`; this is the
+    row finally asking it for the ad."""
+    calls = []
+    real = "a real posting. " * 200
+    def fake_get(url, **kw):
+        calls.append(url)
+        class R:
+            status_code = 200
+            text = ('<script type="application/ld+json">'
+                    + json.dumps({"@type": "JobPosting", "description": real})
+                    + "</script>") if "ashbyhq" in url else "<html>challenge</html>"
+            def raise_for_status(self): pass
+        return R()
+    with _patched(scan, "get", fake_get):
+        got = scan.fill_description({
+            "url": "https://revopsroles.com/jobs/abc", "source": "revopsroles",
+            "description": "Category: RevOps; Seniority: Senior",
+            "also_seen": [{"source": "hiring.cafe",
+                           "url": "https://jobs.ashbyhq.com/deepl/f232dbed"}],
+        })
+    assert not scan.is_thin(got), len(got)
+    assert any("ashbyhq" in u for u in calls), calls
+
+
+def test_duplicate_fallback_only_runs_when_the_row_is_still_thin():
+    """A row that already has the ad must not spend a request on its duplicates. The whole
+    point of doing this at the end of fill_description() rather than the start."""
+    calls = []
+    def fake_get(url, **kw):
+        calls.append(url)
+        raise AssertionError("should not fetch")
+    with _patched(scan, "get", fake_get):
+        got = scan.fill_description({
+            "url": "https://x/1", "source": "linkedin",
+            "description": "y" * (scan.MIN_DESC_CHARS + 10),
+            "also_seen": [{"source": "adzuna", "url": "https://adzuna/1"}],
+        })
+    assert len(got) == scan.MIN_DESC_CHARS + 10
+    assert calls == []
+
+
+def test_duplicate_fallback_skips_the_row_own_url_and_is_bounded():
+    """A duplicate pointing back at the winner's own link buys nothing, and the budget is a
+    budget: also_seen is ordered as dedupe absorbed it, not by how likely each is to answer."""
+    tried = []
+    def fake_fill(job):
+        tried.append(job["url"])
+        return ""
+    with _patched(scan, "fill_description", fake_fill):
+        scan.fill_from_duplicates({
+            "url": "https://same",
+            "also_seen": [{"source": "a", "url": "https://same"},
+                          {"source": "b", "url": "https://1"},
+                          {"source": "c", "url": "https://2"},
+                          {"source": "d", "url": "https://3"},
+                          {"source": "e", "url": "https://4"}],
+        })
+    assert "https://same" not in tried, tried
+    assert len(tried) <= scan.MAX_ALSO_SEEN_FETCHES, tried
+
+
+def test_backfill_targets_a_stub_that_absorbed_a_duplicate():
+    """A stub with a folded-away copy has somewhere new to look; one without does not. That
+    qualifier is the difference between healing the dashboard and re-requesting empty pages."""
+    now = scan.datetime.now(scan.timezone.utc)
+    fresh = (now - scan.timedelta(days=1)).isoformat()
+    rows = [
+        {"id": "stub-alone", "found_at": fresh, "description": "x" * 54, "desc_chars": 54},
+        {"id": "stub-with-dupe", "found_at": fresh, "description": "x" * 54,
+         "desc_chars": 54, "also_seen": [{"source": "adzuna", "url": "https://a/1"}]},
+    ]
+    got = [j["id"] for j in scan.backfill_targets(rows, 7, now=now)]
+    assert got == ["stub-with-dupe"], got
+
+
+def test_backfill_keeps_asking_until_a_stub_has_a_real_posting():
+    """A stub's desc_chars is 54, so "as long as the scorer saw" was satisfied by the first
+    fetcher that returned anything at all and the row stopped while still holding a stub."""
+    tried = []
+    def fake(job):
+        tried.append(job["url"])
+        return "short" if len(tried) == 1 else "w" * 4000
+    got = scan.backfill_row({"url": "https://advert", "apply_url": "https://board",
+                             "description": "x" * 54, "desc_chars": 54}, fake)
+    assert len(tried) == 2, tried
+    assert not scan.is_thin(got), len(got)
 
 
 def _run():

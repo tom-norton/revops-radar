@@ -96,9 +96,18 @@ Cloudflare** below.
    posting should be. Scoring that is close to worthless — a stub says nothing a title does
    not, and measurably scored *higher* than real postings (6.03 vs 5.78 mean, 22 of 59
    clearing the gate) because a silent ad has nothing in it to count against. So the title
-   and company are used to go and find the real ad elsewhere; see step 12b below. Whatever
-   survives that unfound reaches the scorer labelled as a stub rather than dressed up as an
-   ad.
+   and company are used to go and find the real ad elsewhere; see steps 12a–12c below.
+   Whatever survives that unfound reaches the scorer labelled as a stub rather than dressed
+   up as an ad.
+   **What was actually broken was the plumbing, not the source.** All 34 revopsroles rows on
+   the dashboard were stubs, and the reason was one line in `_row_rank`: dedupe runs *before*
+   any description is fetched and picks a winner on source rank, where revopsroles outranks
+   hiring.cafe and LinkedIn. So the stub won and the row it folded away — carrying the
+   employer's own Ashby, Greenhouse, SmartRecruiters or Workable link — was discarded. The
+   JD was never missing from the internet; it was thrown away at the moment of dedupe, and
+   every rescue downstream then paid board probes and web searches hunting for a link the
+   row had already been handed. 19 of the 34 carried one; asking it recovers the full ad for
+   18 of them, 2,371–12,255 characters against the 36–57 they had. Step 12a.
    The digest carries work mode as a *tag*, not in the location, and that tag is folded
    into what the location gate sees **for US rows only** — remote is the requirement there,
    whereas in Europe remote wording next to a bare country is how remote-EMEA reqs get
@@ -106,6 +115,29 @@ Cloudflare** below.
 
 **Filtering:**
 8. A free **title + location filter** drops anything off-function or off-market before a token is spent.
+8b. **A source that states the work mode in a field gets to use it** (`gate_location()`).
+    `market_of()` can only look inside the location string, and US remote is the one market
+    where that matters: remote is the *requirement* there, and almost no source writes it
+    into the location. hiring.cafe sends `Grand Rapids, MI` for a role its own search
+    already filtered to Remote. The result was a run taking 360 raw Adzuna US rows, 80
+    Indeed, ~70 hiring.cafe and LinkedIn's entire US geoId and keeping **one** — from
+    revopsroles, the only source whose work-mode tag had been wired in. One source had the
+    plumbing, one source produced output.
+    So the work mode is appended to what the **gate** sees, never to the location stored on
+    the row. **US only**, and that restriction is the whole point: in Europe remote wording
+    next to a bare country is how remote-EMEA reqs get *rejected*, so tagging an "Ireland"
+    row would drop a real Irish role, and Canada accepts remote and onsite alike so the tag
+    could only do harm.
+    For hiring.cafe the fact comes from the **search itself** — `us-revops` and `us-cs` set
+    `workplace_types: ["Remote"]`, so their rows are remote by construction and
+    `hc_search_work_mode()` reads that off the query rather than guessing. A row-level field
+    refines it where hiring.cafe provides one, but nothing depends on that key existing.
+    **LinkedIn, Adzuna and Indeed cannot be fixed this way**, and it is worth being plain
+    about it: LinkedIn's guest cards carry no work-mode field at all and its `f_WT` filter
+    is ignored by that endpoint (remote-only and onsite-only return the identical ten job
+    IDs — verified), while Adzuna and JobSpy have no such field either. Matching on the word
+    "remote" in the title would be a poor substitute, since titles rarely carry it. Those
+    three need the work mode read off the **posting**, which is a separate change.
 9. An **age filter** drops anything older than 7 days when the source gives a posted date.
 10. **Cross-source, cross-run dedupe** collapses the same role found via multiple sources
     or on different days into one dashboard entry — before it is screened or scored, so a
@@ -150,8 +182,19 @@ Cloudflare** below.
     in JavaScript, so scraping the page returns furniture and no JSON-LD), or schema.org
     `JobPosting` markup, whichever returns most. Adzuna's own 400-character summaries get
     upgraded to the full ad this way too.
-12b. When that still comes back thin — a revopsroles stub, or a feed whose link is dead —
-    the **company's own ATS board is searched by name**: `rescue_description()` probes the
+12a. When that comes back thin, the row is asked **what its own duplicates know** before
+    anything is searched for. Dedupe collapses every copy of a role into one row *before*
+    any description is fetched and picks the survivor on source rank, not on what it can
+    tell us about the job — so the winner is routinely a stub while the copy it folded away
+    was pointing at the employer's own Ashby/Greenhouse/SmartRecruiters/Workable posting.
+    `absorb_duplicate()` already keeps those links on the winner as `also_seen`, so
+    `fill_from_duplicates()` costs nothing to run and needs no lookup: on the 34 revopsroles
+    rows it was written for, 19 carried a link and **18 came back with the full ad**. This
+    is the same `also_seen` field the apply-link resolver reads (see *The record itself is
+    checked before any of that*) — it was answering "where do I apply" and not being asked
+    "what does it say".
+12b. When *that* still comes back thin — a stub with no duplicate, or a feed whose link is
+    dead — the **company's own ATS board is searched by name**: `rescue_description()` probes the
     eight boards in `findform.BOARDS` for the employer, matches the posting by title, and
     takes the text off the board directly. Free, so it runs in stage 1 before anything is
     screened, capped at `MAX_JD_RESCUES_PER_RUN = 12` rows a run. It is **stricter about
@@ -159,7 +202,10 @@ Cloudflare** below.
     because a title match alone is good enough to *apply* with (you see the role before you
     send anything) but not good enough to *score* on — the wrong city's copy of a role would
     silently answer the location question. Worth being honest about the yield: this only
-    helps a company that has a public board, which is **2 of the 32** revopsroles stubs.
+    helps a company that has a public board, which is **3 of the 34** revopsroles stubs —
+    and all three are ones 12a had already recovered for free, so on the current dashboard
+    this step adds nothing the duplicates had not already given. It earns its place on the
+    rows that arrive with no duplicate at all.
 12c. For the rest, the posting is **web-searched, and the result is verified in code** —
     the only place in the pipeline that spends tokens to get *evidence* rather than to form
     a judgement, so it is priced like a last resort: `MAX_JD_SEARCHES_PER_RUN = 3` rows a
@@ -172,11 +218,26 @@ Cloudflare** below.
     without both.** A search that finds the wrong posting costs a refused match and a row
     that stays thin, which is the state it was already in, rather than a confident score
     built on another role's requirements.
-12d. Anything still thin reaches the scorer marked **`EVIDENCE: THIN`** instead of being
-    handed a 50-character summary in the shape of a description. The prompt tells it to
-    treat that as a real constraint: score only what is stated, do not fill the gap with
-    what a role of that title usually involves, name the missing evidence in the verdict,
-    and understand that 5–6 is the honest range for a row nobody has actually read.
+12d. Anything still thin is **set aside, not scored and not dropped** — the one outcome
+    that says what is actually true about it. It used to be scored under an `EVIDENCE: THIN`
+    warning, and that was the wrong shape of answer: a number produced from a title, a
+    company and a location is not a *worse* score, it is a different kind of object, and
+    ranking it against scores built on real postings makes the list lie in both directions.
+    A stub scored 8.2 sat above real 7s it should not outrank; a stub scored 5.2 was a role
+    that never got looked at on evidence that could not support the judgement. It was also
+    paying a Haiku screen and an Opus call per row to say nothing.
+    Not *dropped* either, and that half matters as much. A drop means "ruled out", and
+    nothing about these rows has been ruled out — the two hard disqualifiers in step 13
+    need posting text to fire, so on a stub neither ran. The role is **unexamined, not
+    rejected**. It goes to the dashboard's own **"unscored"** section carrying everything
+    that is known (title, company, location, salary, sponsor badge, and an apply link the
+    board lookup goes and finds for it), with a dash where the score would be rather than a
+    `0.0`, for Tom to judge by eye. The status footer counts them on their own line, because
+    this number climbing is the signal that 12a–12c have stopped working.
+    Rows already on the dashboard that were scored this way are converted by
+    `scan.py --backfill-jd`, after it has tried to recover their ad. On the current corpus
+    that is **62 rows across 45 days** — 34 revopsroles, 16 Adzuna and 12 hiring.cafe, so
+    this was never only a revopsroles problem.
 13. Two **hard disqualifiers are then read off the full text in code, before either model
     call**: an ad that rules out visa sponsorship, and an ad that requires fluency in a
     language other than English. Both drop the job and log the ad's own sentence to
@@ -185,7 +246,22 @@ Cloudflare** below.
     ever sees a sampled copy of the posting. They also **re-run on any text recovered by 12b
     or 12c**, since a stub is too short for either to fire — without that, a role the
     pipeline would have refused had its ad arrived by the ordinary route would get scored
-    just because the ad turned up late.
+    just because the ad turned up late. (They read whatever 12a–12c recovered because all
+    three now run *before* this step, rather than 12c running after the screen and needing
+    its own second pass.)
+13c. **The US "confirmed pay" rule asks the ad, not the feed.** A US role is only worth
+    taking at pay Tom can see, so a US row with no salary is dropped — but reading "no
+    salary *field*" as "no salary" made that a filter on which source found the role.
+    LinkedIn publishes no salary column at all and Adzuna's figures are mostly modelled
+    estimates that `adzuna_salary()` discards, so a US ad that states its band in the
+    posting — which US ads increasingly must, under pay-transparency laws — was dropped
+    unread. `us_comp_unstated()` now scans the description for a pay figure first
+    (`jd_pay_figures()`, windowed to 40k–1M so an ARR number, an hourly rate or a $2,500
+    stipend is not mistaken for a salary) and lets the row through if it finds one. The
+    rule itself is unchanged: the deep scorer reads the real numbers, and
+    `deep_score_disqualifier()` drops the row there if it turns out the posting states no
+    salary after all. A false positive in the regex costs one step; a false negative cost a
+    real role, silently.
 
 13b. **A feed can be wrong about where a job is**, and hiring.cafe was: it put a Canadian
     role in Dublin. That is not a cosmetic label, because the market picks the CV's contact
@@ -210,8 +286,8 @@ Cloudflare** below.
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout.
 16. **Two more hard disqualifiers, this time from what Opus reports** rather than a text
-    match: a stated salary below the market's visa floor, and a posting that makes a
-    non-English language a hard requirement. These catch what the regex checks in step 13
+    match: a stated salary band entirely below the market's floor, and a posting that makes
+    a non-English language a hard requirement. These catch what the regex checks in step 13
     miss — an oddly-worded requirement, a salary buried in prose — by actually reading the
     posting instead of matching a sentence. `deep_score_disqualifier()` drops the role the
     same way steps 12–13 do: not scored, not shown, logged to `docs/excluded.json` under
@@ -220,6 +296,17 @@ Cloudflare** below.
     are discarded** (`salary_is_predicted`), because they are modelled from the title and
     location rather than published by the employer, and a GBP figure is never compared
     against a EUR floor.
+    **The top of the band decides, not the bottom.** This read the bottom, and a posting is
+    not an offer: `$120,000 - $150,000` against the $130,000 US floor was dropped outright
+    on the 120, even though most of that band clears the floor and the entire negotiation
+    happens inside it. A band is disqualifying only when **all** of it is below the floor —
+    then no amount of negotiating reaches it, and that is the fact worth acting on. A band
+    that straddles the floor is kept and **flagged** on the card (`band 120000-150000 USD
+    starts below your 130000 USD floor`), so Tom sees the risk instead of never seeing the
+    role. Opus now reports `salary_max_base` alongside `salary_min_base` for this; a row
+    scored before that field existed falls back to its bottom figure, which reproduces the
+    old answer exactly rather than reading a missing top as zero and disqualifying the
+    whole stored corpus in one pass.
 17. **The score itself is computed in Python**, not by the model, for every role that
     survives to be scored — `weighted_total()` does the arithmetic, so the number is
     reproducible from the six dimension scores instead of being whatever total the model
@@ -1036,5 +1123,13 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   as nobody was relying on it. If a digest stops arriving or its markup changes, this source
   goes quiet the same way the others do; the footer names each email separately so two
   alerts read as two, and reports how many rows carried a salary.
+  **The site itself is closed to this pipeline and will stay closed.** Every path on
+  `revopsroles.com` returns Vercel's challenge to a datacenter IP — job pages, `/api/*`,
+  even `/robots.txt` — so the "apply to this job" link that leads to the real ATS cannot be
+  read from a runner, and no amount of user-agent work changes that: the block is on the IP,
+  not the client. That makes the digest a **pointer** permanently, and the value of the
+  source is entirely in what it points at. Dropping it would cost the 15 of 34 current rows
+  that no other source carried; keeping it is only defensible because 12a, 12b and 12c go
+  and fetch the ad the digest cannot give.
 - The status footer at the bottom of the dashboard shows exactly what each source did each run —
   check it if results look thin.
