@@ -6300,7 +6300,9 @@
   "found_at": "2026-09-17T08:39:31.893983+00:00",
   "ats": "rippling",
   "ats_fillable": false,
-  "apply_link": "company ATS"
+  "apply_link": "company ATS",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "li-4466832417",
@@ -6970,7 +6972,9 @@
   "ats": "",
   "ats_fillable": false,
   "apply_link": "company ATS",
-  "transfer_markets": "IE, UK-London, CA"
+  "transfer_markets": "IE, UK-London, CA",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "li-4455912079",
@@ -7470,7 +7474,9 @@
   "found_at": "2026-09-17T08:41:50.681617+00:00",
   "ats": "ashby",
   "ats_fillable": true,
-  "apply_link": "auto-fillable"
+  "apply_link": "auto-fillable",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "li-4467247477",
@@ -7518,7 +7524,8 @@
   "apply_link": "aggregator only",
   "dupe_ids": [
    "az-ca-5885873268",
-   "li-4467283794"
+   "li-4467283794",
+   "li-4468611024"
   ],
   "also_seen": [
    {
@@ -7528,6 +7535,10 @@
    {
     "source": "linkedin",
     "url": "https://www.linkedin.com/jobs/view/4467283794"
+   },
+   {
+    "source": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/4468611024"
    }
   ]
  },
@@ -9408,7 +9419,9 @@
   "ats": "greenhouse",
   "ats_fillable": true,
   "apply_link": "auto-fillable",
-  "transfer_markets": "CA"
+  "transfer_markets": "CA",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "hc-rippling___orchestry-software-inc___17416efa-dac9-4e64-95b8-",
@@ -10429,7 +10442,9 @@
   "found_at": "2026-09-17T08:40:28.686309+00:00",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "company ATS"
+  "apply_link": "company ATS",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "li-4468278549",
@@ -10827,6 +10842,53 @@
   "ats_fillable": false,
   "dupe_ids": [],
   "also_seen": [],
+  "apply_link": "aggregator only"
+ },
+ {
+  "id": "az-gb-5887475580",
+  "company": "Perk",
+  "title": "Senior GTM Engineer",
+  "location": "London, UK",
+  "country": "gb",
+  "market": "UK-London",
+  "url": "https://www.adzuna.co.uk/jobs/details/5887475580?utm_medium=api&utm_source=7c8a497a",
+  "source": "adzuna",
+  "description": "About Us \nPerk (formerly TravelPerk) is the intelligent platform for travel and spend management. Built to tackle the time-consuming, manual work that gets in the way of real work, our tools automate everything from travel bookings to expenses, invoice processing, and more. By eliminating this shadow work that wastes hours, erodes morale, and saps innovation, we're on a mission to power real work, with real impact.\nWe're trusted by more than 12,000 companies worldwide, including On Running, Breitling, and Fabletics, and we're tackling the 7 hours of lost productivity per employee each week, a $1.7 trillion problem.\nFounded in 2015, Perk has grown into a global company of more than 1,800 people across 12 offices globally, with headquarters in London and Boston. We combine innovation, control, and simplicity to transform how businesses work and how people feel at work.\nAt Perk, we're driven by our values, like being an owner, delivering a 7-star experience, and working as one team. We value curiosity, purpose, and mindset, not just knowledge, to unlock the power in your potential. Our talent team brings together leading minds from the travel, fintech, and SaaS industries, representing over 70 countries. If you're excited about having a real impact and shaping how millions of people experience work, we'd love you on the team.\nVisit www.perk.com to learn more.\n The Role \nPerk is building a modern, AI-powered outbound and pipeline generation motion in close partnership with Sales and Marketing leadership. The Revenue Systems and GTM Engineering function sits at the centre of this transformation, designing and operating the data infrastructure, Clay-based enrichment systems, and AI-driven workflows that enable our revenue teams to execute at scale.\nThis is not a traditional RevOps or systems admin role. The Senior GTM Engineer is a hands-on builder: someone who constructs sophisticated Clay workflows from scratch, engineers AI-powered enrichment pipelines, and translates signal-based prospecting strategies into production-ready systems. As AI continues to reshape B2B sales, this role is responsible for staying ahead of the curve and identifying where LLMs, AI agents, and intelligent automation can replace manual effort and improve outbound precision.\nThe role reports to the Senior Manager, Revenue Systems, and works closely with the central GTM Engineering team, Revenue Operations, and Sales leadership. It offers a direct, visible impact on how Perk builds and scales its commercial engine.\n What You\u2019ll Do \n Clay Engineering & AI-Powered Outbound Infrastructure \nOwn the design, build, and maintenance of Clay tables, waterfall enrichment flows, and AI column logic that power Perk's outbound engine.\nEngineer multi-step Clay workflows using webhooks, HTTP API integrations, and conditional branching to automate account and contact sourcing at scale.\nBuild and iterate on AI prompt layers within Clay using LLM columns to generate personalised outreach snippets, research account context, and qualify leads programmatically.\nConstruct and maintain signal-based prospecting systems that ingest buying triggers (hiring signals, funding events, intent data) and route them into prioritised Clay tables for Sales activation.\nIntegrate Clay with Salesforce, Outreach, and data providers (Clearbit, Apollo, LinkedIn, PredictLeads, and others) to maintain clean, enriched, and timely GTM data.\n AI Workflow Design & Automation \nEvaluate and implement AI tooling, including LLM-based research agents, AI SDRs, and prompt-engineered enrichment flows, to scale outbound relevance without scaling headcount.\nDesign and maintain Outreach sequences that incorporate AI-generated personalisation, ensuring high-volume dialling and email campaigns feel 1:1 at scale.\nIdentify and automate repetitive GTM operations (list building, data hygiene, routing, deduplication) using Clay, Make, and custom API scripts.\nMaintain a working knowledge of the AI GTM vendor landscape and bring forward well-reasoned recommendations on new tooling.\n Data Quality & Enrichment Architecture \nOwn TAM sourcing and enrichment workflows, building waterfall logic that sequences providers (e.g. Clearbit -> Fullenrich -> LinkedIn) to maximise contact coverage and data completeness. This includes engineering matching logic and scoring systems to accurately identify net-new accounts against existing CRM data (using identifiers like domain, LinkedIn, and country) before routing them to Sales.\nMaintain accurate account and contact data across Salesforce and connected GTM tools, with automated hygiene rules to catch decay before it reaches Sales.\nDefine and enforce data quality standards for ICP segmentation, territory assignment, and pipeline attribution.\n GTM Systems & Sales Productivity \nConfigure and maintain the core GTM stack (Salesforce, Outreach, Gong, Clay) to support high-volume outbound activity and ambitious pipeline targets.\nPartner directly with Sales to diagnose productivity bottlenecks and build systems solutions, from routing logic to sequence architecture to dialler integrations.\nRapidly troubleshoot system and workflow failures to minimise lost selling time during core business hours.\n Cross-Functional Collaboration & Roadmap Execution \nServe as the primary systems contact for Revenue Systems and GTM Engineering support, owning issue resolution end-to-end.\nExecute against the Revenue Systems roadmap in partnership with the Senior Manager and central GTM Engineering team.\nShare learnings, workflow templates, and Clay builds with the global GTM Engineering team to drive consistency and compound improvement across regions.\nProvide ground-level feedback to inform roadmap prioritisation, surfacing patterns in what's breaking, slowing, or blocking revenue teams.\n What We\u2019re Looking For \n Must-Have \n6+ years in GTM Engineering, Revenue Operations, or Sales Operations in a B2B SaaS environment, with a strong technical orientation.\nHands-on Clay expertise; you have built complex Clay tables, waterfall enrichment flows, webhook integrations, and AI column prompts in a production environment, not just experimented with the tool.\nDirect experience applying AI to GTM workflows: prompt engineering for LLM-based enrichment, AI-powered personalisation at scale, or building/evaluating AI SDR tooling.\nSalesforce proficiency: building and maintaining custom objects, flows, reports, and data integrity logic.\nFamiliarity with sales engagement platforms (Outreach or SalesLoft) and their integration with CRM and enrichment tooling.\nAbility to work with APIs, webhooks, and lightweight automation tools (Make, Zapier, or equivalent) without requiring engineering support for every integration.\nStrong data instincts: you build systems that keep data clean, catch decay early, and ensure Sales always operates from a high-quality foundation.\n Strong Advantage \nExperience building signal-based outbound systems using intent data, hiring signals, or funding triggers surfaced through Clay or similar infrastructure.\nFamiliarity with data providers in the GTM stack: Clearbit, Apollo, PredictLeads, LinkedIn Sales Navigator, Bombora, or similar.\nExposure to Gong data and using conversation intelligence to inform outbound strategy or sequence design.\nExperience in a high-growth SaaS environment.\n What We Offer \nReceive competitive compensation and equity ownership in Perk\nRest and recharge with 25 days of annual leave plus bank holidays\nTake control of your physical health with private medical cover and voluntary dental insurance from Bupa, and discounted gym memberships with GymFlex\nPlan for your future with our qualifying earnings company pension plan with Aviva\nKnow that your loved ones are protected financially through your Life Insurance if the worst were to happen\nRest assured that you\u2019re covered by income protection in case you experience a long-term sickness or absence\nLeverage tax-efficient cycle and electric car schemes with Cycle2Work & Octopus\nJoin our unforgettable Perk events, including our spectacular annual summer party\nAlways feel supported with Spring Health, our market-leading wellbeing partner, providing fast, comprehensive access to 12x therapy and 12x coaching sessions for you and your loved ones\nFocus on your family with 12-16 weeks\u2019 paid parental leave\nContribute to your community with 16 paid hours per year to spend volunteering for your dearest charitable causes\nBroaden your horizons with up to 20 \"Work from Anywhere\" days per year\nStay savvy with access to a wide variety of discounts and rewards\nFollow your passions and take a four-week, fully paid sabbatical once you reach 5 years\nLet us help you move to one of our hubs with relocation support\n AI at Perk \nAI is embedded in how we work across every function. The tools you'll use day-to-day are AI-enabled so you can move faster and spend more time on the work that matters. In practice, that means using AI to research and prioritise accounts, draft and refine outreach, handle customer interactions more effectively, synthesise information, and cut through shadow work - the invisible tasks that pull people away from the work only they can do - so you can focus on relationships and outcomes.\n How We Work \nAt Perk, we take an IRL-first approach to work, where our team works together in-person 3 days a week. As such, this role requires you to be based within commuting distance of our hubs. We fundamentally believe in the value of meeting in real life to improve connectivity, productivity, creativity and ultimately making us a great place to work.\nFor certain roles, we can help with relocation from anywhere in the world, English is the official language at the office. Please submit your resume in English if you choose to apply. Do not forget to submit an updated portfolio and/or resume.\nPerk is a global company with a diverse customer base, and we want to make sure the people behind our product reflect that. We\u2019re an equal opportunity employer, which means you\u2019re welcome at Perk regardless of how you look, where you\u2019re from, or anything else that makes you, well, you.\n Protect Yourself from Recruitment Scams \nAll official communication from Perk will always come from email addresses ending in @perk.com or @externalperk.com, our verified social media channels, or recruiters listed on our official LinkedIn page. We will never ask you to pay for equipment, training, or fees, request sensitive personal information such as bank details early in the process, or communicate through unofficial apps like WhatsApp, Telegram, or Signal. If you receive a message claiming to be from Perk that seems suspicious, please do not respond. Forward it to security [at] perk .com, and we will confirm whether it is legitimate.\n#LI-Hybrid",
+  "salary": "",
+  "posted_at": "2026-09-17T11:02:55Z",
+  "desc_chars": 10791,
+  "sponsor_region": "UK",
+  "sponsor_raw": "on_register",
+  "sponsor": "UK sponsor",
+  "score": 5.8,
+  "score_raw": 5.8,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 4.0,
+   "skills": 5.0,
+   "seniority": 6.0,
+   "domain": 8.0,
+   "location_visa": 7.0,
+   "trajectory": 6.0
+  },
+  "tier": "UK-London",
+  "flags": [
+   "comp not listed, verify vs floor",
+   "Hands-on technical build role: Clay workflows, webhooks/HTTP APIs, LLM",
+   "Outbound/pipeline-generation focus, not post-sale RevOps where his 11 ",
+   "Explicitly 'not a traditional RevOps role' \u2014 his CS/AM background is a"
+  ],
+  "verdict": "GTM engineering builder role demanding production Clay/AI/API craft; Tom's post-sale CS background is a substantive mismatch.",
+  "comp": {
+   "stated": false,
+   "min_base": 0.0,
+   "max_base": 0.0,
+   "currency": ""
+  },
+  "market_conflict": null,
+  "found_at": "2026-09-17T13:09:33.059426+00:00",
+  "ats": "",
+  "ats_fillable": false,
   "apply_link": "aggregator only"
  },
  {
@@ -11846,7 +11908,9 @@
   "found_at": "2026-09-17T08:41:09.514055+00:00",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "company ATS"
+  "apply_link": "company ATS",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "hc-ashby___trustly___a4dfd646-b13e-4cf3-9ea9-5beb4d8194dc",
@@ -12297,7 +12361,9 @@
   "found_at": "2026-09-17T08:41:20.257156+00:00",
   "ats": "rippling",
   "ats_fillable": false,
-  "apply_link": "company ATS"
+  "apply_link": "company ATS",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "gh-mongodb-8056742",
@@ -12942,7 +13008,9 @@
   "found_at": "2026-09-17T08:40:50.799191+00:00",
   "ats": "ashby",
   "ats_fillable": true,
-  "apply_link": "auto-fillable"
+  "apply_link": "auto-fillable",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "rr-7c08d7f9-9f24-4336-a505-d696064ac6cb",
@@ -15228,7 +15296,9 @@
   "found_at": "2026-09-17T08:41:39.954310+00:00",
   "ats": "ashby",
   "ats_fillable": true,
-  "apply_link": "auto-fillable"
+  "apply_link": "auto-fillable",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "li-4466820717",
@@ -16226,7 +16296,9 @@
   "found_at": "2026-09-17T08:39:23.347439+00:00",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "li-4466863084",
@@ -17336,6 +17408,51 @@
   "apply_link": "aggregator only"
  },
  {
+  "id": "li-4459609824",
+  "company": "Euna Solutions",
+  "title": "Senior Manager, Revenue Operations",
+  "location": "Greater Toronto Area, Canada",
+  "country": "",
+  "market": "CA",
+  "url": "https://www.linkedin.com/jobs/view/4459609824",
+  "source": "linkedin",
+  "posted_at": "2026-09-17",
+  "description": "The Opportunity\nEuna Solutions is hiring a Senior Manager, Revenue Operations to lead the team that produces the metrics GTM leadership runs the business on and the intelligence that tells the field where to spend its time. You will own the full stack: Sales and Customer Success reporting and forecasting, compensation management, territory and capacity planning, and go-to-market intelligence spanning ICP, scoring models, data quality, and competitive insight, supported by a team of four analysts whose output reaches the CSO, CCO, CMO, and CFO. If you want to own the analytical engine of a commercial organization and see your work shape how revenue is planned, measured, and pursued, this is the role for you.\nWhat You'll Do\nOwn the Sales and CS forecast cycle end to end: submission collection, Salesforce reconciliation, snapshot management, variance commentary, and accuracy measurement by rep, director, and segment\nOwn GTM intelligence: Intent-to-Buy and Propensity-to-Buy scoring models, ICP definition and segmentation strategy, account and contact data standards, and competitive intelligence, and operationalize outputs into territories and targeting workflows so the work changes rep behavior\nOwn compensation management for all GTM teams: plan design input, documentation, payout calculation on a fixed close calendar, cost modeling of proposed changes, and escalation on disputes\nOwn the standing reporting layer for Sales and Customer Success across bookings, pipeline, GRR, NRR, churn, NPS, and customer health, and represent the numbers in the weekly forecast call, QBRs, and Board reporting cycles\nOwn annual and mid-year capacity planning and territory design for Sales, BD, and Customer Success, and quantify the revenue and cost impact of proposed structural changes before they are made\nManage, coach, and develop four analysts: set priorities, review work before it reaches leadership, own metric definitions and calculation logic, and drive data quality remediation with GTM Systems\nWhat You Bring\n7+ years in revenue operations, sales operations, sales finance, or a comparable analytical function, including at least 2 years managing analysts\nDirect ownership of a forecast cycle and a standing reporting layer for a commercial organization\nHands-on experience with sales compensation, including plan design input, payout administration, and dispute resolution, and with quota or territory design\nAdvanced Salesforce capability, including report and dashboard construction and a working understanding of the underlying data model\nThe ability to explain a number to a skeptical executive audience without preparation: the methodology, the source, and the assumptions\n Nice-to-Have Qualifications\nB2B SaaS experience with a subscription and renewal motion; public sector or GovTech exposure is a plus\nExperience with account scoring, ICP work, enrichment vendors, or competitive intelligence programs\nSQL or a BI platform such as Tableau, Power BI, or Looker\nAnalytical training from consulting, investment banking, or private equity\nLocation\nThis position will be hybrid with 3 days/week in our Oakville, ON office.\nCompensation Range: $126,600-158,300K\nWe believe in openness, so we publish our range from the start. Where an offer will land depends on your background, strengths, and how you'll contribute to the work ahead.\nThis role fills an existing vacancy. Euna uses AI responsibly to assist in screening, assessing, or selecting applicants. AI helps us work smarter, but people lead the process.\nAI Mindset at Euna Solutions\nWe believe the future of work is human + AI. At Euna Solutions, we encourage our team members to leverage AI tools to enhance creativity, efficiency, and decision-making. We're looking for people who are curious about emerging technologies, eager to experiment, and committed to using AI responsibly to augment, not replace, their expertise.\nIf you enjoy exploring new ways to solve problems, learning continuously, and applying AI to make your work smarter and more impactful, you'll thrive here.\nLife at Euna Solutions\nWe're a team of builders, problem-solvers, and public sector champions. We've built a workplace around a straightforward idea: people do their best work when they're trusted, supported, and not running on empty.\n Here's What That Actually Looks Like\n \ud83c\udfe2 How we work\nWe're hybrid \u2014 three days a week in our Oakville or Atlanta offices, with standard hours on those days. What the remaining days look like depends on your role and your manager. We talk about it early in the process so there are no surprises on either side.\n\ud83e\uddd8 Eunafier Days\nTwice a year, you get an extra day tacked onto a long weekend. Simple reason: people who take breaks do better work. Use it however you need.\n\ud83d\ude4c Community is part of who we are\nOur Engagement Committee finds meaningful ways to give back through time, donations, and shared expertise. We're invested in the places where our people actually live and work.\n\ud83e\udd1d Philanthropy Time\nWe give every employee up to eight hours a year to spend on causes that matter to them. We want you to show up for your community \u2014 and we make time for it.\n\ud83c\udf89 Real connection at scale\nYou won't know all 600+ people \u2014 and that's okay. What matters is building real relationships with the people you work with every day. Our culture team creates consistent opportunities for that, so work doesn't feel isolating.\n\ud83d\udcc8 Room to grow\nWhether you're going deep on AI, building expertise in government tech, or stepping into a bigger role, we invest in your development \u2014 through budget, mentorship, and real opportunity to move when you're ready.\n About Euna Solutions\n Euna Solutions\u00ae is the leading provider of purpose-built, cloud-based software designed to streamline procurement, budgeting, payments, and grants management for public sector and government organizations. Euna's AI-powered features and intelligent automation help organizations make better-informed decisions, ensure compliance, empower collaboration, and reduce administrative burden. Euna's full-cycle financial suite supports more than 3,600 organizations across North America in building trust, enabling transparency, and driving positive community impact. Recognized on Government Technology's GovTech 100 list, Euna Solutions is committed to advancing public sector innovation. To learn more, visit www.eunasolutions.com. Euna's privacy policy is available here.\nPlease visit our website: https://eunasolutions.com/careers/ and check out our LinkedIn Pages https://www.linkedin.com/company/eunasolutions/\nWe believe in embracing new perspectives and optimizing impact. If you have relatable experience and relevant transferable skills but feel you may be missing a few of the requirements, we encourage you to apply! We recognize that people have unique career journeys and if you're excited about this role and know you can bring something great to the team, then we want to hear from you. Please know Euna Solutions is committed to providing a comfortable and accessible interview process for every candidate. If there are any accommodations our team can make throughout our hiring process (big or small), please let us know.\nFor any inquiries or requests regarding accessibility at Euna Solutions, please email recruiting@eunasolutions.com or call our office at 1.877.707.7755. Upon request, appropriate accessible formats or arrangements will be provided as soon as practicable.\n Show more\n Show less\n Seniority level\n Mid-Senior level\n Employment type\n Full-time\n Job function\n Management and Manufacturing\n Industries\n Software Development\nReferrals increase your chances of interviewing at Euna Solutions by 2x\n See who you know",
+  "desc_chars": 7698,
+  "sponsor_region": "",
+  "sponsor_raw": "n/a",
+  "sponsor": "",
+  "score": 4.9,
+  "score_raw": 4.9,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 4.0,
+   "skills": 4.0,
+   "seniority": 4.0,
+   "domain": 8.0,
+   "location_visa": 4.0,
+   "trajectory": 7.0
+  },
+  "tier": "CA",
+  "flags": [
+   "Hard prerequisites Tom lacks: 2+ yrs managing analysts, owned forecast",
+   "Advanced Salesforce report/dashboard build and data model depth requir",
+   "Backfill of an existing vacancy signals urgency against an unproven Ca"
+  ],
+  "verdict": "Textbook RevOps scope but a people-management and comp-admin prerequisite gap; Canada backfill urgency compounds it.",
+  "comp": {
+   "stated": true,
+   "min_base": 126600.0,
+   "max_base": 158300.0,
+   "currency": "CAD"
+  },
+  "market_conflict": null,
+  "found_at": "2026-09-17T13:09:41.206465+00:00",
+  "ats": "",
+  "ats_fillable": false,
+  "apply_link": "aggregator only"
+ },
+ {
   "id": "hc-grnhse___trustpilot___8140567",
   "company": "Trustpilot",
   "title": "Customer Success Manager",
@@ -17566,7 +17683,9 @@
   "found_at": "2026-09-17T08:39:40.251484+00:00",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "li-4467151052",
@@ -19125,6 +19244,51 @@
   ],
   "verdict": "Perfect function, wrong altitude \u2014 10+ years RevOps plus 5 years people leadership rules Tom out.",
   "found_at": "2026-08-14T14:19:04.681093+00:00",
+  "ats": "",
+  "ats_fillable": false,
+  "apply_link": "aggregator only"
+ },
+ {
+  "id": "li-4459619894",
+  "company": "Salesforce",
+  "title": "Business Strategy Senior Manager - Canadian Public Sector Experience Services",
+  "location": "British Columbia, Canada",
+  "country": "",
+  "market": "CA",
+  "url": "https://www.linkedin.com/jobs/view/4459619894",
+  "source": "linkedin",
+  "posted_at": "2026-09-17",
+  "description": "To get the best candidate experience, please consider applying for a maximum of 3 roles within 12 months to ensure you are not duplicating efforts.\n Job Category\nCustomer Success\nJob Details\n About Salesforce\n Salesforce is the #1 AI CRM, where humans with agents drive customer success together. Here, ambition meets action. Tech meets trust. And innovation isn\u2019t a buzzword \u2014 it\u2019s a way of life. The world of work as we know it is changing and we're looking for Trailblazers who are passionate about bettering business and the world through AI, driving innovation, and keeping Salesforce's core values at the heart of it all.\nReady to level-up your career at the company leading workforce transformation in the agentic era? You\u2019re in the right place! Agentforce is the future of AI, and you are the future of Salesforce.\nAs part of the Experience Services Competency in Salesforce Professional Services, the team is seeking a Business Strategy Senior Manager for Canadian Public Sector . The Business Strategy Senior Manager is responsible for ensuring overall delivery excellence and quality across Salesforce Professional Services customers. Partnering with C-level customers, Business Strategists craft innovative, industry-specific strategies that clearly define the vision, metrics, and roadmap to achieve desired business outcomes. They work with our key enterprise customers, partners, and technical delivery leaders to drive scale, speed to value, and a sustained landscape for future success. They bring deep expertise in enterprise business strategy, operating model design, and value realization \u2014 translating customer ambitions into actionable, multi-year programs. They have strong Public Sector consulting experience and a deep understanding of Business Strategy services deliverables. They strive to better understand and improve processes to help our Experience Services team thrive. The Business Strategy Senior Manager also partners with other roles on customer engagements to ensure customer and Salesforce Professional Services success.\nWe believe the best Business Strategists are those who obsess over the creation of customer and business value. They have a customer-centric and collaborative mentality, a willingness to commit to the customer, and the drive to break down barriers to ensure customer success.\n Your Impact: Key Responsibilities\nStrategic Advisory\nProvide business strategy subject matter expertise as it relates to Salesforce products and services during the sales and delivery cycles.\nHelp position and sell large-enterprise consulting engagements to customers; work cross-functionally within Salesforce to define program scope, team, value narrative, and pitch.\nUncover future sales opportunities to drive ongoing customer value.\nStrategic Discovery & Assessment\nPerform and distill customer, industry, and end-user research to identify key customer needs, expectations, and experience-led business opportunities.\nConduct assessments and facilitate workshops to develop future-state operating models and business visions.\nIdentify enterprise business process and operations improvements to realize efficiencies and increase impact.\nTake ownership of the vision and value narrative established during pre-sales and carry it into delivery, translating it into an actionable \u201cPhase 0\u201d roadmap without loss of momentum or customer trust.\nLeverage AI tools in creation and execution of deliverables or activities.\nStrategy Roadmap & Value Modeling\nDevelop multi-year, strategic roadmaps that prioritize investments and support business objectives.\nDevelop strategic use cases to project the value of strategy, case for change, and organizational implications.\nTransformation & Organizational Adoption\nDrive stakeholder alignment, engagement, and buy-in across functions. Facilitate cross-functional partnerships to craft and implement new ways of working across functions.\nHelp business and technology leaders adopt new digital operating models, governance strategies, and approaches.\nCultivate solution and organizational adoption, driving strategy evolution to deliver value through quicker delivery cycles.\nOperational Excellence\n Collaborate closely with program management teams to integrate business value strategies into program delivery. Identify and proactively manage risk areas and commit to seeing an issue through to complete resolution. \nTeam Leadership\nCoach and develop other Business Strategists and project team members to a consistent, repeatable delivery standard. Serve as a point of escalation and lead team members to drive results on customer engagements. Positively impact customer renewals and extensions when applicable.\nBusiness & Practice Impact\nSupport building the Business Strategy capability within the Experience Services Competency; share standard methodologies and collaborate with and advise peers.\nIdentify and lead internal strategic initiatives to grow the consulting practice; serve as an active contributor to the community\u2019s overall knowledge base and expertise. Generate positive feedback from internal teams and leadership.\n Experience/Skills Required\nExperience: Minimum 8 years of industry experience in customer-facing roles leading complex experience-led engagements with large-scale transformation, as part of a cross-functional team. Track record of delivering exceptional experiences from start to finish. \nBusiness Development: Go-to-market (GTM) support experience, including scoping, proposal development, RFP responses, and executive presentations. Comfortable pitching to C-suite executives, including strong objection-handling abilities.\nCore Competencies: Experience in Business Strategy, Enterprise Architecture, Product Management, Agile, Program Governance, Experience Design, Change Management, and/or Value Realization. Application of AI tools in services delivery.\nProduct Knowledge: Salesforce product knowledge and solution design experience relevant to Public Sector organizations required.\nSector Expertise: Proven experience with Canadian Government customers. Strong understanding of key business value drivers and success metrics typical of large-enterprise Public Sector organizations. Ability to develop industry POVs, including identifying market trends, responses, and solution offerings.\nCommunication: Excellent verbal and written skills. Passionate about delivering transformation with the ability to articulate business value to stakeholders at all levels. Strong workshop design and facilitation skills.\nProblem Solving: Ability to analyze and synthesize information. Sets a clear direction in situations where data is absent or ambiguous and stakeholders are misaligned, making defensible recommendations and holding the roadmap steady rather than only building consensus. A proactive, resourceful, creative thinker with the ability to inspire others and who can navigate dynamic situations.\nRelationship Management: Consistent track record of building customer relationships. A great listener with the ability to connect with people in diverse roles. Thrives working cross-functionally, particularly with Sales, Engagement Leaders, Solution and Technical Architects, Human-Centered Change Practitioners, Experience Designers, and External Partners.\nEducation: BA/BS or MA/MS in a related field, or equivalent experience.\nTravel: A willingness to travel when required (up to 25-30% of the time) and an understanding of the value of working onsite with our customers.\nOther Requirements: Candidates must be a Canadian citizen\nLocation Preferences: Ottawa, Toronto or Vancouver\n Security Clearance: This position requires the ability to obtain and maintain a Canadian Government Security Clearance. Candidates are not required to hold an active clearance at the time of application or interview; however, the successful candidate must be eligible to obtain clearance as a condition of employment.\nReliability Clearance: Requires providing 5 years of verifiable work and residence history, generally from within Canada.\nSecret Clearance: Requires providing 10 years of verifiable work and residence history, generally from within Canada\n Preferred Qualifications\nProsci\u00ae Change Management Certification\nSalesforce Administrator Certification\nSalesforce Strategy Designer Certification\nSalesforce Agentblazer Innovator or Agentblazer Legend Credential\n Leadership Qualities\nPassion: Passionate about customer success.\nMindset: Approaches work with a \"Beginner\u2019s Mind\" - always learning and listening.\nLeadership: Self-aware and strategic thinker; proficient at building strong relationships and managing personnel.\nEngagement: A strategic storyteller who influences C-level executives with clarity and authority.\nTeam Player: Adept at collaboration and working with members of a multi-functional team.\nTrust: Trusts and demonstrates the company\u2019s core values; shows integrity, transparency, and reliability.\nAdaptability: Excels in high levels of uncertainty and change.\nAgility: A collaborative team player who moves fast to drive business value and results in uncertain environments.\nUnleash Your Potential\nWhen you join Salesforce, you\u2019ll be limitless in all areas of your life. Our benefits and resources support you to find balance and be your best , and our AI agents accelerate your impact so you can do your best . Together, we\u2019ll bring the power of Agentforce to organizations of all sizes and deliver amazing experiences that customers love. Apply today to not only shape the future \u2014 but to redefine what\u2019s possible \u2014 for yourself, for AI, and the world.\nAccommodations\nIf you need a reasonable accommodation during the application or the recruiting process, please submit a request via this Accommodations Request Form.\nPlease note that Salesforce uses artificial intelligence (AI) tools to help our recruiters assess and evaluate candidates\u2019 resumes and qualifications throughout the recruiting process. Humans will always make any candidate selection and hiring decisions. Please see our Candidate Privacy Statement for more information about how we use your personal data and your rights, including with regard to use of AI tools and opt out options.\nPosting Statement\nSalesforce is an equal opportunity employer and maintains a policy of non-discrimination with all employees and applicants for employment. What does that mean exactly? It means that at Salesforce, we believe in equality for all. And we believe we can lead the path to equality in part by creating a workplace that\u2019s inclusive, and free from discrimination. Know your rights: workplace discrimination is illegal. Any employee or potential employee will be assessed on the basis of merit, competence and qualifications \u2013 without regard to race, religion, color, national origin, sex, sexual orientation, gender expression or identity, transgender status, age, disability, veteran or marital status, political viewpoint, or other classifications protected by law. This policy applies to current and prospective employees, no matter where they are in their Salesforce employment journey. It also applies to recruiting, hiring, job assignment, compensation, promotion, benefits, training, assessment of job performance, discipline, termination, and everything in between. Recruiting, hiring, and promotion decisions at Salesforce are fair and based on merit. The same goes for compensation, benefits, promotions, transfers, reduction in workforce, recall, training, and education.\nAt Salesforce, we believe in equitable compensation practices that reflect the dynamic nature of labor markets across various regions.\nFor British Columbia-based roles, the base salary hiring range for this position is CAD 154,700 to CAD 212,800.\nFor Ontario-based roles, the base salary hiring range for this position is CAD 154,700 to CAD 204,700 annually.\nThe range represents base salary only, and does not include company bonus, incentive for sales roles, equity or benefits, as applicable.\nThis posting is to fill a vacancy on our team, unless otherwise noted.\n Show more\n Show less\n Seniority level\n Not Applicable\n Employment type\n Full-time\n Job function\n Business Development and Sales\n Industries\n Software Development, IT Services and IT Consulting, and Technology, Information and Internet\nReferrals increase your chances of interviewing at Salesforce by 2x\n See who you know",
+  "desc_chars": 12365,
+  "sponsor_region": "",
+  "sponsor_raw": "n/a",
+  "sponsor": "",
+  "score": 4.5,
+  "score_raw": 4.5,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 4.0,
+   "skills": 4.0,
+   "seniority": 4.0,
+   "domain": 6.0,
+   "location_visa": 5.0,
+   "trajectory": 5.0
+  },
+  "tier": "CA",
+  "flags": [
+   "Hard prerequisite: deep Public Sector consulting experience \u2014 candidat",
+   "Pre-sales/consulting delivery role, not internal RevOps or CSM",
+   "Senior Manager at Salesforce PS implies management-consulting pedigree"
+  ],
+  "verdict": "Salesforce public-sector strategy consulting Senior Manager; consulting-pedigree prerequisite Tom lacks, and it doesn't advance the RevOps pivot.",
+  "comp": {
+   "stated": true,
+   "min_base": 154700.0,
+   "max_base": 212800.0,
+   "currency": "CAD"
+  },
+  "market_conflict": null,
+  "found_at": "2026-09-17T13:09:52.619171+00:00",
   "ats": "",
   "ats_fillable": false,
   "apply_link": "aggregator only"
@@ -22311,7 +22475,9 @@
   "found_at": "2026-09-17T08:40:56.519718+00:00",
   "ats": "ashby",
   "ats_fillable": true,
-  "apply_link": "auto-fillable"
+  "apply_link": "auto-fillable",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "az-gb-5857234998",
@@ -23125,7 +23291,9 @@
   "found_at": "2026-09-17T08:38:15.037174+00:00",
   "ats": "workable",
   "ats_fillable": false,
-  "apply_link": "company ATS"
+  "apply_link": "company ATS",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "rr-d97dfe16-24dc-4c97-b198-7e70706ad436",
@@ -23157,7 +23325,9 @@
   "found_at": "2026-09-17T08:38:08.944402+00:00",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "rr-ff04bc94-ce7e-4224-bb5e-13e94bbf126c",
@@ -23189,7 +23359,9 @@
   "found_at": "2026-09-17T08:29:01.797253+00:00",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "az-gb-5887127222",
@@ -23220,7 +23392,14 @@
   "found_at": "2026-09-17T08:25:37.050528+00:00",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": [
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.co.uk/jobs/land/ad/5887127222?se=urMt-Zey8RGP4egu1Ph5qg&utm_medium=api&utm_source=7c8a497a&v=B5C2A49CEE2E963A8A7933DFAEE5AEC21A70E085"
+   }
+  ]
  },
  {
   "id": "rr-c0b303aa-5a3d-4133-930e-a6bde1328e9d",
@@ -24534,37 +24713,6 @@
   ],
   "verdict": "Not scored. No posting text could be retrieved from the source, from the copies other feeds had, from the company's own board, or from a web search. What is on this card is everything that is known.",
   "found_at": "2026-08-09T07:09:40.519114+00:00",
-  "ats": "",
-  "ats_fillable": false,
-  "apply_link": "aggregator only",
-  "evidence": "thin"
- },
- {
-  "id": "az-gb-5825930512",
-  "company": "Just Eat",
-  "title": "Lead GTM Program Manager Enterprise - Retail Media",
-  "location": "London, UK",
-  "country": "gb",
-  "market": "UK-London",
-  "url": "https://www.adzuna.co.uk/jobs/land/ad/5825930512?se=pCnXaiKP8RGGDr7w4nqLLQ&utm_medium=api&utm_source=7c8a497a&v=B9F2D53945612E142E8D0CC36BBBC1DCDDF3597C",
-  "source": "adzuna",
-  "description": "hackajob is collaborating with Just Eat to connect them with exceptional professionals for this role. Ready for a challenge? Then Just Eat Takeaway.com might be the place for you. We\u2019re a leading global online delivery platform, and our vision is to empower everyday convenience. Whether it\u2019s a Friday-night feast, a post-gym poke bowl, or grabbing some groceries, our tech platform connects tens of millions of customers with hundreds of thousands of restaurant, grocery and convenience partners ac\u2026",
-  "salary": "",
-  "posted_at": "2026-08-02T21:11:35Z",
-  "desc_chars": 500,
-  "sponsor_region": "UK",
-  "sponsor_raw": "on_register",
-  "sponsor": "UK sponsor",
-  "score": null,
-  "score_raw": null,
-  "caps_applied": [],
-  "dimensions": {},
-  "tier": "UK-London",
-  "flags": [
-   "no posting text found -- nothing here has been screened or scored"
-  ],
-  "verdict": "Not scored. No posting text could be retrieved from the source, from the copies other feeds had, from the company's own board, or from a web search. What is on this card is everything that is known.",
-  "found_at": "2026-08-03T10:04:07.005317+00:00",
   "ats": "",
   "ats_fillable": false,
   "apply_link": "aggregator only",
