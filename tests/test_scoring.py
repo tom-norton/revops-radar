@@ -943,63 +943,6 @@ def test_every_row_says_which_track_it_is_on():
     assert 'j["track"] = "cs" if is_csm_title(' in src
 
 
-def _skill(name):
-    return open(os.path.join(os.path.dirname(__file__), "..", "skills", name, "SKILL.md"),
-                encoding="utf-8").read()
-
-
-def test_the_application_skill_recognises_the_flags_the_radar_actually_writes():
-    """Its Step 0 table matches on flag wordings, and it says an unrecognised line means
-    the dashboard has changed. So a flag the radar reworded is a skill that says that about
-    every role: the pay flag was split into two sentences and the table still had the old
-    one."""
-    skill = _skill("job-application-workflow")
-    for wording in ["no pay stated in the ad or the feed, verify vs floor",
-                    "pay not confirmed in the ad",
-                    "title band:", "CSM in ", "model read the function as off-target",
-                    "thin evidence", "LOCATION CONFLICT"]:
-        assert wording in skill, wording
-    # the three lines packetFor() gained
-    for line in ["Shot", "Want", "Hard gaps"]:
-        assert line in skill, line
-
-
-def test_the_application_skill_clones_the_bank_where_it_reads_it():
-    """It cloned to /home/claude/bullet-bank and then read /home/claude/bank in three
-    places, so the cut history came back empty and the write-back failed."""
-    skill = _skill("job-application-workflow")
-    assert "tom-bullet-bank.git /home/claude/bank" in skill
-    # and the bank's PAT is never in this repo: it is public, and the live token stays in
-    # the copy of this file inside the Claude project
-    assert "github_pat" not in skill
-    assert "<BULLET_BANK_PAT>" in skill
-    assert "cd /home/claude/bank && git pull" in skill
-    # the only surviving mention of the old path is the warning about it
-    assert skill.count("/home/claude/bullet-bank") == 1
-
-
-def test_the_application_skill_picks_the_contact_block_the_way_cvbuild_does():
-    """The CV's contact block follows the market: a Canadian application getting a
-    Barcelona address and a nationality line is a self-inflicted screen failure."""
-    skill = _skill("job-application-workflow")
-    assert "Grand Rapids" in skill and "Barcelona" in skill
-    assert 'NA_MARKETS = ("CA", "US-Remote")' in skill
-    import cvbuild
-    assert cvbuild.NA_MARKETS == ("CA", "US-Remote")
-
-
-def test_the_score_skill_matches_the_pipeline_it_reproduces():
-    """It described thin rows as scored at 5 to 6. They are set aside unscored now, which
-    is the case the skill exists for."""
-    skill = _skill("score-role")
-    assert "SET ASIDE" in skill
-    assert "does score thin rows, honestly" not in skill
-    # and it reports the split the radar now stores
-    assert "shot = (experience*25 + skills*20 + seniority*15) / 60" in skill
-    assert "want = (domain*15 + location_visa*15 + trajectory*10) / 40" in skill
-    assert "Hard gaps" in skill
-
-
 def test_the_dashboard_is_handed_the_market_ordering_rather_than_keeping_a_copy():
     """docs/index.html sorts by tier then score, and reads the tier table out of
     status.json for the same reason it reads gate and floor from there: a second copy in

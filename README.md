@@ -996,17 +996,24 @@ anywhere other than markets and the CSM track, the radar is the one that's wrong
 
 ## The two Claude skills
 
-The application half runs in a Claude project, not here: `job-application-workflow` builds
-the brief, the bullet audit, the tailored CV and the outreach email, and `score-role`
-reproduces this scorer in chat for a role the radar never saw. Both are in
-**`skills/`** in this repo, and **this repo is the source of truth for them** — edit here,
-then re-upload the file to the Claude project and delete the old version. They are kept
-here because they are a contract with the code: `packetFor()` in `docs/index.html` writes
-the block the application skill parses, `score_flags()` decides the flag wordings its table
-matches, `cvbuild.contact_for()` decides which contact block a market takes, and
-`profile.md` and `RUBRIC` are what `score-role` scores against. A change on either side that
-is not made on the other shows up as a skill quietly working from a contract that no longer
-exists.
+The application half runs in a Claude project and **its files live there, not in this
+repo**: `job-application-workflow` builds the brief, the bullet audit, the tailored CV and
+the outreach email, and `score-role` reproduces this scorer in chat for a role the radar
+never saw. They stay out of here for a plain reason — the application skill carries the
+bullet bank's PAT, and this repo is public.
+
+They are still a contract with this code, and it is a one-way one: change something on this
+list and the skill in the project has to be edited to match, because nothing here can check
+it for you.
+
+| Here | What the skill does with it |
+|---|---|
+| `packetFor()` in `docs/index.html` | Writes the RADAR ROLE block the application skill parses line by line, including the `Shot` / `Want` / `Hard gaps` lines |
+| `score_flags()` and `parse_score_result()` in `scan.py` | Decide the flag wordings its Step 0 table matches on; an unmatched line makes it announce that the dashboard has changed |
+| `cvbuild.contact_for()` / `NA_MARKETS` | Decides which contact block a market takes (Barcelona for NL/IE/UK/BE, Grand Rapids and no nationality line for CA/US) |
+| `profile.md` and `RUBRIC` in `scan.py` | What `score-role` scores against; it fetches both at run time rather than remembering them |
+| `shot_want()` in `scan.py` | The split both skills report |
+| `bankwrite.py` | The bullet bank's writer, called by the application skill's Step 9d |
 
 ## Tests
 
