@@ -899,6 +899,50 @@ def test_fetch_company_routes_a_board_to_something_that_can_read_it():
     assert seen["generic"] == ("bunq", "bunq", "recruitee")
 
 
+def test_the_dashboard_can_filter_by_market_and_track():
+    """The board is 500 rows deep and the two questions he opens it with are "what is new"
+    and "what is there in the Netherlands". Both were unanswerable without scrolling."""
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    for needle in ["MARKET_CHIPS", "TRACK_CHIPS", "passesFilters", "trackOf",
+                   "rr_last_visit", "newdot", "rr_applied_at", "rr_hidden_at",
+                   "applied-wrap", "hidden-wrap"]:
+        assert needle in page, needle
+    # the track fallback has to agree with scan.py's own CSM test, or a row stored before
+    # scan.py wrote `track` lands in the wrong chip
+    assert "/customer success/i.test" in page
+    assert scan.is_csm_title("Senior Customer Success Manager")
+    assert not scan.is_csm_title("Revenue Operations Manager")
+    # the ATS badge and its filter are gone: the apply bot is mothballed, and a badge
+    # about whether it could fill the form is a badge about nothing
+    assert "fillableOnly" not in page
+    assert "tag fillable" not in page
+    # ... while the link to the real application form stays
+    assert "Apply &rarr;" in page
+
+
+def test_the_scorers_risk_notes_are_not_pills_any_more():
+    """They are sentences. As pills they were cut at 70 characters and made the card wider
+    than a phone screen: 104 of 137 cards overflowed at 375px."""
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    assert "PILL_FLAGS" in page and "Watch-outs" in page
+    # the pill rule itself wraps; the filter chips above still don't, and shouldn't
+    assert "white-space:normal; overflow-wrap:anywhere}" in page
+    assert ".tag{font-size:11px" in page.replace("\n", "")
+
+
+def test_every_row_says_which_track_it_is_on():
+    """The dashboard filters by it, and deriving it in the page would be a second copy of
+    the CSM regex."""
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    assert "j.track" in page
+    src = open(os.path.join(os.path.dirname(__file__), "..", "scan.py"),
+               encoding="utf-8").read()
+    assert 'j["track"] = "cs" if is_csm_title(' in src
+
+
 def test_the_dashboard_is_handed_the_market_ordering_rather_than_keeping_a_copy():
     """docs/index.html sorts by tier then score, and reads the tier table out of
     status.json for the same reason it reads gate and floor from there: a second copy in

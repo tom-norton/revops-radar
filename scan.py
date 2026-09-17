@@ -4514,6 +4514,14 @@ def main():
     # promise without ever opening a browser. Applied to the whole merged list, not just
     # this run's new rows, so a row that has carried an also_seen link since before this
     # existed gets it filled in on the very next scan rather than staying blank forever.
+    # Which of the two tracks a row belongs to, written on every row so the dashboard can
+    # filter by it without keeping its own copy of the CSM title regex. RevOps is the
+    # pivot and CS is the parallel track; they are read differently (a CSM role outside
+    # the Netherlands carries a flag, a RevOps one does not), and on a 500-row board they
+    # are the split Tom actually browses by.
+    for j in merged:
+        j["track"] = "cs" if is_csm_title(j.get("title")) else "revops"
+
     # Shot and Want for every row, not just this run's. They are arithmetic over dimension
     # scores already stored, so the 495 rows scored before this existed get them here for
     # free rather than needing a rescore.
