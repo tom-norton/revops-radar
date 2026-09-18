@@ -6,7 +6,7 @@ version on the next run. Keep it factual. Do not add skills or experience you do
 
 ## Candidate summary
 11 years B2B SaaS across Customer Success and Account Management, GRC/compliance and legal
-information domains (NAVEX, LexisNexis). ESADE MBA (Barcelona) finishing July 2026
+information domains (NAVEX, LexisNexis). ESADE MBA (Barcelona) completed September 2026
 (conferral March 2027); BSBA in Marketing from University of Dayton. Pivoting into Revenue
 Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior IC level. Parallel
 track: Senior / Principal Customer Success Manager at established companies. US citizen;

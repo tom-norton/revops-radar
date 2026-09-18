@@ -482,18 +482,87 @@ def test_a_row_without_a_place_is_never_deduped():
     A city outside DEDUPE_CITY used to leave the key incomplete too, which meant no row in
     Nijverdal, Delft or Staines was ever deduped against anything -- the live dashboard was
     carrying byte-identical pairs because of it. Such a city now buckets on its own name,
-    which is what keeps Staines and Slough apart while still collapsing Staines twice. A
-    location naming only a country stays incomplete: "Netherlands" must not become a bucket
-    that two different Dutch cities fall into."""
+    which is what keeps Staines and Slough apart while still collapsing Staines twice.
+
+    A location naming only a country buckets on the market it resolves to, which is a
+    change: it used to stay incomplete. Two rows saying only "Ireland" are not two Irish
+    cities, they are one posting described twice -- and they still only merge when the
+    company and the title agree as well. A location that resolves to no market at all
+    ("Remote - EMEA") is still incomplete and still never deduped."""
     assert not _complete({"company": "", "title": "T", "location": "Amsterdam"})
     assert not _complete({"company": "X", "title": "", "location": "Amsterdam"})
-    assert not _complete({"company": "X", "title": "T", "location": "Netherlands"})
-    assert not _complete({"company": "X", "title": "T", "location": "United Kingdom"})
     assert not _complete({"company": "X", "title": "T", "location": "Remote - EMEA"})
+    assert not _complete({"company": "X", "title": "T", "location": ""})
     assert _complete({"company": "X", "title": "T", "location": "Amsterdam"})
     assert _complete({"company": "X", "title": "T", "location": "Groningen"})
+    assert _complete({"company": "X", "title": "T", "location": "Ireland"})
     assert scan.dedupe_city("Staines, Surrey") == scan.dedupe_city("Staines-upon-Thames, England")
     assert scan.dedupe_city("Groningen") != scan.dedupe_city("Maastricht")
+    # the market bucket is a last resort, never a bucket a named city falls into
+    assert scan.dedupe_city("Amsterdam", "NL") != scan.dedupe_city("Rotterdam", "NL")
+    assert scan.dedupe_city("Amsterdam", "NL") != scan.dedupe_city("Netherlands", "NL")
+    # and a legacy market name buckets with the one it is an alias for
+    assert scan.dedupe_city("Ireland", "IE-Dublin") == scan.dedupe_city("Ireland", "IE")
+
+
+def test_two_country_only_rows_for_one_role_collapse():
+    """The live case: hiring.cafe and LinkedIn both filed Qualio's Senior CSM under
+    "Ireland", neither named a city, and the dashboard carried it twice -- scored 6.5 in
+    one copy and 6.3 in the other."""
+    hc = {"company": "Qualio", "title": "Senior Customer Success Manager",
+          "location": "Ireland", "market": "IE"}
+    li = {"company": "Qualio", "title": "Senior Customer Success Manager",
+          "location": "Ireland", "market": "IE-Dublin"}
+    assert _same(hc, li)
+    # a different role at the same company still does not
+    assert not _same(hc, {"company": "Qualio", "title": "Revenue Operations Manager",
+                          "location": "Ireland", "market": "IE"})
+    # nor two genuinely different Dutch cities
+    assert not _same({"company": "Adyen", "title": "RevOps Manager",
+                      "location": "Amsterdam", "market": "NL"},
+                     {"company": "Adyen", "title": "RevOps Manager",
+                      "location": "Rotterdam", "market": "NL"})
+
+
+def test_one_id_is_one_row():
+    """hiring.cafe's five searches overlap, and two of them returning the same posting used
+    to cost two Opus calls and put two identical cards on the dashboard."""
+    rows = [{"id": "a", "score": 7}, {"id": "b"}, {"id": "a", "score": 7}, {"id": "c"}]
+    kept, dropped = scan.dedupe_by_id(rows)
+    assert [r["id"] for r in kept] == ["a", "b", "c"]
+    assert [r["id"] for r in dropped] == ["a"]
+    # the first copy is the one kept, so a row that has already been scored keeps its score
+    assert kept[0] is rows[0]
+    # a row with no id at all is never folded away -- it is not a duplicate of anything
+    kept, dropped = scan.dedupe_by_id([{"id": ""}, {"id": ""}])
+    assert len(kept) == 2 and not dropped
+
+
+def test_a_legacy_irish_market_is_rewritten_and_sorts_with_ireland():
+    """Ireland was Dublin-only until it widened to the whole country. Rows scored before
+    that still say "IE-Dublin", which MARKET_TIER did not know: they sorted at
+    TIER_UNKNOWN, below the US rows, and rendered with the warning tag for a market the
+    dashboard does not recognise."""
+    assert scan.market_tier("IE-Dublin") == scan.market_tier("IE") == 2
+    row = scan.normalise_market({"market": "IE-Dublin", "tier": "IE-Dublin"})
+    assert row["market"] == "IE" and row["tier"] == "IE"
+    # and a row that was already current is untouched
+    assert scan.normalise_market({"market": "NL", "tier": "NL"})["market"] == "NL"
+
+
+def test_the_screen_may_only_kill_on_function():
+    """Two thirds of screened rows were being killed, and the stored reasons included
+    "Location not specified; likely US-based", "Cleantech, not B2B SaaS" and "JetBrains is
+    based in Czech Republic" -- all of them re-deciding a location the code had already
+    accepted, or marking down a domain the deep scorer scores properly."""
+    p = scan.SCREEN_SYSTEM
+    assert "exactly ONE reason" in p
+    assert "THE LOCATION IS ALREADY SETTLED" in p
+    assert "NOT the location" in p and "NOT the industry or the domain" in p
+    assert "NEVER KILL ON SENIORITY." in p
+    # the old wording made LOCATION a numbered kill ground; nothing may put it back
+    assert "1. LOCATION" not in p
+    assert "You may kill a role for exactly TWO reasons" not in p
 
 
 def test_same_role_collapses_a_shortened_company_name():
@@ -721,10 +790,157 @@ def test_only_the_wanted_markets_ring_the_phone():
     while still being somewhere he does not want to move, so it stays on the dashboard and
     does not ring."""
     assert scan.NTFY_MAX_TIER == 2
-    ring = [m for m, t in scan.MARKET_TIER.items() if t <= scan.NTFY_MAX_TIER]
-    assert set(ring) == {"NL", "IE", "UK-London"}
+    ring = {scan.MARKET_ALIASES.get(m, m)
+            for m, t in scan.MARKET_TIER.items() if t <= scan.NTFY_MAX_TIER}
+    assert ring == {"NL", "IE", "UK-London"}
     for market in ("CA", "US-Remote", "BE"):
         assert scan.market_tier(market) > scan.NTFY_MAX_TIER, market
+
+
+def test_shot_and_want_split_the_same_six_numbers():
+    """Two questions the blended total cannot tell apart: can I get the interview (Shot),
+    and do I want the job (Want). Nothing new is computed -- the weights are the rubric's
+    own, renormalised within each half -- so a row scored months ago gets both."""
+    assert set(scan.SHOT_DIMS) | set(scan.WANT_DIMS) == set(scan.RUBRIC_KEYS)
+    assert not set(scan.SHOT_DIMS) & set(scan.WANT_DIMS)
+    # a flat row scores the same on both halves as it does overall
+    flat = dims(*([7] * 6))
+    assert scan.shot_want(flat) == (7.0, 7.0)
+    assert scan.weighted_total(flat) == 7.0
+    # the live case: a role Tom wants badly and would struggle to be screened for
+    stripe = dims(experience=5, skills=4, seniority=8, domain=9, location_visa=8,
+                  trajectory=9)
+    shot, want = scan.shot_want(stripe)
+    assert shot < want, (shot, want)
+    assert shot == round((5 * 25 + 4 * 20 + 8 * 15) / 60, 1)
+    assert want == round((9 * 15 + 8 * 15 + 9 * 10) / 40, 1)
+    # a row with no dimensions was never scored; 0.0 would read as a judgement
+    assert scan.shot_want({}) == (None, None)
+    assert scan.shot_want(None) == (None, None)
+
+
+def test_a_scored_row_carries_shot_want_and_the_hard_gaps():
+    """hard_gaps is the honest "would a screener stop here" signal. The model was already
+    writing these into flags as prose; asking for them as a list is what makes them
+    something the CV can be audited against."""
+    obs = dict(NO_OBS, dimensions=dims(experience=4, skills=4),
+               hard_gaps=["5+ years in a dedicated Sales Ops role", "advanced SQL required"],
+               flags=[], verdict="ok", posting_location="")
+    out = scan.parse_score_result(flag_job(), obs)
+    assert out["shot"] == scan.shot_want(out["dimensions"])[0]
+    assert out["want"] == scan.shot_want(out["dimensions"])[1]
+    assert out["hard_gaps"][0].startswith("5+ years")
+    # and an empty list is a real answer, not a missing field
+    out = scan.parse_score_result(flag_job(), dict(obs, hard_gaps=[]))
+    assert out["hard_gaps"] == []
+
+
+def test_the_scorer_is_asked_for_hard_gaps_and_can_answer():
+    """A field in the schema the prompt never explains comes back as whatever the model
+    guesses it means; a field the prompt asks for but the schema rejects fails the call."""
+    assert "hard_gaps" in scan.SCORE_SCHEMA["properties"]
+    assert "hard_gaps" in scan.SCORE_SCHEMA["required"]
+    assert "hard_gaps" in scan.score_system()
+    # required must list every property, or a strict schema rejects the response
+    assert set(scan.SCORE_SCHEMA["required"]) == set(scan.SCORE_SCHEMA["properties"])
+
+
+def test_the_dashboard_shows_both_halves_and_the_gaps():
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    for needle in ["j.shot", "j.want", "j.hard_gaps", "tag gap", "shotOnly"]:
+        assert needle in page, needle
+
+
+def test_every_market_has_a_source_that_covers_it():
+    """The board was 57% London and 19% Netherlands, and that is a sourcing fact rather
+    than a market fact: Indeed, Reed, Adzuna-UK and LinkedIn all pointed at London while
+    one Adzuna feed was the whole of the Dutch coverage. A market with no source is a
+    market that cannot show up however good its jobs are."""
+    jobspy = {t["cc"] for t in scan.JOBSPY_TARGETS}
+    for cc in ("nl", "be", "ie", "ca", "us"):
+        assert cc in jobspy, cc
+    for t in scan.JOBSPY_TARGETS:
+        assert t["sites"] and t["country_indeed"] and t["currency"], t
+
+
+def test_companies_may_run_any_board_the_code_can_read():
+    """companies.json could only name greenhouse/lever/ashby, which decided which
+    EMPLOYERS could be watched: Recruitee, Workable, Personio and Teamtailor are the Dutch
+    scaleup norm, so the goal market was the one the watchlist could not reach."""
+    import findform
+    companies = json.load(open(os.path.join(os.path.dirname(__file__), "..",
+                                            "companies.json")))["companies"]
+    for c in companies:
+        assert c["ats"] in findform.BOARDS, c
+        assert c["name"] and c["slug"], c
+    # no duplicate watch entries -- a company listed twice is fetched twice every run
+    slugs = [(c["ats"], c["slug"]) for c in companies]
+    assert len(slugs) == len(set(slugs))
+    # and the goal markets are actually represented on the list
+    assert len(companies) >= 40
+    assert {"DataSnipper", "Mollie", "Qualio", "Klaviyo"} <= {c["name"] for c in companies}
+
+
+def test_fetch_company_routes_a_board_to_something_that_can_read_it():
+    """The three boards with their own fetchers keep them (they carry the description and
+    the detail URL); everything else goes through findform."""
+    seen = {}
+    real_board, real_ats = scan.fetch_board, dict(scan.ATS)
+    try:
+        scan.fetch_board = lambda name, slug, ats: seen.setdefault("generic", (name, slug, ats)) or []
+        scan.ATS["greenhouse"] = lambda name, slug: seen.setdefault("greenhouse", (name, slug)) or []
+        scan.fetch_company({"name": "Adyen", "ats": "greenhouse", "slug": "adyen"})
+        scan.fetch_company({"name": "bunq", "ats": "recruitee", "slug": "bunq"})
+    finally:
+        scan.fetch_board = real_board
+        scan.ATS.clear(); scan.ATS.update(real_ats)
+    assert seen["greenhouse"] == ("Adyen", "adyen")
+    assert seen["generic"] == ("bunq", "bunq", "recruitee")
+
+
+def test_the_dashboard_can_filter_by_market_and_track():
+    """The board is 500 rows deep and the two questions he opens it with are "what is new"
+    and "what is there in the Netherlands". Both were unanswerable without scrolling."""
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    for needle in ["MARKET_CHIPS", "TRACK_CHIPS", "passesFilters", "trackOf",
+                   "rr_last_visit", "newdot", "rr_applied_at", "rr_hidden_at",
+                   "applied-wrap", "hidden-wrap"]:
+        assert needle in page, needle
+    # the track fallback has to agree with scan.py's own CSM test, or a row stored before
+    # scan.py wrote `track` lands in the wrong chip
+    assert "/customer success/i.test" in page
+    assert scan.is_csm_title("Senior Customer Success Manager")
+    assert not scan.is_csm_title("Revenue Operations Manager")
+    # the ATS badge and its filter are gone: the apply bot is mothballed, and a badge
+    # about whether it could fill the form is a badge about nothing
+    assert "fillableOnly" not in page
+    assert "tag fillable" not in page
+    # ... while the link to the real application form stays
+    assert "Apply &rarr;" in page
+
+
+def test_the_scorers_risk_notes_are_not_pills_any_more():
+    """They are sentences. As pills they were cut at 70 characters and made the card wider
+    than a phone screen: 104 of 137 cards overflowed at 375px."""
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    assert "PILL_FLAGS" in page and "Watch-outs" in page
+    # the pill rule itself wraps; the filter chips above still don't, and shouldn't
+    assert "white-space:normal; overflow-wrap:anywhere}" in page
+    assert ".tag{font-size:11px" in page.replace("\n", "")
+
+
+def test_every_row_says_which_track_it_is_on():
+    """The dashboard filters by it, and deriving it in the page would be a second copy of
+    the CSM regex."""
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    assert "j.track" in page
+    src = open(os.path.join(os.path.dirname(__file__), "..", "scan.py"),
+               encoding="utf-8").read()
+    assert 'j["track"] = "cs" if is_csm_title(' in src
 
 
 def test_the_dashboard_is_handed_the_market_ordering_rather_than_keeping_a_copy():
@@ -807,7 +1023,9 @@ def test_score_request_body_is_well_formed():
         assert k not in sent, f"{k} is rejected on Opus 5"
     # system must be a block list carrying the cache breakpoint, not a bare string
     assert isinstance(sent["system"], list)
-    assert sent["system"][0]["cache_control"] == {"type": "ephemeral"}
+    # An hour, not the default five minutes: runs land about an hour apart, so a
+    # five-minute cache was written every run and read by none of them.
+    assert sent["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert "profile" in sent["system"][0]["text"].lower()
     oc = sent["output_config"]
     assert oc["effort"] in ("low", "medium", "high", "xhigh", "max")
@@ -1740,7 +1958,7 @@ def test_jobspy_targets_are_whole_countries_not_cities():
     Dublin-only narrowing the location gate used to do."""
     for t in scan.JOBSPY_TARGETS:
         assert "," not in t["location"], t["location"]
-        assert t["cc"] in ("ie", "ca", "us")
+        assert t["cc"] in ("nl", "be", "ie", "ca", "us")
         assert t["sites"] and t["currency"]
     # Google Jobs is what replaces hiring.cafe's long-tail reach in North America: it
     # indexes Greenhouse/Lever/Ashby posting pages directly.

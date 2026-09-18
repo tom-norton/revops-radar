@@ -42,15 +42,28 @@ Cloudflare** below.
    others.) North America gets a narrower phrase set: the US title gate would drop the rest
    on arrival, and the free tier's nominal 1,000 calls/month is already well exceeded.
 2. **Reed API** — extra UK/London depth (free key).
-3. **JobSpy** — Indeed for Ireland (the Adzuna gap), plus Indeed and **Google Jobs** for
-   Canada and the US. Google Jobs is the closest free substitute for hiring.cafe's
-   long-tail reach, since it indexes Greenhouse/Lever/Ashby posting pages directly.
-4. **Company ATS feeds** — Greenhouse / Lever / Ashby boards for ~19 named SaaS companies
-   that hire in NL/Belgium/London/Ireland (`companies.json`). Clean company names, full
-   descriptions, and this is a big part of the Ireland coverage since many US firms hire
-   there this way. Optional — the rest of the pipeline works without it; it exists to
-   guarantee coverage of specific companies Tom wants watched regardless of whether they
-   show up via the other sources.
+3. **JobSpy** — Indeed for the **Netherlands**, **Belgium** and Ireland, plus Indeed and
+   **Google Jobs** for the Netherlands, Belgium, Canada and the US. Google Jobs is the
+   closest free substitute for hiring.cafe's long-tail reach, since it indexes
+   Greenhouse/Lever/Ashby posting pages directly. NL and BE were added after counting the
+   board: 307 London rows against 102 Dutch ones over 45 days, with Indeed, Reed, Adzuna-UK
+   and LinkedIn all pointed at London while a single Adzuna feed was the whole of the Dutch
+   coverage. That is a sourcing fact, not a market fact.
+4. **Company ATS feeds** — **43** named companies (`companies.json`), on **any board
+   `findform.BOARDS` can read**: Greenhouse, Lever and Ashby have their own fetchers here,
+   while SmartRecruiters, Recruitee, Workable, Personio and Teamtailor are read through
+   `findform.board_jobs()` by `fetch_board()`. The old greenhouse/lever/ashby-only rule was
+   quietly deciding which *employers* could be watched — Recruitee, Workable, Personio and
+   Teamtailor are the Dutch scaleup norm, so the goal market was the one the watchlist
+   could not reach. The NL/IE/BE half of the list was picked by counting how many roles each
+   board actually had in those markets on the day it was added (DataSnipper, Mollie, Bynder,
+   Miro, Mendix, Nebius, Databricks, bunq, Channable, Sana Commerce; Klaviyo, Squarespace,
+   Qualio, Tines, Flipdish, Vanta, Wayflyer, Workhuman, Sitecore, CarTrawler; Showpad,
+   Deliverect, Alan, Lansweeper). Clean company names, full descriptions where the board
+   carries them, and a big part of the Ireland coverage since many US firms hire there this
+   way. Optional — the rest of the pipeline works without it; it exists to guarantee
+   coverage of specific companies Tom wants watched regardless of whether they show up via
+   the other sources. `python scan.py --verify` tests every slug.
 5. **hiring.cafe** — via the Apify actor `memo23/apify-hiring-cafe-scraper`, run against
    Tom's searches. The direct API is no longer an option at all: `hiring.cafe/api/search-jobs`
    returns 401 and `hiringcafe.com` sits behind a Cloudflare challenge. Worth the $19/mo —
@@ -212,11 +225,15 @@ fact is missing rather than flattening both into one sentence.
     and all three are ones 12a had already recovered for free, so on the current dashboard
     this step adds nothing the duplicates had not already given. It earns its place on the
     rows that arrive with no duplicate at all.
-12c. For the rest, the posting is **web-searched, and the result is verified in code** —
+12c. For the rest, the posting can be **web-searched, and the result verified in code** —
     the only place in the pipeline that spends tokens to get *evidence* rather than to form
-    a judgement, so it is priced like a last resort: `MAX_JD_SEARCHES_PER_RUN = 3` rows a
-    run, in stage 2 only, and only for a row that has already survived the Haiku screen and
-    won a scoring slot. `search_jd_url()` asks Sonnet for one line, a URL, and nothing else;
+    a judgement. **It is switched off** (`MAX_JD_SEARCHES_PER_RUN = 0`) because it never
+    once paid: over 12 sampled runs it fired 11 times and `verify_jd()` confirmed the page
+    **zero** times, at a Sonnet call plus 20–40k tokens of search results each. The failure
+    is in the confirmation rather than the search — `verify_jd()` wants schema.org
+    JobPosting JSON-LD and most ATS pages do not publish it — so the code stays, and
+    loosening that check is what would earn the money back. When it is on it is priced like
+    a last resort: a few rows a run, `search_jd_url()` asks Sonnet for one line, a URL, and nothing else;
     it is never asked to read or judge the role. `verify_jd()` then decides whether the page
     is really that job off the page's own schema.org metadata — the title through
     `findform.title_score` at the same threshold an application uses, the employer through
@@ -307,7 +324,16 @@ fact is missing rather than flattening both into one sentence.
     run to ask before a CV is built or a form is filled (see `/market` below).
 
 **Scoring (two stages, so the expensive model only sees real candidates):**
-14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill).
+14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill), and it may
+    kill for **one** reason: the role is unambiguously outside Tom's target functions.
+    Location is not a kill ground — it has already been decided in code, and the resolved
+    market is handed to the screen as settled — and neither are the industry, the employer,
+    the pay or the seniority. That rule is not decorative: two thirds of screened rows were
+    being killed, on stored reasons like "Location not specified; likely US-based",
+    "Cleantech, not B2B SaaS" and "JetBrains is based in Czech Republic", all of them
+    re-deciding something the pipeline had already settled or marking down a domain the deep
+    scorer scores properly. A wrong keep costs one cheap call; a wrong kill loses a role Tom
+    never sees.
 15. **Stage 2 — Claude Opus** scores the keepers on the weighted rubric from
     `profile.md` (Experience 25% / Skills 20% / Seniority 15% / Domain 15% / Location+Visa 15% /
     Trajectory 10%) and reports the facts it can only get by reading the posting: stated
@@ -665,19 +691,50 @@ a row deleted from that file is a role that comes back tomorrow looking new. The
 line says how many are hidden, so nothing disappears quietly. The excluded log gets the
 same cut.
 
-**The dashboard shows this before you ever tap Apply.** Every card carries a tag naming
-the board the application is actually on — a plain grey tag when it's a real system with
-no driver yet (Workday, SmartRecruiters, Workable…), a green **✓** tag when `/submit`
-can fill it without being asked. Where the scan's board lookup found the form itself, the
-card also carries an **Apply →** link straight to it, next to the "View posting" link that
-often opens nothing but an advert. The list is ordered by score and nothing else reorders
-it — a checkmark is convenience, and convenience shouldn't outrank fit on the one list
-whose job is to rank by fit — but "Auto-fillable only" filters down to just those when
-that's what you want. This is the same free, no-network
-classification `/submit` itself starts from (`submit.application_status()`), computed
-once per row at scan time — so a blank tag means "not known to be fillable from the
-record," never "definitely not." A 9.0 with no checkmark is still worth applying to, by
-hand or with `/submit <link>`.
+**Where the application actually is, on the card.** Where the scan's board lookup found
+the form itself, the card carries an **Apply →** link straight to it, next to the "View
+posting" link that often opens nothing but an advert. The **ATS badge that used to sit
+beside it is gone**, along with the "Auto-fillable only" filter: both answered "could the
+bot fill this form", and the bot is mothballed — applications are made by hand through the
+`job-application-workflow` skill now. `scan.py` still writes `ats` / `ats_fillable` on every
+row (the apply-link state is derived from them, and the mothballed code reads them); they
+are simply not something worth reading on a card any more.
+
+**Shot and Want, under the score.** The six dimensions answer two different questions, and
+the weighted total blends them into one number that cannot tell them apart. Stripe's GTM
+S&O Analyst scored 6.8 and Qualio's Senior CSM 6.5 — opposite problems: the Stripe role is
+one Tom badly wants and would probably not be screened for (advanced SQL and BI required),
+the Qualio one he would likely be screened for and does not much want. Split by the
+rubric's own weights they read **5.6 / 8.6** and **7.4 / 5.1**.
+
+```
+Shot = (experience*25 + skills*20 + seniority*15) / 60     can I get the interview
+Want = (domain*15 + location*15 + trajectory*10) / 40      do I want the job
+```
+
+No extra model call: it is arithmetic over dimension scores already stored, so every row
+already scored has both (`shot_want()` in `scan.py`, written onto each row, with the weights
+also published in `status.json` so the page can derive them for a row stored before the
+split existed). Next to them, **hard gaps** — the posting's own stated must-haves the
+profile does not meet, quoted in under 12 words, asked for as a list in `SCORE_SCHEMA`
+rather than left as prose in the flags. They render first in the tag row, travel in the
+Copy-for-Claude block, and are where the skill's bullet audit now starts.
+
+**Filters, and what's new.** A sticky bar at the top: market chips (All · NL · IE · London ·
+BE · CA · US) and track chips (All · RevOps · CS), each with a live count taken *before* the
+other filter applies, plus a **Shot 6.5+** toggle that never hides an unscored row. `track`
+is written onto every row by `scan.py` from the same CSM title test the flags use, so the
+page keeps no second copy of it. Every role found since the last visit carries a dot, and
+the header says how many and since when — with three scans a day, that is the question
+every visit starts with. **Hidden** and **applied** are two sections now, each newest-marked
+first with the date on the card; Hide and Mark applied record a timestamp and sync it
+alongside the id lists.
+
+**Risk notes read as sentences.** The scorer's flags were pills cut at 70 characters, and a
+pill cannot wrap — 104 of 137 cards were wider than a 375px screen. Short facts (market,
+pay, hard gaps, title band, the location conflict, the sponsor badge) stay pills and now
+wrap; the scorer's notes are a **Watch-outs** list under the verdict, at full length, with
+the stored cap raised from 70 to 160 characters.
 
 **Every board it can fill runs an invisible bot check on submission, and nothing here
 tries to get past one.** Greenhouse loads reCAPTCHA Enterprise into every application page;
@@ -937,6 +994,27 @@ The scoring model here is the skill's: six weighted dimensions, judged on the sk
 guidance, with no ceilings and no title-based exclusions. If you find the two disagreeing
 anywhere other than markets and the CSM track, the radar is the one that's wrong.
 
+## The two Claude skills
+
+The application half runs in a Claude project and **its files live there, not in this
+repo**: `job-application-workflow` builds the brief, the bullet audit, the tailored CV and
+the outreach email, and `score-role` reproduces this scorer in chat for a role the radar
+never saw. They stay out of here for a plain reason — the application skill carries the
+bullet bank's PAT, and this repo is public.
+
+They are still a contract with this code, and it is a one-way one: change something on this
+list and the skill in the project has to be edited to match, because nothing here can check
+it for you.
+
+| Here | What the skill does with it |
+|---|---|
+| `packetFor()` in `docs/index.html` | Writes the RADAR ROLE block the application skill parses line by line, including the `Shot` / `Want` / `Hard gaps` lines |
+| `score_flags()` and `parse_score_result()` in `scan.py` | Decide the flag wordings its Step 0 table matches on; an unmatched line makes it announce that the dashboard has changed |
+| `cvbuild.contact_for()` / `NA_MARKETS` | Decides which contact block a market takes (Barcelona for NL/IE/UK/BE, Grand Rapids and no nationality line for CA/US) |
+| `profile.md` and `RUBRIC` in `scan.py` | What `score-role` scores against; it fetches both at run time rather than remembering them |
+| `shot_want()` in `scan.py` | The split both skills report |
+| `bankwrite.py` | The bullet bank's writer, called by the application skill's Step 9d |
+
 ## Tests
 
 ```
@@ -1013,6 +1091,16 @@ Cloudflare's cron triggers fire on time; `scheduled()` checks whether the firing
 10:15, 3pm or 8pm in Europe/Amsterdam and, if so, dispatches `scan.yml` immediately. Because
 the local time is computed at firing time rather than baked into a UTC expression, 25 Oct
 needs no change — the triggers deliberately cover both offsets and only one matches per day.
+
+**The GitHub cron stays as a backstop, and now stands down when it is not needed.** Both
+schedulers were firing: the Worker on time, GitHub's cron 20 minutes to 5 hours later. On
+17 Sep that was four runs — 13:00 dispatch, 13:23 schedule, 17:22 schedule, 18:00 dispatch —
+where the second of each pair found nothing new and still paid for five Apify actor calls
+and up to 60 Adzuna ones, with Adzuna answering 503 on the later run almost every day
+(a free-tier quota already spent). So a **scheduled** run now exits before the scanner if a
+scan committed inside the last two hours. A `workflow_dispatch` never stands down — asking
+for a run by hand means you want one now — and if the Worker stops firing, nothing commits
+and the next scheduled run goes ahead, which is the whole point of a backstop.
 
 **Deploying is merging.** `.github/workflows/worker-deploy.yml` uploads `worker/` to
 Cloudflare on any push to `main` that touches it, so a schedule change goes live when the PR

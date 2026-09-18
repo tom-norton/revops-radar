@@ -93,11 +93,42 @@ jobs:
         # everything the old rules threw away a second look.
         if: inputs.backfill
         run: python scan.py --unkill-history --days "${{ inputs.backfill_days }}"
+      - name: Skip a backstop run the Worker already covered
+        # The Worker fires on time; these crons are the backstop and GitHub delivers them
+        # 20 minutes to 5 hours late. On 17 Sep that meant four runs -- 13:00 dispatch,
+        # 13:23 schedule, 17:22 schedule, 18:00 dispatch -- where the second of each pair
+        # found nothing new and still paid for five Apify actor calls and up to 60 Adzuna
+        # ones. Adzuna answered 503 on the later run almost every day, which is what a
+        # free-tier quota already spent looks like.
+        #
+        # So a SCHEDULED run stands down when a scan committed inside the last two hours.
+        # A dispatch never does: asking for a run by hand means you want one now. If the
+        # Worker stops firing, nothing commits, and the next scheduled run goes ahead --
+        # the backstop is intact, only the duplicate is gone.
+        id: recent
+        if: github.event_name == 'schedule'
+        run: |
+          # The scan's own commit, by message, rather than any commit touching
+          # docs/status.json -- a hand edit to that file is not a scan and must not
+          # make the backstop stand down.
+          last=$(git log -1 --format=%ct --grep="^scan:")
+          if [ -z "$last" ]; then
+            echo "no scan commit in history; running"
+            exit 0
+          fi
+          age=$(( ( $(date -u +%s) - last ) / 60 ))
+          if [ "$age" -lt 120 ]; then
+            echo "skipped: scan ran $age min ago"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "last scan was $age min ago; running"
+          fi
+
       - name: Run scanner
         # Skipped on a backfill run. The backfill is a repair of rows already scored; a scan
         # on top of it would spend a full budget of Haiku and Opus calls for no reason, and
         # the commit step below still runs either way so the repair gets pushed.
-        if: ${{ !inputs.backfill_jd }}
+        if: ${{ !inputs.backfill_jd && steps.recent.outputs.skip != 'true' }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
