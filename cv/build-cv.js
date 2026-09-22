@@ -163,6 +163,8 @@ function tabbedLine(left, right, emphasis, before, after) {
   return para({
     tabStops: [{ type: TabStopType.RIGHT, position: RIGHT_TAB }],
     spacing: { line: LINE, lineRule: "auto", before, after },
+    keepNext: true,
+    keepLines: true,
     children,
   });
 }
