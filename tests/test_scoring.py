@@ -944,17 +944,24 @@ def test_every_row_says_which_track_it_is_on():
 
 
 def test_the_dashboard_is_handed_the_market_ordering_rather_than_keeping_a_copy():
-    """docs/index.html sorts by tier then score, and reads the tier table out of
-    status.json for the same reason it reads gate and floor from there: a second copy in
-    the page is a copy that drifts."""
+    """docs/index.html reads the tier table out of status.json for the same reason it
+    reads gate and floor from there: a second copy in the page is a copy that drifts. It
+    labels each card's market with it; it no longer sorts by it (see below)."""
     page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
                 encoding="utf-8").read()
     assert "allStatus.market_tier" in page
-    assert "tierOf(a) - tierOf(b)" in page
-    # an unknown market must sort LAST, or a market added to scan.py before the dashboard
-    # has seen it jumps straight to the top of the list
+    # an unknown market must read as the lowest tier, never the highest
     assert "TIER_UNKNOWN = 9" in page
     assert "?? TIER_UNKNOWN" in page
+
+
+def test_the_dashboard_lists_by_overall_score_not_market_tier():
+    """Tier-then-score put a 6.6 in Amsterdam above an 8.4 in Dublin, and the list read as
+    unordered. Market preference already lives in the score's location_visa dimension."""
+    page = open(os.path.join(os.path.dirname(__file__), "..", "docs", "index.html"),
+                encoding="utf-8").read()
+    assert "tierOf(a) - tierOf(b)" not in page
+    assert "sort(byScore)" in page
 
 
 def test_score_schema_uses_only_supported_json_schema_keywords():

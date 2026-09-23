@@ -15,9 +15,12 @@ compatibility_date = "2026-09-04"
 
 [triggers]
 # These are UTC, like every cron. They are not the schedule -- scanDueAt() is, reading
-# Europe/Amsterdam at firing time. These only have to be a superset: every UTC minute that
-# could possibly be 10:15, 15:00 or 20:00 in Amsterdam, under either offset the country
-# uses. CEST (UTC+2) matches the first of each pair, CET (UTC+1) the second, so exactly one
-# fires for real on any given day and the other returns without doing anything. That is
-# what makes the clocks going back on 25 Oct 2026 a non-event here.
-crons = ["15 8,9 * * *", "0 13,14,18,19 * * *"]
+# America/New_York at firing time. These only have to be a superset: every UTC minute that
+# could possibly be 8:00, 12:30 or 20:00 (weekdays) or 9:00 (weekends) Eastern, under
+# either offset. EDT (UTC-4) matches the first of each pair, EST (UTC-5) the second, and
+# scanDueAt() discards whichever does not match on the day -- including the day-of-week,
+# which it reads locally, so 8pm Friday landing on Saturday in UTC is not a problem. That
+# is what makes the clocks going back on 1 Nov 2026 a non-event here.
+#   8:00  -> 12:00Z / 13:00Z     12:30 -> 16:30Z / 17:30Z
+#   20:00 -> 00:00Z / 01:00Z     9:00  -> 13:00Z / 14:00Z
+crons = ["0 0,1,12,13,14 * * *", "30 16,17 * * *"]

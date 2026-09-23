@@ -22,15 +22,16 @@ anywhere, core RevOps or **senior** CS titles only, and **the posting must state
 Germany, Spain, on-site US roles, and remote-from-anywhere/EMEA roles are deliberately
 excluded.
 
-That ordering is real, not cosmetic. It sets the `location_visa` score band, the dashboard
-sort order, and who gets first claim on the deep-scoring budget. The US is a
+That ordering is real, not cosmetic. It sets the `location_visa` score band and who gets
+first claim on the deep-scoring budget. The US is a
 financial-runway backstop rather than a destination, and a US employer that also hires in
 NL/IE/UK/CA scores higher than a US-only one, because an internal transfer later is a route
 abroad without changing employer.
 
-**Runs:** 10:15am, 3pm and 8pm local on weekdays, 10:15am only on weekends. The clock is
-the Cloudflare Worker's (`worker/wrangler.toml`, `scanDueAt()` in
-`worker/telegram-relay.js`), which reads Europe/Amsterdam at firing time and so needs no
+**Runs:** 8am, 12:30pm and 8pm Eastern on weekdays, 9am only on weekends. The dashboard
+lists roles by overall score, highest first. The clock is the Cloudflare Worker's
+(`worker/wrangler.toml`, `scanDueAt()` in `worker/telegram-relay.js`), which reads
+America/New_York at firing time and so needs no
 touching when the clocks change. GitHub's own cron in `.github/workflows/scan.yml` is kept
 as a backstop only — it is hours late in practice, see **Why the schedule lives in
 Cloudflare** below.
@@ -721,7 +722,8 @@ rather than left as prose in the flags. They render first in the tag row, travel
 Copy-for-Claude block, and are where the skill's bullet audit now starts.
 
 **Filters, and what's new.** A sticky bar at the top: market chips (All · NL · IE · London ·
-BE · CA · US) and track chips (All · RevOps · CS), each with a live count taken *before* the
+BE · CA · US) and track chips (All · RevOps · CS), each with a live count of Apply and
+Borderline roles only (below-floor and unscored rows are not counted) taken *before* the
 other filter applies, plus a **Shot 6.5+** toggle that never hides an unscored row. `track`
 is written onto every row by `scan.py` from the same CSM title test the flags use, so the
 page keeps no second copy of it. Every role found since the last visit carries a dot, and
@@ -1082,15 +1084,15 @@ scheduler gave `apply.yml`'s 15-minute cron 35 firings of an expected ~576 over 
 The expressions are correct; scheduled workflows are best-effort and this repo is being
 deprioritised. What that costs is not a missed source but a wrecked cadence: three runs a
 day spread across the working day becomes three runs bunched into the afternoon and
-evening, and every new role is seen hours later than it was posted. The 10:15 slot has a
-second constraint on top, which is that it must stay *after* the 10am revopsroles.com
-email; lateness never broke that, but the DST drift the old TODO warned about would have.
+evening, and every new role is seen hours later than it was posted. The morning slot has a
+second constraint on top, which is that it must stay *after* the revopsroles.com email
+(10am Amsterdam, 4am Eastern); 8am Eastern clears it with hours to spare.
 
 So the clock moved to the Worker, which already held a GitHub PAT for the Telegram relay.
 Cloudflare's cron triggers fire on time; `scheduled()` checks whether the firing minute is
-10:15, 3pm or 8pm in Europe/Amsterdam and, if so, dispatches `scan.yml` immediately. Because
-the local time is computed at firing time rather than baked into a UTC expression, 25 Oct
-needs no change — the triggers deliberately cover both offsets and only one matches per day.
+one of the scan times in America/New_York and, if so, dispatches `scan.yml` immediately. Because
+the local time is computed at firing time rather than baked into a UTC expression, the
+clocks going back on 1 Nov needs no change — the triggers deliberately cover both offsets and only one matches per day.
 
 **The GitHub cron stays as a backstop, and now stands down when it is not needed.** Both
 schedulers were firing: the Worker on time, GitHub's cron 20 minutes to 5 hours later. On
