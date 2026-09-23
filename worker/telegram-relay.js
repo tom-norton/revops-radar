@@ -17,7 +17,7 @@
  * Two routes and a schedule:
  *   POST /telegram   Telegram's webhook. Authenticated by the secret token header.
  *   POST /queue      The dashboard's Apply button. Starts a run; carries no message.
- *   scheduled()      Cloudflare cron. Starts the daily scan at its three local times.
+ *   scheduled()      Cloudflare cron. Starts the scan at its local times.
  *
  * Deploy: merging to main does it, via .github/workflows/worker-deploy.yml. That upload is
  * what registers the cron triggers, so a schedule change here is inert until it merges.
@@ -54,13 +54,15 @@ const MAX_MESSAGE = 3000;
 // being rewritten twice a year, which is the trap scan.yml sat in. Here the local time is
 // worked out at firing time, so the clocks changing moves which UTC trigger matches rather
 // than requiring an edit to this list.
-const TZ = "Europe/Amsterdam";
-// 10:15 is deliberately after the 10am revopsroles.com email, which is the whole reason
-// the morning run's punctuality matters: fire it early and that source is not there yet.
+const TZ = "America/New_York";
+// Three runs on weekdays, one later-morning run at weekends. Every one of them lands well
+// after the revopsroles.com email (10am Amsterdam, 4am here), so the morning run always
+// has that source to read.
 const SCAN_TIMES = [
-  { hour: 10, minute: 15, weekdaysOnly: false },
-  { hour: 15, minute: 0, weekdaysOnly: true },
-  { hour: 20, minute: 0, weekdaysOnly: true },
+  { hour: 8, minute: 0, days: "weekdays" },
+  { hour: 12, minute: 30, days: "weekdays" },
+  { hour: 20, minute: 0, days: "weekdays" },
+  { hour: 9, minute: 0, days: "weekends" },
 ];
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
@@ -91,7 +93,7 @@ async function dispatch(env, workflow, inputs) {
 }
 
 /**
- * Is `at` one of the three moments the scan is due, read in Tom's timezone?
+ * Is `at` one of the moments the scan is due, read in Tom's timezone?
  *
  * Exported for tests: the whole point of moving the schedule here is that it stays right
  * across a DST change, and the only way to know that is to run both sides of one.
@@ -113,14 +115,14 @@ export function scanDueAt(at) {
     (t) =>
       t.hour === hour &&
       t.minute === minute &&
-      (!t.weekdaysOnly || WEEKDAYS.includes(weekday)),
+      WEEKDAYS.includes(weekday) === (t.days === "weekdays"),
   );
 }
 
 export default {
   /**
    * Cloudflare cron. wrangler.toml registers every UTC minute that could be one of the
-   * three local times under either of Amsterdam's offsets, so on any given day half of
+   * local scan times under either of New York's offsets, so on any given day most of
    * them return here without doing anything. That slack is the point: it is what lets the
    * DST decision live in code, where it can be tested, rather than in a cron expression.
    *

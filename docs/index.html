@@ -467,6 +467,10 @@ function scoreClass(s){ return s == null ? "s-none"
 // market added to the code before the dashboard has seen it cannot jump the queue.
 let MARKET_TIER = {}, TIER_UNKNOWN = 9;
 function tierOf(j){ return MARKET_TIER[j.tier || j.market || ""] ?? TIER_UNKNOWN; }
+function byScore(a,b){
+  return ((b.score??0) - (a.score??0))
+      || String(b.found_at||"").localeCompare(String(a.found_at||""));
+}
 
 // A row set aside for having no posting text. It is not scored and not rejected -- the
 // recovery routes all came back empty, so nothing about it has been examined.
@@ -759,7 +763,13 @@ function renderAll(){
   // Counts are taken BEFORE the filters are applied, against everything currently
   // showable, so a chip says how many roles that market has rather than how many survive
   // the filter already on -- otherwise every chip but the chosen one reads 0.
+  //
+  // Only Apply and Borderline rows are counted. The chip is answering "how many roles
+  // worth looking at are in Belgium", and a count padded with rows scored under the floor
+  // (or never scored) says there is more there than there is.
+  const countable = j=>!isSetAside(j) && (j.score??0) >= FLOOR;
   const countBy = (rows, of, defs)=>{
+    rows = rows.filter(countable);
     const c = {all: rows.length};
     defs.forEach(([v])=>{ if(v !== "all") c[v] = 0; });
     rows.forEach(r=>{ const k = of(r); if(k in c) c[k]++; });
@@ -782,12 +792,11 @@ function renderAll(){
   // them happened to be on a board with a driver -- convenience outranking fit, on the one
   // list whose whole job is to rank by fit. The checkmark still says which is which, and
   // the toggle above filters to them outright when that is what's wanted.
-  // Market tier first, then score. The ordering is Tom's, read from status.json so it
-  // cannot drift from scan.py's MARKET_TIER: Netherlands, then Ireland and London, then
-  // Belgium and Canada, then the US. A brilliant US role still scores what it scores and
-  // still appears -- it just appears below a decent Amsterdam one, which is the whole
-  // point. Within a tier nothing but the score reorders it.
-  jobs = [...jobs].sort((a,b)=> (tierOf(a) - tierOf(b)) || ((b.score??0) - (a.score??0)));
+  // Overall score, highest first; newest first on a tie. Market tier used to come first,
+  // which put a 6.6 in Amsterdam above an 8.4 in Dublin and made the list read as if it
+  // were in no order at all. Market preference is already inside the score (the
+  // location_visa dimension), and the market chips above filter to one outright.
+  jobs = [...jobs].sort(byScore);
 
   // Split off before anything is bucketed by score. A set-aside row has no score, and
   // `?? 0` would file it under "scored below the floor" -- which is the one thing it is
@@ -914,17 +923,15 @@ Promise.all([
 ]).then(([jobs, status, excluded])=>{
   jobs = (jobs||[]).filter(j=>!String(j.id||"").startsWith("demo-"));
   allJobs = jobs; allStatus = status || {}; allExcluded = excluded || {};
-  // Read the thresholds and the market ordering from the code's own output BEFORE the
-  // first sort. Sorting first would compare every row at TIER_UNKNOWN, which ties them
-  // all and silently falls back to score-only order on the very first paint.
+  // Read the thresholds and the market tiers from the code's own output before the first
+  // render, so the bands and each card's market label are right on the very first paint.
   if(typeof allStatus.gate === "number") GATE = allStatus.gate;
   if(typeof allStatus.floor === "number") FLOOR = allStatus.floor;
   if(allStatus.market_tier && typeof allStatus.market_tier === "object")
     MARKET_TIER = allStatus.market_tier;
   if(allStatus.shot_want && allStatus.shot_want.weights)
     SHOT_WANT = allStatus.shot_want;
-  jobs.sort((a,b)=> (tierOf(a) - tierOf(b)) || ((b.score??0)-(a.score??0))
-                 || String(b.found_at||"").localeCompare(String(a.found_at||"")));
+  jobs.sort(byScore);
   document.getElementById("apply-h").textContent = `Apply — ${GATE.toFixed(1)} and up`;
   renderAll();
 

@@ -14,14 +14,15 @@ on:
     # best-effort and this repo is being deprioritised; no cron expression fixes that, which
     # is why punctuality moved to a scheduler that has some.
     #
-    # Cron here is UTC with no DST awareness. On 25 Oct 2026 these drift an hour early
-    # relative to Tom's clock, which now costs nothing -- a backstop that fires at 9:15
-    # instead of 10:15 is still hours ahead of when GitHub actually delivers it, and the
-    # Worker is what has to land after the 10am revopsroles.com email. Left as-is
-    # deliberately; the DST handling that matters is in the Worker.
-    - cron: "15 8 * * *"     # 08:15 UTC every day (10:15am local under CEST)
-    - cron: "0 13 * * 1-5"   # 13:00 UTC weekdays only (3pm local under CEST)
-    - cron: "0 18 * * 1-5"   # 18:00 UTC weekdays only (8pm local under CEST)
+    # Cron here is UTC with no DST awareness. These are set for Eastern daylight time
+    # (UTC-4); on 1 Nov 2026 they drift an hour early relative to Tom's clock, which costs
+    # nothing -- a backstop that fires at 7am instead of 8am is still hours ahead of when
+    # GitHub actually delivers it. Left as-is deliberately; the DST handling that matters
+    # is in the Worker.
+    - cron: "0 12 * * 1-5"   # 12:00 UTC weekdays (8am Eastern under EDT)
+    - cron: "30 16 * * 1-5"  # 16:30 UTC weekdays (12:30pm Eastern under EDT)
+    - cron: "0 0 * * 2-6"    # 00:00 UTC Tue-Sat (8pm Mon-Fri Eastern under EDT)
+    - cron: "0 13 * * 0,6"   # 13:00 UTC weekends (9am Eastern under EDT)
   workflow_dispatch:
     inputs:
       backfill:
