@@ -1,7 +1,7 @@
 // Adds a row to the Applications tab of Job Search Tracker (formerly Networking Tracker)
-// when "Mark applied" is tapped on the dashboard. Lives in the sheet's own Apps Script project (Extensions → Apps Script),
-// not in the repo's pipeline; this file is the source of truth to paste from. Setup is in
-// the README under "Application tracker".
+// when "Mark applied" is tapped on the dashboard. Lives in the sheet's own Apps Script
+// project (Extensions → Apps Script), not in the repo's pipeline; this file is the source
+// of truth to paste from. Setup is in the README under "Application tracker".
 //
 // The web app has to be deployed with access "Anyone", because the dashboard is a static
 // page with no Google login. The URL is in the public repo, so the TOKEN script property is
