@@ -153,6 +153,12 @@
   .sources{margin-top:34px; border-top:1px solid var(--line); padding-top:14px;
         font-size:11.5px; color:var(--mut)}
   .sources div{margin:3px 0}
+  .toast{position:fixed; left:50%; bottom:18px; transform:translateX(-50%); max-width:calc(100% - 32px);
+        padding:8px 14px; border-radius:20px; font-size:12.5px; background:var(--card);
+        border:1px solid var(--line); color:var(--sub); opacity:0; transition:opacity .2s;
+        pointer-events:none}
+  .toast.on{opacity:1} .toast.ok{border-color:var(--good); color:var(--good)}
+  .toast.bad{border-color:var(--warn); color:var(--warn)}
   .sources .ok{color:var(--sub)} .sources .bad{color:var(--warn)}
 </style>
 </head>
@@ -178,6 +184,7 @@
   <div id="hidden-wrap"></div>
 
   <div class="sources" id="sources"></div>
+  <div class="toast" id="toast" role="status"></div>
 
 <script>
 // Defaults only. scan.py writes the real values into status.json so the bands live in one
@@ -301,6 +308,71 @@ let syncApi = false; // becomes true once Firebase responds
 // If it's unreachable, everything still works on localStorage alone -- this is
 // a strict enhancement layer, never a hard dependency.
 const FIREBASE_STATE_URL = "https://revops-radar-2822a-default-rtdb.europe-west1.firebasedatabase.app/revops-radar-state.json";
+
+// "Mark applied" also adds the role to the Applications tab of Networking Tracker, the
+// sheet Tom used to fill in by hand. The receiving end is tools/tracker-append.gs, an Apps
+// Script web app on the sheet itself. Its URL is public (it is in this file); the token that
+// lets a request through is not, so it lives in this browser's localStorage and is asked
+// for once per device. Empty URL = feature off, and Mark applied behaves as it always did.
+const TRACKER_URL = "https://script.google.com/macros/s/AKfycbzzhUGnXD92Gs_LB9h3qf360-cHnJyKPxNXHVCjYb00qh2TxByYrGMh5HdHqsaMzasn/exec";
+
+// The sheet records the country, not the city, in the words Tom has always used.
+const TRACKER_COUNTRY = {
+  "NL": "Netherlands", "nl": "Netherlands",
+  "IE": "Ireland", "IE-Dublin": "Ireland", "ie": "Ireland",
+  "UK-London": "UK", "gb": "UK", "uk": "UK",
+  "BE": "Belgium", "be": "Belgium",
+  "CA": "Canada", "ca": "Canada",
+  "US-Remote": "US-Remote", "us": "US-Remote",
+};
+function trackerCountry(j){
+  const m = j.tier || j.market || "";
+  if(TRACKER_COUNTRY[m]) return TRACKER_COUNTRY[m];
+  const parts = String(j.location || "").split(",").map(x=>x.trim()).filter(Boolean);
+  return parts.length ? parts[parts.length-1] : m;
+}
+
+let toastTimer = null;
+function toast(msg, kind){
+  const t = document.getElementById("toast");
+  if(!t) return;
+  t.textContent = msg; t.className = "toast on " + (kind || "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ t.className = "toast"; }, kind === "bad" ? 6000 : 2500);
+}
+
+function trackerToken(){
+  let tok = "";
+  try { tok = localStorage.getItem("rr_tracker_token") || ""; } catch(e){}
+  if(tok) return tok;
+  tok = (prompt("Tracker token (set once per device, to add applied roles to Networking Tracker). Leave blank to skip.") || "").trim();
+  if(tok){ try { localStorage.setItem("rr_tracker_token", tok); } catch(e){} }
+  return tok;
+}
+
+// Fire-and-forget: the Applied mark is already saved and synced before this runs, so a
+// failure here only means the sheet row has to be added by hand, and the toast says so.
+// text/plain keeps it a "simple" request; Apps Script cannot answer a CORS preflight.
+function logToTracker(j){
+  if(!TRACKER_URL || !j) return;
+  const token = trackerToken();
+  if(!token) return;
+  const body = {token, company: j.company || "", title: j.title || "",
+                location: trackerCountry(j),
+                score: j.score == null ? "" : Number(j.score).toFixed(1),
+                link: j.url || ""};
+  fetch(TRACKER_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+                      body: JSON.stringify(body)})
+    .then(r=>r.json())
+    .then(res=>{
+      if(res && res.ok) toast(res.dup ? "Already in Networking Tracker" : "Added to Networking Tracker", "ok");
+      else {
+        if(res && res.error === "bad token"){ try { localStorage.removeItem("rr_tracker_token"); } catch(e){} }
+        toast("Tracker not updated (" + ((res && res.error) || "error") + ") — add it by hand", "bad");
+      }
+    })
+    .catch(()=>toast("Tracker not updated — add it by hand", "bad"));
+}
 
 // The apply queue is mothballed -- applications are made by hand again, through the
 // job-application-workflow skill in a Claude project. So the button that used to queue a
@@ -979,7 +1051,11 @@ document.body.addEventListener("click", (e)=>{
     return; }
   else if(act === "applied"){
     appliedIds.add(id); appliedAt[id] = new Date().toISOString();
-    saveSet("rr_applied", appliedIds); saveMap("rr_applied_at", appliedAt); }
+    saveSet("rr_applied", appliedIds); saveMap("rr_applied_at", appliedAt);
+    pushState();
+    renderAll();
+    logToTracker(allJobs.find(j=>String(j.id||"") === id));
+    return; }
   else if(act === "copy"){
     const job = allJobs.find(j=>String(j.id||"") === id);
     // Copying is not state: nothing to save, nothing to sync, and no reason to re-render
