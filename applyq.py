@@ -100,9 +100,9 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 # Per-phase models. Split out as named constants because the budget lever, if this runs
 # hot, is to route the audit and the interview to Sonnet and keep Opus for the judgement
 # calls. One edit each, no logic change.
-SALARY_MODEL = "claude-opus-5"
-AUDIT_MODEL = "claude-opus-5"
-DRAFT_MODEL = "claude-opus-5"
+SALARY_MODEL = "claude-opus-5-5"
+AUDIT_MODEL = "claude-opus-5-5"
+DRAFT_MODEL = "claude-opus-5-5"
 AUDIT_MAX_TOKENS = 8000
 SALARY_MAX_TOKENS = 6000
 DRAFT_MAX_TOKENS = 6000
@@ -115,16 +115,16 @@ SPLIT_MAX_TOKENS = 2000
 # actually trying to do next year, and which of Tom's bullets earns its line on the page --
 # so both stay on Opus. The bank write-back decision is the four-part promotion test, which
 # is likewise a judgement, but over a much smaller input.
-BRIEF_MODEL = "claude-opus-5"
+BRIEF_MODEL = "claude-opus-5-5"
 BRIEF_MAX_TOKENS = 4000
 BRIEF_MAX_SEARCHES = 6
-TAILOR_MODEL = "claude-opus-5"
+TAILOR_MODEL = "claude-opus-5-5"
 TAILOR_MAX_TOKENS = 12000
-BANKWRITE_MODEL = "claude-opus-5"
+BANKWRITE_MODEL = "claude-opus-5-5"
 BANKWRITE_MAX_TOKENS = 4000
 # The cover letter. Opus, because this is the one deliverable that is entirely prose and
 # entirely Tom's voice -- there is no bank canonical underneath it to fall back on.
-COVER_MODEL = "claude-opus-5"
+COVER_MODEL = "claude-opus-5-5"
 COVER_MAX_TOKENS = 4000
 # Phase 4. The one model call in a submission answers the questions a form asks that
 # nothing on file already answers -- "what excites you most about this opportunity" -- and
@@ -132,7 +132,7 @@ COVER_MAX_TOKENS = 4000
 # honesty screen. Everything else on the form is filled by code, because a name, an email
 # address and a work-authorisation answer are facts, and a model that gets to guess at a
 # fact on an application form is a model that can put the wrong one on his record.
-SUBMIT_MODEL = "claude-opus-5"
+SUBMIT_MODEL = "claude-opus-5-5"
 SUBMIT_MAX_TOKENS = 4000
 # Telegram allows getUpdates OR a webhook, never both: once a webhook is registered,
 # getUpdates returns 409 and polling is dead. So the message can arrive two ways.

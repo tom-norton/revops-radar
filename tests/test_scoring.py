@@ -993,8 +993,8 @@ def test_score_schema_uses_only_supported_json_schema_keywords():
 
 def test_score_request_body_is_well_formed():
     """Build the exact body score_job() sends and assert the shape the API expects for
-    claude-opus-5: cached system prefix, no `thinking` key (adaptive is the default, and
-    disabling it is what makes this model leak reasoning into the answer), effort and the
+    claude-opus-5-5: cached system prefix, no `thinking` key (thinking is always on, and
+    sending {"type": "disabled"} is a 400 on this model), effort and the
     json_schema together under output_config, and enough max_tokens for thinking plus text."""
     import json as _json
     sent = {}
@@ -1023,11 +1023,11 @@ def test_score_request_body_is_well_formed():
     finally:
         scan.requests.post = real_post
 
-    assert sent["model"] == "claude-opus-5"
+    assert sent["model"] == "claude-opus-5-5"
     assert sent["max_tokens"] >= 2000, "thinking + response share max_tokens"
-    assert "thinking" not in sent, "adaptive is the default on Opus 5; do not disable it"
+    assert "thinking" not in sent, "thinking cannot be disabled on Opus 5.5; omit the key"
     for k in ("temperature", "top_p", "top_k"):
-        assert k not in sent, f"{k} is rejected on Opus 5"
+        assert k not in sent, f"{k} is rejected on Opus 5.5"
     # system must be a block list carrying the cache breakpoint, not a bare string
     assert isinstance(sent["system"], list)
     # An hour, not the default five minutes: runs land about an hour apart, so a
@@ -1035,6 +1035,8 @@ def test_score_request_body_is_well_formed():
     assert sent["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert "profile" in sent["system"][0]["text"].lower()
     oc = sent["output_config"]
+    # Explicit, always: Opus 5.5 defaults to medium where Opus 5 defaulted to high, so a
+    # body that leaves it out silently changes how hard the scorer thinks.
     assert oc["effort"] in ("low", "medium", "high", "xhigh", "max")
     assert oc["format"]["type"] == "json_schema"
     assert oc["format"]["schema"] is scan.SCORE_SCHEMA
@@ -2920,6 +2922,136 @@ def _run():
     print(f"\n{len(tests) - len(failed)}/{len(tests)} passed")
     return 1 if failed else 0
 
+
+
+# ---------------------------------------------------------------- batch scoring
+
+def _score_reply(score=7):
+    return {"stop_reason": "end_turn", "usage": {"output_tokens": 10},
+            "content": [{"type": "text", "text": json.dumps({
+                "dimensions": {k: score for k in scan.RUBRIC_KEYS},
+                "function_match": "core", "company_standout": True,
+                "language_hard_requirement": False, "salary_stated": False,
+                "salary_min_base": 0, "salary_currency": "",
+                "flags": [], "verdict": "ok"})}]}
+
+
+class _FakeBatchAPI:
+    """Stands in for requests.post/get against the batch endpoints. `polls` is how many
+    GETs the batch stays in_progress for; `results` maps custom_id -> result dict."""
+
+    def __init__(self, results, polls=0, cancel_settles=True):
+        self.results, self.polls, self.cancel_settles = results, polls, cancel_settles
+        self.submitted = None
+        self.cancelled = False
+        self.gets = 0
+
+    def _resp(self, payload=None, text=""):
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self_inner): return payload
+        r = R()
+        r.text = text
+        return r
+
+    def _state(self):
+        ended = self.polls <= 0 or (self.cancelled and self.cancel_settles)
+        return {"id": "msgbatch_1",
+                "processing_status": "ended" if ended else "in_progress",
+                "results_url": "https://x/results" if ended else None}
+
+    def post(self, url, timeout=None, headers=None, json=None):
+        if url.endswith("/cancel"):
+            self.cancelled = True
+            return self._resp(self._state())
+        self.submitted = json
+        return self._resp(self._state())
+
+    def get(self, url, timeout=None, headers=None):
+        if url == "https://x/results":
+            rows = [{"custom_id": cid, "result": r} for cid, r in self.results.items()]
+            return self._resp(text="\n".join(__import__("json").dumps(r) for r in rows))
+        self.gets += 1
+        self.polls -= 1
+        return self._resp(self._state())
+
+
+@contextlib.contextmanager
+def _batch_api(api):
+    post, get = scan.requests.post, scan.requests.get
+    scan.requests.post, scan.requests.get = api.post, api.get
+    try:
+        yield
+    finally:
+        scan.requests.post, scan.requests.get = post, get
+
+
+def _jobs(n):
+    return [{"title": f"RevOps Manager {i}", "company": "Adyen", "location": "Amsterdam",
+             "market": "NL", "description": "d"} for i in range(n)]
+
+
+def test_batch_sends_the_same_request_a_live_call_would():
+    """The batch is a billing choice, not a different question: every request in it must be
+    the body score_job() sends, cache breakpoint and structured output included."""
+    jobs = _jobs(3)
+    api = _FakeBatchAPI({f"job-{i}": {"type": "succeeded", "message": _score_reply()}
+                         for i in range(3)})
+    with _batch_api(api):
+        out = scan.score_jobs_batch("k", scan.score_system(), jobs, sleep=lambda s: None)
+    reqs = api.submitted["requests"]
+    assert [r["custom_id"] for r in reqs] == ["job-0", "job-1", "job-2"]
+    live = scan._message_body(scan.CLAUDE_SCORE_MODEL, scan.score_system(),
+                              [{"role": "user", "content": scan.job_message(jobs[0])}],
+                              scan.SCORE_MAX_TOKENS, scan._score_extra(), cache_system=True)
+    assert reqs[0]["params"] == live
+    assert all(id(j) in out and out[id(j)]["score"] == 7.0 for j in jobs)
+
+
+def test_batch_leaves_unanswered_rows_for_the_live_scorer():
+    """errored / expired / canceled rows are missing from the result, which is the caller's
+    signal to score them live. A refusal is a real answer, so it comes back as an error to
+    record, not a row to retry at full price."""
+    jobs = _jobs(4)
+    api = _FakeBatchAPI({
+        "job-0": {"type": "succeeded", "message": _score_reply()},
+        "job-1": {"type": "errored", "error": {"type": "overloaded_error"}},
+        "job-2": {"type": "expired"},
+        "job-3": {"type": "succeeded", "message": {"stop_reason": "refusal", "content": []}},
+    })
+    with _batch_api(api):
+        out = scan.score_jobs_batch("k", scan.score_system(), jobs, sleep=lambda s: None)
+    assert out[id(jobs[0])]["score"] == 7.0
+    assert id(jobs[1]) not in out and id(jobs[2]) not in out
+    assert isinstance(out[id(jobs[3])], RuntimeError)
+
+
+def test_a_slow_batch_is_cancelled_and_keeps_what_it_finished():
+    """Past the wait the batch is cancelled; whatever it finished is kept and the rest is
+    left for the live scorer, so a slow batch can cost money back but never a score."""
+    jobs = _jobs(3)
+    api = _FakeBatchAPI({"job-0": {"type": "succeeded", "message": _score_reply()},
+                         "job-1": {"type": "canceled"}, "job-2": {"type": "canceled"}},
+                        polls=10**6)
+    t = [0.0]
+    def sleep(s): t[0] += s
+    with _batch_api(api):
+        out = scan.score_jobs_batch("k", scan.score_system(), jobs, wait_s=60, poll_s=20,
+                                    sleep=sleep, clock=lambda: t[0])
+    assert api.cancelled
+    assert list(out) == [id(jobs[0])]
+
+
+def test_a_cancel_that_never_settles_hands_everything_to_the_live_scorer():
+    jobs = _jobs(3)
+    api = _FakeBatchAPI({}, polls=10**6, cancel_settles=False)
+    t = [0.0]
+    def sleep(s): t[0] += s
+    with _batch_api(api):
+        out = scan.score_jobs_batch("k", scan.score_system(), jobs, wait_s=60, poll_s=20,
+                                    sleep=sleep, clock=lambda: t[0])
+    assert api.cancelled and out == {}
 
 if __name__ == "__main__":
     sys.exit(_run())

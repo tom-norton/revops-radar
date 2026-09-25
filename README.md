@@ -339,7 +339,10 @@ fact is missing rather than flattening both into one sentence.
     `profile.md` (Experience 25% / Skills 20% / Seniority 15% / Domain 15% / Location+Visa 15% /
     Trajectory 10%) and reports the facts it can only get by reading the posting: stated
     salary, whether another language is a hard requirement, whether the function is on
-    target, whether the employer is a standout.
+    target, whether the employer is a standout. The model is Opus 5.5 at `medium` effort,
+    and the head of the queue goes out as one Message Batch at half price. A batch that has
+    not finished after 20 minutes is cancelled, and whatever it had not answered is scored
+    live at full price, so a slow batch costs money back and never a missing score.
 16. **Two more hard disqualifiers, this time from what Opus reports** rather than a text
     match: a stated salary band entirely below the market's floor, and a posting that makes
     a non-English language a hard requirement. These catch what the regex checks in step 13

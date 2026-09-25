@@ -421,12 +421,16 @@ def north_america_of(loc, cc):
 
 
 CLAUDE_SCREEN_MODEL = "claude-haiku-4-5"        # stage 1: cheap kill/keep
-CLAUDE_SCORE_MODEL = "claude-opus-5"            # stage 2: deep weighted rubric
+CLAUDE_SCORE_MODEL = "claude-opus-5-5"          # stage 2: deep weighted rubric
 API_URL = "https://api.anthropic.com/v1/messages"
+BATCH_URL = "https://api.anthropic.com/v1/messages/batches"
 API_HEADERS_VERSION = "2023-06-01"
-# Opus 5 thinks by default and max_tokens caps thinking + response text together, so this
-# needs real headroom -- the old 900 would truncate mid-answer. Effort is the cost dial.
-SCORE_MAX_TOKENS = 4000
+# Opus 5.5 always thinks, and max_tokens caps thinking + response text together, so this
+# needs real headroom. 8000 rather than the 4000 Opus 5 ran on: at the same effort level
+# 5.5 thinks more per turn, and a truncated answer is an error that costs the whole call
+# and a retry next run. Only tokens actually generated are billed, so the headroom is free.
+# Effort is the cost dial, and it must stay explicit: 5.5 defaults to medium, not high.
+SCORE_MAX_TOKENS = 8000
 SCORE_EFFORT = "medium"       # low | medium | high | xhigh | max
 CLAUDE_ATTEMPTS = 3           # per call, with exponential backoff on 429/5xx/timeout
 
@@ -1296,7 +1300,7 @@ def redact(text):
 
 # Token usage across the run, surfaced in the status footer. cache_read staying at 0 across
 # a multi-job run means something volatile is leaking into the cached system prefix.
-USAGE = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
+USAGE = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "batched": 0}
 
 def note_usage(u):
     USAGE["in"] += u.get("input_tokens", 0) or 0
@@ -3386,6 +3390,45 @@ def _extract_json(text):
 SERVER_TOOL_MAX_TURNS = 3
 
 
+def _api_headers(api_key):
+    return {"x-api-key": api_key, "anthropic-version": API_HEADERS_VERSION,
+            "content-type": "application/json"}
+
+def _message_body(model, system, messages, max_tokens, extra=None, cache_system=False,
+                  tools=None):
+    """The Messages API request body. Shared by the live call and the batch, so a scored
+    row is asked exactly the same question whichever way it went out."""
+    body = {
+        "model": model, "max_tokens": max_tokens,
+        # A one-hour TTL rather than the default five minutes. The deep-score prefix
+        # is ~9.8k tokens of rubric and profile.md, rewritten identically every run,
+        # and runs land roughly an hour apart -- so at five minutes every run paid to
+        # write the cache and no run ever read it. An hour makes the next run's first
+        # call a cache read, and a rescore in between free.
+        "system": ([{"type": "text", "text": system,
+                     "cache_control": {"type": "ephemeral", "ttl": "1h"}}]
+                   if cache_system else system),
+        "messages": messages,
+    }
+    if tools:
+        body["tools"] = tools
+    if extra:
+        body.update(extra)
+    return body
+
+def _reply_text(payload, max_tokens):
+    """The text of a finished reply, or an exception for the two ways a 200 can still be
+    no answer. Opus can decline a request outright (empty content) and can run out of room
+    mid-answer; both used to surface as an empty string and a bogus score of 0."""
+    note_usage(payload.get("usage") or {})
+    stop = payload.get("stop_reason")
+    if stop == "refusal":
+        raise RuntimeError("model declined to score this posting (stop_reason=refusal)")
+    if stop == "max_tokens":
+        raise RuntimeError(f"hit max_tokens ({max_tokens}) before finishing")
+    return "".join(b.get("text", "") for b in payload.get("content", [])
+                   if b.get("type") == "text")
+
 def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_system=False,
                  tools=None):
     """A Messages API call, with bounded retry on the transient failures. cache_system
@@ -3399,31 +3442,16 @@ def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_sys
     once, so every existing caller is unaffected."""
     messages = [{"role": "user", "content": user}]
     for _turn in range(SERVER_TOOL_MAX_TURNS if tools else 1):
-        body = {
-            "model": model, "max_tokens": max_tokens,
-            # A one-hour TTL rather than the default five minutes. The deep-score prefix
-            # is ~9.8k tokens of rubric and profile.md, rewritten identically every run,
-            # and runs land roughly an hour apart -- so at five minutes every run paid to
-            # write the cache and no run ever read it. An hour makes the next run's first
-            # call a cache read, and a rescore in between free.
-            "system": ([{"type": "text", "text": system,
-                         "cache_control": {"type": "ephemeral", "ttl": "1h"}}]
-                       if cache_system else system),
-            "messages": messages,
-        }
-        if tools:
-            body["tools"] = tools
-        if extra:
-            body.update(extra)
+        body = _message_body(model, system, messages, max_tokens, extra, cache_system,
+                             tools)
         last = None
         payload = None
         for attempt in range(CLAUDE_ATTEMPTS):
             if attempt:
                 time.sleep(2 ** attempt)      # 2s, 4s
             try:
-                r = requests.post(API_URL, timeout=180, headers={
-                    "x-api-key": api_key, "anthropic-version": API_HEADERS_VERSION,
-                    "content-type": "application/json"}, json=body)
+                r = requests.post(API_URL, timeout=180, headers=_api_headers(api_key),
+                                  json=body)
             except (requests.Timeout, requests.ConnectionError) as e:
                 last = e
                 continue
@@ -3435,20 +3463,108 @@ def _claude_call(api_key, model, system, user, max_tokens, extra=None, cache_sys
             break
         if payload is None:
             raise last or RuntimeError("claude call failed")
-        note_usage(payload.get("usage") or {})
-        stop = payload.get("stop_reason")
-        # Opus 5 can decline a request outright (HTTP 200, empty content) and can run out of
-        # room mid-answer. Both used to surface as an empty string and a bogus score of 0.
-        if stop == "refusal":
-            raise RuntimeError("model declined to score this posting (stop_reason=refusal)")
-        if stop == "max_tokens":
-            raise RuntimeError(f"hit max_tokens ({max_tokens}) before finishing")
-        if stop == "pause_turn":
+        if payload.get("stop_reason") == "pause_turn":
+            note_usage(payload.get("usage") or {})
             messages.append({"role": "assistant", "content": payload.get("content", [])})
             continue
-        return "".join(b.get("text", "") for b in payload.get("content", [])
-                       if b.get("type") == "text")
+        return _reply_text(payload, max_tokens)
     raise RuntimeError(f"server-tool call did not finish in {SERVER_TOOL_MAX_TURNS} turns")
+
+# ---------------------------------------------------------------- batch scoring
+#
+# The deep score goes out as one Message Batch rather than thirty live calls. Batches are
+# billed at half price, and nothing about the scan needs an answer in seconds: the
+# dashboard is read hours later. The cost is wall-clock -- a batch usually ends in a few
+# minutes but is only promised within 24 hours -- so the wait is capped, and anything the
+# batch has not answered by then is cancelled and scored live, at full price, exactly as
+# before. A slow batch costs money back, never a missing score.
+SCORE_VIA_BATCH = True
+BATCH_MIN = 3                 # below this a batch saves pennies and costs minutes
+BATCH_WAIT_S = 20 * 60        # then cancel and score the rest live
+BATCH_POLL_S = 20
+BATCH_CANCEL_GRACE_S = 3 * 60 # a cancel is not instant; wait this long for it to settle
+
+def _batch_request(method, url, api_key, body=None):
+    """GET/POST against the batch endpoints with the same retry policy as a live call.
+    Returns the Response."""
+    last = None
+    for attempt in range(CLAUDE_ATTEMPTS):
+        if attempt:
+            time.sleep(2 ** attempt)
+        try:
+            if method == "POST":
+                r = requests.post(url, timeout=120, headers=_api_headers(api_key), json=body)
+            else:
+                r = requests.get(url, timeout=120, headers=_api_headers(api_key))
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last = e
+            continue
+        if r.status_code in (408, 409, 429) or r.status_code >= 500:
+            last = RuntimeError(f"HTTP {r.status_code}: {r.text[:140]}")
+            continue
+        r.raise_for_status()
+        return r
+    raise last or RuntimeError(f"batch {method} failed")
+
+def score_jobs_batch(api_key, system, jobs, wait_s=None, poll_s=None, sleep=None,
+                     clock=None):
+    """Deep-score `jobs` in one Message Batch. Returns {id(job): result-or-exception}.
+
+    A job missing from the dict was not answered by the batch (it expired, errored on
+    Anthropic's side, or the wait ran out) and the caller scores it live. A job mapped to
+    an exception got a real answer that was no answer -- a refusal, or max_tokens -- which
+    a live retry would only repeat, so the caller records it as a score error, same as a
+    live call raising it. Anything that goes wrong with the batch as a whole raises, and
+    the caller falls back to scoring everything live."""
+    wait_s = BATCH_WAIT_S if wait_s is None else wait_s
+    poll_s = BATCH_POLL_S if poll_s is None else poll_s
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
+
+    by_cid = {f"job-{i}": j for i, j in enumerate(jobs)}
+    requests_ = [{"custom_id": cid, "params": _message_body(
+        CLAUDE_SCORE_MODEL, system, [{"role": "user", "content": job_message(j)}],
+        SCORE_MAX_TOKENS, _score_extra(), cache_system=True)} for cid, j in by_cid.items()]
+    batch = _batch_request("POST", BATCH_URL, api_key, {"requests": requests_}).json()
+    bid = batch["id"]
+    print(f"  batch {bid}: {len(jobs)} role(s) submitted at batch price")
+
+    deadline = clock() + wait_s
+    cancelled_at = None
+    while batch.get("processing_status") != "ended":
+        now = clock()
+        if cancelled_at is None and now >= deadline:
+            print(f"  batch {bid}: not done after {wait_s // 60} min, cancelling; "
+                  f"whatever it has not answered is scored live")
+            batch = _batch_request("POST", f"{BATCH_URL}/{bid}/cancel", api_key).json()
+            cancelled_at = now
+            continue
+        if cancelled_at is not None and now - cancelled_at >= BATCH_CANCEL_GRACE_S:
+            # Results only exist once a batch has ended, so there is nothing to collect.
+            print(f"  batch {bid}: cancel did not settle; scoring all {len(jobs)} live")
+            return {}
+        sleep(poll_s)
+        batch = _batch_request("GET", f"{BATCH_URL}/{bid}", api_key).json()
+
+    out = {}
+    if not batch.get("results_url"):
+        return out
+    lines = _batch_request("GET", batch["results_url"], api_key).text.splitlines()
+    for line in lines:
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        j = by_cid.get(row.get("custom_id"))
+        res = row.get("result") or {}
+        if j is None or res.get("type") != "succeeded":
+            continue                      # errored / expired / canceled: score live
+        try:
+            text = _reply_text(res.get("message") or {}, SCORE_MAX_TOKENS)
+            out[id(j)] = parse_score_result(j, _extract_json(text))
+        except Exception as e:
+            out[id(j)] = e
+    USAGE["batched"] += len(out)
+    return out
 
 # Money as an ad writes it, in any of Tom's currencies. Broader than US_PAY_FIGURE on
 # purpose: that one answers "is this a US salary", this one answers "is this the paragraph
@@ -3647,16 +3763,19 @@ def parse_score_result(job, data):
         "market_conflict": market_conflict(job, data),
     }
 
+def _score_extra():
+    return {"output_config": {"effort": SCORE_EFFORT,
+                              "format": {"type": "json_schema", "schema": SCORE_SCHEMA}}}
+
 def score_job(api_key, system, job):
     """The model scores the six dimensions and reports what it read off the posting; the
     total is computed here, and so is the decision to drop the role outright rather than
-    score it (see deep_score_disqualifier()). Opus 5 thinks by default -- do not disable it,
-    which on this model can leak reasoning into the visible answer."""
+    score it (see deep_score_disqualifier()). Opus 5.5 always thinks: sending
+    thinking={"type": "disabled"} is a 400 on this model, so the body never carries a
+    `thinking` key and effort is the only control."""
     text = _claude_call(
         api_key, CLAUDE_SCORE_MODEL, system, job_message(job), SCORE_MAX_TOKENS,
-        cache_system=True,
-        extra={"output_config": {"effort": SCORE_EFFORT,
-                                 "format": {"type": "json_schema", "schema": SCORE_SCHEMA}}})
+        cache_system=True, extra=_score_extra())
     data = _extract_json(text)
     return parse_score_result(job, data)
 
@@ -4453,6 +4572,17 @@ def main():
 
     # PASS B: deep score, best first, until the budget runs out.
     survivors.sort(key=lambda j: priority(j, deferrals), reverse=True)
+    # The head of the queue goes out as one half-price batch first. The loop below is
+    # unchanged: it takes a batch answer where there is one and makes the live call where
+    # there is not, so a slot freed by a disqualification is still filled by the next row
+    # in the queue, and a batch that fails outright just means every row is scored live.
+    prescored = {}
+    head = survivors[:max(0, MAX_SCORED_PER_RUN - len(scored))]
+    if SCORE_VIA_BATCH and api_key and not dry and len(head) >= BATCH_MIN:
+        try:
+            prescored = score_jobs_batch(api_key, system_score, head)
+        except Exception as e:
+            print(f"  batch failed, scoring live instead ({str(e)[:120]})")
     for j in survivors:
         if len(scored) >= MAX_SCORED_PER_RUN:
             # Out of budget. NOT added to seen, so this row comes back next run, and its
@@ -4461,7 +4591,11 @@ def main():
             continue
 
         try:
-            result = score_job(api_key, system_score, j)
+            result = prescored.pop(id(j), None)
+            if isinstance(result, Exception):
+                raise result
+            if result is None:
+                result = score_job(api_key, system_score, j)
         except Exception as e:
             # Deliberately NOT added to seen: a transient failure used to write score 0 and
             # mark the job seen forever, which needed a manual commit to undo. Now it just
@@ -4648,7 +4782,9 @@ def main():
         src_status["queue"] = "empty; every screened role was scored this run"
     if USAGE["in"] or USAGE["cache_read"]:
         src_status["tokens"] = (f"in {USAGE['in']}, out {USAGE['out']}, "
-                               f"cache read {USAGE['cache_read']}, written {USAGE['cache_write']}")
+                               f"cache read {USAGE['cache_read']}, written {USAGE['cache_write']}"
+                               + (f"; {USAGE['batched']} scored by batch at half price"
+                                  if USAGE["batched"] else ""))
     if DROP_COUNTS:
         src_status["dropped"] = ", ".join(f"{k} {v}" for k, v in sorted(DROP_COUNTS.items()))
 
