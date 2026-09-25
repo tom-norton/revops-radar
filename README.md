@@ -941,6 +941,23 @@ question. They go into the tailoring prompt as rules, not context.
 **Not in this phase.** Autonomous submission is Phase 4. The hiring-manager outreach email
 the skill describes is out of scope entirely.
 
+## The weekly review
+
+Every Monday morning a scheduled Claude session reads the week's scans and what you did
+with them, writes `docs/review/YYYY-MM-DD.md`, and pushes you a two-line summary on ntfy.
+What it covers, and the rule that it only reports and never changes anything, are in
+`tools/weekly_review.md`. Edit that file to change the review; the schedule just points
+at it. The numbers come from `python tools/review_data.py`, which anyone can run.
+
+**Telling it why you hid something.** Hide is still one tap. After it, the card offers an
+optional "why": a few reasons that match the scorer's own dimensions (not my function,
+too junior, too senior, location / visa, pay, company, skills I lack, stale) and a line
+of free text. Skip it and nothing changes. Answer it and the review can tell a targeting
+problem from a scoring one: "you hid 9 London CS roles this month as not your function"
+is a title filter; "you hid 6 roles scored 7.5+ as too junior" is the seniority rubric.
+Hidden cards show the reason, with Edit why to add or change it later. The notes sync
+through the same Firebase node as Hide and Applied.
+
 ## Reviewing what got thrown away
 
 Nothing disappears silently. Every rejected row is logged to `docs/excluded.json` with the

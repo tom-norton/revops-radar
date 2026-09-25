@@ -99,6 +99,15 @@
   .tag.board{color:var(--mut)}
   .actions .status{font-size:11px; padding:3px 8px; border-radius:20px; color:var(--sub)}
   .job.reviewed{opacity:.6}
+  .why{margin-top:11px; padding:11px; border:1px dashed var(--line); border-radius:9px}
+  .why .wq{font-size:12px; color:var(--sub); margin-bottom:8px}
+  .why .chips{margin-bottom:8px}
+  .why input{width:100%; font:13px -apple-system,"Segoe UI",Roboto,sans-serif;
+        padding:6px 9px; border:1px solid var(--line); border-radius:7px;
+        background:var(--bg); color:var(--ink)}
+  .why .actions{margin-top:8px}
+  .why .actions button[data-save]{border-color:var(--teal); color:var(--teal)}
+  .whynote{font-size:11.5px; color:var(--sub); margin-top:6px}
   details.borderline>summary,details.reviewed>summary,details.excluded>summary{
         cursor:pointer; color:var(--sub); font-size:13px; list-style:none; user-select:none}
   details.borderline>summary::-webkit-details-marker,
@@ -227,6 +236,19 @@ let appliedIds = loadSet("rr_applied");
 // "what have I just done". Ids marked before this existed have no timestamp; they sort
 // after the dated ones rather than being given a date nobody recorded.
 let hiddenAt = loadMap("rr_hidden_at");
+// WHY a role was hidden, when he chose to say. Optional and after the fact: Hide is still
+// one tap, and the reason is what the weekly review reads to tell a targeting problem
+// (the radar keeps surfacing London roles he does not want) from a scoring one (it keeps
+// rating too-junior roles as a 7). Each note carries a snapshot of the row, because
+// jobs.json forgets a role after 45 days and the pattern is only visible over months.
+let hideNotes = loadMap("rr_hide_notes");
+// The reasons map onto the scorer's own dimensions and gates, so a pattern in them points
+// at a specific thing to change rather than a general sense that the list is off.
+const WHY_REASONS = [
+  ["function", "Not my function"], ["junior", "Too junior"], ["senior", "Too senior"],
+  ["location", "Location / visa"], ["pay", "Pay too low"],
+  ["company", "Company / industry"], ["skills", "Skills I lack"],
+  ["stale", "Closed / stale / duplicate"], ["other", "Other"]];
 let appliedAt = loadMap("rr_applied_at");
 // Which market and which track the list is filtered to, and whether the Shot floor is on.
 // Local-only on purpose: they change what is on screen, not what happened to a role.
@@ -428,6 +450,14 @@ async function syncFromServer(){
         if(!into[r.id] || String(r.at) < String(into[r.id])) into[r.id] = String(r.at);
       });
       mergeAt(server.hidden_at, hiddenAt);
+      // Newest note wins: unlike the timestamps, a reason is something he can revise.
+      (Array.isArray(server.hide_notes) ? server.hide_notes : []).forEach(n=>{
+        if(!n || !n.id || !n.at) return;
+        const mine = hideNotes[n.id];
+        if(!mine || String(n.at) > String(mine.at)){
+          const {id, ...rest} = n; hideNotes[id] = rest; }
+      });
+      saveMap("rr_hide_notes", hideNotes);
       mergeAt(server.applied_at, appliedAt);
       saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
       saveMap("rr_hidden_at", hiddenAt); saveMap("rr_applied_at", appliedAt);
@@ -444,7 +474,8 @@ function pushState(){
   const pairs = m => Object.entries(m).map(([id,at])=>({id, at}));
   fetch(FIREBASE_STATE_URL, {method:"PATCH", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({hidden:[...hiddenIds], applied:[...appliedIds],
-                          hidden_at: pairs(hiddenAt), applied_at: pairs(appliedAt)})})
+                          hidden_at: pairs(hiddenAt), applied_at: pairs(appliedAt),
+                          hide_notes: Object.entries(hideNotes).map(([id,n])=>({id, ...n}))})})
     .catch(()=>{});
 }
 
@@ -612,7 +643,10 @@ function card(j, reviewed){
   const actions = reviewed
     ? `<div class="actions"><span class="status">${marked(appliedIds, j) ? "Applied" : "Hidden"}${
           markedAt ? " " + fresh(markedAt) : ""}</span>
-        <button data-act="restore" data-id="${id}">Restore</button></div>`
+        ${marked(appliedIds, j) ? "" : `<button data-act="why" data-id="${id}">${
+          hideNote(j) ? "Edit why" : "Why?"}</button>`}
+        <button data-act="restore" data-id="${id}">Restore</button></div>
+      ${!marked(appliedIds, j) && hideNote(j) ? `<div class="whynote">${esc(whyText(hideNote(j)))}</div>` : ""}`
     : `<div class="actions">
         <button data-act="copy" data-id="${id}"
           title="Copy the score, flags and the ad, ready to paste into the Claude project"
@@ -872,6 +906,50 @@ function renderAll(){
   renderReviewed("hidden-wrap", hidden.sort(byMark), "Hidden");
 }
 
+function hideNote(j){ const id = idsOf(j).find(x=>hideNotes[x]); return id ? hideNotes[id] : null; }
+function whyText(n){
+  const labels = Object.fromEntries(WHY_REASONS);
+  return [ (n.reasons||[]).map(r=>labels[r]||r).join(", "), n.note ].filter(Boolean).join(" — ");
+}
+// The optional "why" panel, opened in place of a card's buttons. Nothing it does can undo
+// the hide: Skip, Save or just scrolling on all leave the role hidden.
+function openWhy(cardEl, id){
+  const job = allJobs.find(j=>String(j.id||"") === id);
+  const prev = (job && hideNote(job)) || hideNotes[id] || {};
+  const picked = new Set(prev.reasons || []);
+  const box = document.createElement("div"); box.className = "why";
+  box.innerHTML = `<div class="wq">Hidden. What was wrong with it? Optional — this feeds the weekly review.</div>
+    <div class="chips"></div>
+    <input type="text" maxlength="280" placeholder="Anything else (optional)" value="${esc(prev.note||"")}">
+    <div class="actions"><button data-save>Save</button><button data-skip>Skip</button></div>`;
+  const chips = box.querySelector(".chips");
+  WHY_REASONS.forEach(([code, label])=>{
+    const b = document.createElement("button");
+    b.className = "chip"; b.type = "button"; b.textContent = label;
+    b.setAttribute("aria-pressed", String(picked.has(code)));
+    b.addEventListener("click", ev=>{
+      ev.stopPropagation();
+      picked.has(code) ? picked.delete(code) : picked.add(code);
+      b.setAttribute("aria-pressed", String(picked.has(code)));
+    });
+    chips.appendChild(b);
+  });
+  box.querySelector("[data-save]").addEventListener("click", ev=>{
+    ev.stopPropagation();
+    const note = box.querySelector("input").value.trim().slice(0, 280);
+    if(picked.size || note){
+      hideNotes[id] = {at: new Date().toISOString(), reasons: [...picked], note,
+        title: job?.title || "", company: job?.company || "", score: job?.score ?? null,
+        market: job ? marketOf(job) : "", track: job ? trackOf(job) : ""};
+    } else delete hideNotes[id];
+    saveMap("rr_hide_notes", hideNotes); pushState(); renderAll();
+  });
+  box.querySelector("[data-skip]").addEventListener("click", ev=>{ ev.stopPropagation(); renderAll(); });
+  const actions = cardEl.querySelector(".actions");
+  (actions || cardEl.lastElementChild).replaceWith(box);
+  box.querySelector(".chip")?.focus();
+}
+
 function renderReviewed(wrapId, rows, label){
   const wrap = document.getElementById(wrapId);
   const wasOpen = wrap.querySelector("details")?.open ?? false;
@@ -890,7 +968,15 @@ document.body.addEventListener("click", (e)=>{
   const id = btn.dataset.id, act = btn.dataset.act;
   if(act === "hide"){
     hiddenIds.add(id); hiddenAt[id] = new Date().toISOString();
-    saveSet("rr_hidden", hiddenIds); saveMap("rr_hidden_at", hiddenAt); }
+    saveSet("rr_hidden", hiddenIds); saveMap("rr_hidden_at", hiddenAt);
+    // Recorded and synced now; the card stays put with the optional "why" panel in place
+    // of its buttons, and leaves the list on Save or Skip.
+    pushState();
+    openWhy(btn.closest(".job"), id);
+    return; }
+  else if(act === "why"){
+    openWhy(btn.closest(".job"), id);
+    return; }
   else if(act === "applied"){
     appliedIds.add(id); appliedAt[id] = new Date().toISOString();
     saveSet("rr_applied", appliedIds); saveMap("rr_applied_at", appliedAt); }
@@ -906,7 +992,8 @@ document.body.addEventListener("click", (e)=>{
     const job = allJobs.find(j=>String(j.id||"") === id);
     (job ? idsOf(job) : [id]).forEach(x=>{
       hiddenIds.delete(x); appliedIds.delete(x);
-      delete hiddenAt[x]; delete appliedAt[x]; });
+      delete hiddenAt[x]; delete appliedAt[x]; delete hideNotes[x]; });
+    saveMap("rr_hide_notes", hideNotes);
     saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
     saveMap("rr_hidden_at", hiddenAt); saveMap("rr_applied_at", appliedAt); }
   pushState();
