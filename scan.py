@@ -4578,9 +4578,18 @@ def main():
     # in the queue, and a batch that fails outright just means every row is scored live.
     prescored = {}
     head = survivors[:max(0, MAX_SCORED_PER_RUN - len(scored))]
-    if SCORE_VIA_BATCH and api_key and not dry and len(head) >= BATCH_MIN:
+    if SCORE_VIA_BATCH and api_key and not dry and len(head) > BATCH_MIN:
+        # The first row goes live, BEFORE the batch, to write the ~10k-token prompt
+        # cache. Batch requests run concurrently, so on a cold cache every one of them
+        # paid its own cache write -- measured on the first batched run: 121k tokens
+        # written for 13 rows and 10k read, which cost back most of the half-price
+        # saving. Warm, the batch reads the prefix at a tenth of the input price instead.
         try:
-            prescored = score_jobs_batch(api_key, system_score, head)
+            prescored[id(head[0])] = score_job(api_key, system_score, head[0])
+        except Exception as e:
+            prescored[id(head[0])] = e
+        try:
+            prescored.update(score_jobs_batch(api_key, system_score, head[1:]))
         except Exception as e:
             print(f"  batch failed, scoring live instead ({str(e)[:120]})")
     for j in survivors:

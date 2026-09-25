@@ -340,7 +340,8 @@ fact is missing rather than flattening both into one sentence.
     Trajectory 10%) and reports the facts it can only get by reading the posting: stated
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout. The model is Opus 5.5 at `medium` effort,
-    and the head of the queue goes out as one Message Batch at half price. A batch that has
+    and the head of the queue goes out as one Message Batch at half price (after one live
+    call that warms the prompt cache, so the batch reads it rather than rewriting it). A batch that has
     not finished after 20 minutes is cancelled, and whatever it had not answered is scored
     live at full price, so a slow batch costs money back and never a missing score.
 16. **Two more hard disqualifiers, this time from what Opus reports** rather than a text
