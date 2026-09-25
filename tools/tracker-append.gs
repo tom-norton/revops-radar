@@ -1,7 +1,7 @@
-// Adds a row to the Applications tab of Networking Tracker when "Mark applied" is tapped on
-// the dashboard. Lives in the sheet's own Apps Script project (Extensions → Apps Script),
-// not in the repo's pipeline; this file is the source of truth to paste from. Setup is in
-// the README under "Application tracker".
+// Adds a row to the Applications tab of Job Search Tracker (formerly Networking Tracker)
+// when "Mark applied" is tapped on the dashboard. Lives in the sheet's own Apps Script
+// project (Extensions → Apps Script), not in the repo's pipeline; this file is the source
+// of truth to paste from. Setup is in the README under "Application tracker".
 //
 // The web app has to be deployed with access "Anyone", because the dashboard is a static
 // page with no Google login. The URL is in the public repo, so the TOKEN script property is
@@ -22,7 +22,8 @@ function doPost(e) {
   const token = PropertiesService.getScriptProperties().getProperty("TOKEN");
   if (!token || body.token !== token) return reply({ ok: false, error: "bad token" });
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) return reply({ ok: false, error: "no tab named " + SHEET_NAME });
 
   const lock = LockService.getScriptLock();
@@ -36,20 +37,27 @@ function doPost(e) {
     }
 
     sheet.insertRowBefore(2);
-    // A row inserted under the header picks up the header's look; take the old top row's.
-    if (last >= 2) {
-      sheet.getRange(3, 1, 1, sheet.getLastColumn())
-           .copyTo(sheet.getRange(2, 1, 1, sheet.getLastColumn()),
-                   SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
-    }
     const score = body.score === "" || body.score == null ? "" : Number(body.score);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Today in the SHEET's timezone, at noon. Midnight in the script's own timezone showed
+    // as the evening before once the sheet displayed it in a zone further west.
+    const [y, m, d] = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), "yyyy-MM-dd")
+                               .split("-").map(Number);
     sheet.getRange(2, 1, 1, 9).setValues([[
       body.company || "", body.title || "", body.location || "", score,
-      today, "Applied", link, "", "",
+      new Date(y, m - 1, d, 12), "Applied", link, "", "",
     ]]);
-    sheet.getRange(2, 5).setNumberFormat("M/d");
+    // Cosmetic only, and after the data is in. The converted sheet is a Sheets table, whose
+    // typed columns refuse format changes -- the likely reason the first live run failed AFTER the row was
+    // written, and the dashboard reported a failure for a row that had landed. The table's
+    // own column formats cover it; outside a table, take the old top row's look.
+    try {
+      if (last >= 2) {
+        sheet.getRange(3, 1, 1, sheet.getLastColumn())
+             .copyTo(sheet.getRange(2, 1, 1, sheet.getLastColumn()),
+                     SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+      }
+      sheet.getRange(2, 5).setNumberFormat("M/d");
+    } catch (err) { /* left to the table's formatting */ }
     return reply({ ok: true });
   } finally {
     lock.releaseLock();

@@ -1040,8 +1040,8 @@ it for you.
 
 ## Application tracker
 
-**Mark applied** also adds the role to the **Applications** tab of *Networking Tracker* in
-Drive, at the top, the way Tom has always entered them: Company, Title (as posted),
+**Mark applied** also adds the role to the **Applications** tab of *Job Search Tracker*
+(formerly the *Networking Tracker* xlsx) in Drive, at the top, the way Tom has always entered them: Company, Title (as posted),
 Location (the country: Netherlands, Ireland, UK, Belgium, Canada or US-Remote), the
 radar's Score, today's date, Status `Applied`, and the posting link. Referral? and
 Interview Date stay blank. A small note at the bottom of the page says whether it went in.
@@ -1067,7 +1067,12 @@ One-time setup:
    and keeps it in that browser. A wrong token is forgotten, so the next tap asks again.
 
 While `TRACKER_URL` is empty, Mark applied does exactly what it did before. After editing
-the script, **Deploy → Manage deployments → edit → New version** keeps the same URL.
+the script, the live web app keeps running the OLD code until you **Deploy → Manage
+deployments → ✏️ → Version: New version → Deploy**, which also keeps the same URL.
+
+"Tracker didn't confirm" means the page got no readable answer, which can happen after the
+row is already in (a script error after the write comes back as an HTML page). Check the
+sheet, and Apps Script's **Executions** list, before adding the row by hand.
 
 ## Tests
 

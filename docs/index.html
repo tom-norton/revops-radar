@@ -309,7 +309,7 @@ let syncApi = false; // becomes true once Firebase responds
 // a strict enhancement layer, never a hard dependency.
 const FIREBASE_STATE_URL = "https://revops-radar-2822a-default-rtdb.europe-west1.firebasedatabase.app/revops-radar-state.json";
 
-// "Mark applied" also adds the role to the Applications tab of Networking Tracker, the
+// "Mark applied" also adds the role to the Applications tab of Job Search Tracker, the
 // sheet Tom used to fill in by hand. The receiving end is tools/tracker-append.gs, an Apps
 // Script web app on the sheet itself. Its URL is public (it is in this file); the token that
 // lets a request through is not, so it lives in this browser's localStorage and is asked
@@ -345,7 +345,7 @@ function trackerToken(){
   let tok = "";
   try { tok = localStorage.getItem("rr_tracker_token") || ""; } catch(e){}
   if(tok) return tok;
-  tok = (prompt("Tracker token (set once per device, to add applied roles to Networking Tracker). Leave blank to skip.") || "").trim();
+  tok = (prompt("Tracker token (set once per device, to add applied roles to Job Search Tracker). Leave blank to skip.") || "").trim();
   if(tok){ try { localStorage.setItem("rr_tracker_token", tok); } catch(e){} }
   return tok;
 }
@@ -365,13 +365,16 @@ function logToTracker(j){
                       body: JSON.stringify(body)})
     .then(r=>r.json())
     .then(res=>{
-      if(res && res.ok) toast(res.dup ? "Already in Networking Tracker" : "Added to Networking Tracker", "ok");
+      if(res && res.ok) toast(res.dup ? "Already in Job Search Tracker" : "Added to Job Search Tracker", "ok");
       else {
         if(res && res.error === "bad token"){ try { localStorage.removeItem("rr_tracker_token"); } catch(e){} }
         toast("Tracker not updated (" + ((res && res.error) || "error") + ") — add it by hand", "bad");
       }
     })
-    .catch(()=>toast("Tracker not updated — add it by hand", "bad"));
+    // No readable reply is not proof nothing was written: the script can fail after the row
+    // is in, and Google then answers with an HTML error page. So don't send Tom off to add
+    // a duplicate.
+    .catch(()=>toast("Tracker didn't confirm — check the sheet before adding it by hand", "bad"));
 }
 
 // The apply queue is mothballed -- applications are made by hand again, through the
