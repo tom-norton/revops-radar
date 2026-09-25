@@ -1038,6 +1038,37 @@ it for you.
 | `shot_want()` in `scan.py` | The split both skills report |
 | `bankwrite.py` | The bullet bank's writer, called by the application skill's Step 9d |
 
+## Application tracker
+
+**Mark applied** also adds the role to the **Applications** tab of *Networking Tracker* in
+Drive, at the top, the way Tom has always entered them: Company, Title (as posted),
+Location (the country: Netherlands, Ireland, UK, Belgium, Canada or US-Remote), the
+radar's Score, today's date, Status `Applied`, and the posting link. Referral? and
+Interview Date stay blank. A small note at the bottom of the page says whether it went in.
+If it did not, the Applied mark still stands and the row just needs adding by hand.
+
+The sheet side is `tools/tracker-append.gs`, an Apps Script web app that lives on the sheet
+itself; the dashboard posts to it. It skips a link already in column G, so un-applying and
+re-applying, or marking the same role on two devices, leaves one row. **Restore** does not
+remove the row, since its Status may have moved on by then.
+
+One-time setup:
+
+1. The tracker must be a native Google Sheet, not an `.xlsx`: open it, **File → Save as
+   Google Sheets**, and use the new copy from then on (rename or bin the old `.xlsx`).
+2. In the new sheet, **Extensions → Apps Script**, replace the editor's contents with
+   `tools/tracker-append.gs`, and save.
+3. **Project Settings → Script properties**: add `TOKEN` with any long random string.
+4. **Deploy → New deployment → Web app**, execute as **Me**, access **Anyone**. Approve the
+   permissions prompt and copy the `/exec` URL.
+5. Put that URL in `TRACKER_URL` in `docs/index.html` and push. The URL is public; the
+   token is what guards the sheet, and it never goes in the repo.
+6. The first time you tap Mark applied on each device, the page asks for the token once
+   and keeps it in that browser. A wrong token is forgotten, so the next tap asks again.
+
+While `TRACKER_URL` is empty, Mark applied does exactly what it did before. After editing
+the script, **Deploy → Manage deployments → edit → New version** keeps the same URL.
+
 ## Tests
 
 ```
@@ -1047,6 +1078,7 @@ python tests/test_cv.py         # layout policy, the honesty screen, the review 
 python tests/test_cover.py      # the letter: the two honesty screens, the one-page trim, /cover
 python tests/test_submit.py     # the form: what code fills, what nobody fills, and that nothing sends
 node tests/test_worker.mjs      # the Worker: its two guards, and the scan schedule incl. DST
+node tests/test_tracker.mjs     # the country each market is written into Networking Tracker as
 python tests/preview_messages.py # print every bot message as Telegram renders it (no asserts)
 python tests/test_cv_render.py --install  # the real render: docx -> PDF -> JPEG, measured
 python tests/test_submit_form.py --install  # a real browser filling, printing and submitting a form
