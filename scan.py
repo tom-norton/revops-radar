@@ -247,6 +247,32 @@ EXCLUDE_TITLE = re.compile(
     r"|intern\b|internship|working student|apprentice|graduate scheme"
     r"|\bvp\b|vice president|chief |\bsvp\b|\bevp\b", re.I)
 
+# Europe is where Tom needs a work permit, and two kinds of role cannot realistically give
+# him one: a fully remote role, which his own hide note calls "too much of a long shot for
+# sponsorship to be a real thing", and a contract, fixed-term or interim role, which rarely
+# carries sponsorship at all. Both are dropped in these four markets and kept in Canada and
+# the US, where no permit is needed and a contract is runway. The title half is caught
+# here for free; the half only the posting says ("Location: Ireland (Remote)") is read by
+# the deep scorer as work_arrangement / employment_type -- see deep_score_disqualifier().
+EUROPE_MARKETS = {"NL", "BE", "UK-London", "IE"}
+EU_REMOTE_TITLE = re.compile(r"\bremote\b|\bwork from home\b|\bwfh\b|\bhome[- ]based\b",
+                             re.I)
+# "Remote or Hybrid - Amsterdam" still offers an office, so it is not fully remote.
+EU_OFFICE_TITLE = re.compile(r"\bhybrid\b|\bon[- ]?site\b|\boffice\b", re.I)
+EU_CONTRACT_TITLE = re.compile(
+    r"\bcontract(?:or)?\b|\bfixed[- ]term\b|\bftc\b|\binterim\b|\btemporary\b|\btemp\b"
+    r"|\bfreelance\b|\b(?:maternity|paternity|parental)\s+(?:leave\s+)?cover\b"
+    r"|\bsecondment\b", re.I)
+
+# Posters that are not employers. RevOps Report reposts other companies' roles on LinkedIn
+# under its own name with a two-line stub, and its "apply" leads to its own board and then
+# back to the real LinkedIn ad -- which the LinkedIn source already fetches directly. Every
+# row it produced was a set-aside stub pointing at a posting found elsewhere.
+BLOCKED_POSTERS = re.compile(r"^\s*revops\s+report\s*$", re.I)
+
+def blocked_poster(job):
+    return bool(BLOCKED_POSTERS.search(job.get("company") or ""))
+
 # London + commuter belt only for the UK. Other UK cities are rejected below.
 UK_LONDON = re.compile(
     r"london|greater london|city of london|canary wharf|shoreditch|croydon"
@@ -598,10 +624,28 @@ _HARD_SECTION = re.compile(
     r"|what you(?:'ll| will)? need|who you are|about you)\b", re.I)
 _SECTION_LOOKBACK = 700
 
+_HEADING_MAX_CHARS = 60
+
+def _soft_scope_reaches(before, m):
+    """Whether a soft word at `m` in `before` governs the text at the end of `before`.
+
+    A short line of its own ("Preferred qualifications") is a heading and governs what
+    follows it. A long line that merely starts with the word ("Preferred: Experience with
+    Atlassian-powered solutions, ITSM certification, MEDDPICC...") is an inline label for
+    that one line: Atlassian's "Be fluent in French and English" on the next line was read
+    as preferred because of it, and a French-territory role reached the dashboard at 7.8.
+    On the same line it still counts, since flattened text has no line breaks to go by."""
+    start = before.rfind("\n", 0, m.start()) + 1
+    end = before.find("\n", m.end())
+    if end == -1:
+        return True                       # same line as the match
+    return end - start <= _HEADING_MAX_CHARS
+
 def _in_soft_section(text, pos):
     """True when the nearest preceding section heading marks optional criteria."""
     before = text[max(0, pos - _SECTION_LOOKBACK):pos]
-    soft = max((m.start() for m in _SOFT_SECTION.finditer(before)), default=-1)
+    soft = max((m.start() for m in _SOFT_SECTION.finditer(before)
+                if _soft_scope_reaches(before, m)), default=-1)
     hard = max((m.start() for m in _HARD_SECTION.finditer(before)), default=-1)
     return soft > hard
 
@@ -639,7 +683,43 @@ def requires_other_language(desc):
     # section_aware: a language listed under "Preferred qualifications" is a preference even
     # though its own bullet reads like a requirement. Sponsorship terms never appear under
     # such a heading, so says_no_sponsorship() deliberately does not use this.
-    return _first_matching_sentence(desc, LANG_HARD_RX, LANG_SOFT_RX, section_aware=True)
+    return (written_in_other_language(desc)
+            or _first_matching_sentence(desc, LANG_HARD_RX, LANG_SOFT_RX, section_aware=True))
+
+# An ad written in Dutch is asking for a Dutch speaker without needing to say so. Waste
+# Vision's CS role reached the dashboard at 6.5 with an all-Dutch posting and no sentence
+# for the requirement regex to match; Tom's hide note was "JD is in dutch, they clearly want
+# a dutch speaker". Counted on function words, which every ad needs whatever its subject,
+# and only decided when there is enough text to count and the other language clearly
+# outweighs English -- a bilingual ad with an English half is left to the regex.
+_FUNCTION_WORDS = {
+    "Dutch": {"de", "het", "een", "en", "van", "je", "jij", "jouw", "wij", "onze", "ons",
+              "voor", "met", "op", "zijn", "bij", "naar", "niet", "ook", "als", "wat",
+              "deze", "dat", "die", "wordt", "worden", "heb", "hebt", "heeft", "kun",
+              "kunt", "binnen", "waar", "jaar", "ervaring", "werk", "wie", "ben"},
+    "French": {"le", "la", "les", "des", "et", "vous", "nous", "pour", "avec", "une",
+               "est", "dans", "du", "sur", "votre", "nos", "notre", "au", "aux", "qui",
+               "que", "sont", "être", "expérience"},
+    "German": {"der", "die", "das", "und", "sie", "wir", "mit", "für", "ist", "ein",
+               "eine", "zu", "auf", "den", "bei", "uns", "unser", "unsere", "ihre",
+               "deine", "du", "erfahrung", "sowie", "oder"},
+}
+_ENGLISH_WORDS = {"the", "and", "to", "of", "you", "we", "our", "with", "for", "is", "are",
+                  "in", "a", "an", "your", "will", "on", "as", "be", "this", "that", "who",
+                  "experience", "team", "work", "or", "from", "have"}
+_LANG_MIN_WORDS = 40
+
+def written_in_other_language(desc):
+    """"posting is written in Dutch (...)" when the ad itself is in another language, else ""."""
+    words = re.findall(r"[a-zà-ÿ]+", (desc or "").lower())
+    english = sum(w in _ENGLISH_WORDS for w in words)
+    # The best-scoring language, not the first to clear the bar: "de" and "en" are French
+    # as well as Dutch, and a French ad would otherwise be named as Dutch.
+    other, lang = max((sum(w in vocab for w in words), lang)
+                      for lang, vocab in _FUNCTION_WORDS.items())
+    if other >= _LANG_MIN_WORDS and other > 2 * english:
+        return f"posting is written in {lang} ({other} {lang} function words, {english} English)"
+    return ""
 
 # Title intelligence from the job-application-workflow skill, as code. First match wins,
 # so the most disqualifying bands are checked first.
@@ -968,6 +1048,17 @@ def deep_score_disqualifier(job, obs):
     if obs.get("language_hard_requirement"):
         return "language-required", ("deep score: posting requires non-English fluency "
                                       "(missed by the wording-based check)")
+    # Europe only: see EUROPE_MARKETS. prefilter() catches the titles that say so; these
+    # are the postings that only say it in the body, like Afiniti's "Location: Ireland
+    # (Remote)" on a LinkedIn row whose location field read plain "Ireland".
+    if job.get("market") in EUROPE_MARKETS:
+        if obs.get("work_arrangement") == "fully_remote":
+            return "eu-remote", ("deep score: the posting describes a fully remote role, "
+                                 "which is too weak a basis for a European work permit")
+        if obs.get("employment_type") in ("contract", "fixed_term"):
+            kind = obs["employment_type"].replace("_", "-")
+            return "eu-contract", (f"deep score: the posting describes a {kind} role, "
+                                   f"which rarely carries European sponsorship")
     # The other half of us_comp_unstated(). That check now lets a US row through on a pay
     # figure spotted anywhere in the ad, because the alternative was dropping every US role
     # from a feed with no salary column. This is where that leniency is settled: the scorer
@@ -1099,13 +1190,18 @@ SCORE_SCHEMA = {
         "salary_max_base": {"type": "number"},
         "salary_currency": {"type": "string"},
         "posting_location": {"type": "string"},
+        "work_arrangement": {"type": "string",
+                             "enum": ["fully_remote", "hybrid", "on_site", "unstated"]},
+        "employment_type": {"type": "string",
+                            "enum": ["permanent", "contract", "fixed_term", "unstated"]},
         "hard_gaps": {"type": "array", "items": {"type": "string"}},
         "flags": {"type": "array", "items": {"type": "string"}},
         "verdict": {"type": "string"},
     },
     "required": ["dimensions", "function_match", "company_standout",
                  "language_hard_requirement", "salary_stated", "salary_min_base",
-                 "salary_max_base", "salary_currency", "posting_location", "hard_gaps",
+                 "salary_max_base", "salary_currency", "posting_location",
+                 "work_arrangement", "employment_type", "hard_gaps",
                  "flags", "verdict"],
     "additionalProperties": False,
 }
@@ -1134,6 +1230,7 @@ Nothing else is grounds for a kill. Specifically, and these are all real kills y
 - NOT the industry or the domain. Cleantech, healthcare, logistics, energy, finance, manufacturing, the public sector: all keeps, as long as the ROLE is commercial operations. "Not B2B SaaS" is a scoring question -- the deep scorer has a Domain dimension and marks it down there -- never a kill.
 - NOT the employer: its size, its funding stage, how strong the brand is, or where it is headquartered.
 - NOT the pay, or that no pay is stated.
+- NOT a skills, tooling or technical gap. A Sales Operations role that asks for AI/ML, SQL, a CRM certification or a technical background is still Sales Operations: whether the candidate has the skill is the deep scorer's Skills Match question, never a function kill. Decide the function from what the role DOES, and when a title names a target function ("Sales Operations", "Revenue Strategy", "GTM", "Monetization Strategy & Operations") and the posting is ambiguous about the rest, KEEP.
 
 NEVER KILL ON SENIORITY. This is the single most important rule here, and getting it wrong is expensive. Analyst, Senior Analyst, Specialist, Coordinator, Associate, Senior Associate, Business Partner, Lead, Manager, Senior Manager, Principal, Director and Head of are ALL keeps. Do not kill something for being "too junior", "entry level", "below Manager", "Director+ exceeds target", or any variant of that reasoning. A title is not a seniority: an "Analyst" or "Associate" at a strong employer routinely carries manager-level scope and pay well above a junior band, and a "Head of" at a 40-person startup is often a hands-on Manager role. The deep scorer reads the full posting - the scope, the reporting line, the years-of-experience band, the stated salary - and weighs seniority properly there. You cannot see enough to make that call. The ONLY seniority-shaped exception: genuine internships, working-student roles, apprenticeships and graduate schemes may be killed.
 
@@ -1181,6 +1278,8 @@ Alongside the dimensions, report these observations from the posting:
 - salary_stated / salary_min_base / salary_max_base / salary_currency: the annual base salary the posting states, as the BOTTOM and the TOP of its range, with the ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. A single figure rather than a range goes in both. If no salary is stated, set salary_stated false, both numbers 0, salary_currency "". Report only figures the POSTING states; never carry over an estimate from a job board. Reporting both halves matters: a band is only disqualifying when ALL of it is below the market's floor, so a top-of-band you leave at 0 throws away a role that pays fine at the top -- see above.
 - hard_gaps: the posting's own stated must-haves that this candidate does not meet, each quoted or paraphrased from the posting in under 12 words ("5+ years in a dedicated Sales Ops role", "advanced SQL required"). This is the screening question, not the fit question: list what a recruiter reading the CV against this ad would find missing, however much you like the rest of the role. A preference, a "nice to have", or a requirement the candidate meets through adjacent experience is NOT a hard gap. [] when there is nothing a screener would stop on -- and [] is a real answer, so do not pad it. Say each gap once; do not repeat it in flags.
 - posting_location: the work location the POSTING itself states, copied as it is written ("Toronto, ON", "Amsterdam, Netherlands", "Remote - US"). This is a transcription, not an opinion: report what the ad says even when it disagrees with the market you were given, and especially then. Give the location of the job, not the company's headquarters, and where several offices are listed give the one the role is actually based in. Use "" when the posting genuinely does not say, which is common -- do not infer one from the company, the currency or the language of the ad.
+- work_arrangement: "fully_remote" when the posting says the role is remote with no office attendance expected ("Location: Ireland (Remote)", "remote-first, work from anywhere in the country"); "hybrid" when some office days are expected or offered; "on_site" when the role is office-based; "unstated" when the posting does not say. A remote-friendly role that names an office the candidate would work from is "hybrid", not "fully_remote". In Europe (NL, BE, UK-London, IE) "fully_remote" DROPS the role: a remote role there is too weak a basis for a work permit. Report what the posting says either way; code decides.
+- employment_type: "contract" for a contractor, freelance or interim engagement; "fixed_term" for a fixed-term, temporary, maternity-cover or secondment role; "permanent" for a permanent / full-time role; "unstated" when the posting does not say. In Europe "contract" and "fixed_term" DROP the role, since they rarely carry sponsorship. Report what the posting says either way; code decides.
 
 The market (NL / BE / UK-London / IE / CA / US-Remote) has already been resolved in code and is given to you in the job details. Trust it for SCORING. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted. If the posting's own location contradicts that market, posting_location is where that goes and the only place it goes: report what the ad says there, score the market you were given, and let code reconcile the two. Do not mention the disagreement in a dimension score, in flags or in the verdict. Where it sits in Tom's preference ordering is the whole of the Location & Visa dimension -- see that dimension's guidance, and note that the ordering is about where he wants to live, not about which market is easiest to get hired in.
 
@@ -1188,7 +1287,7 @@ Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -
 
 Salary: if not stated, do NOT penalise on salary; judge comp risk from the seniority and the company.
 
-Working pattern: in Europe and Canada, on-site or hybrid in the resolved market is normal and expected -- the candidate is relocating for the role and needs an employer with an office there. Do NOT treat an on-site or hybrid requirement, a named-office requirement, or the absence of remote flexibility as a risk in those markets, and do not raise a flag about it. The US is the exception and inverts this: a US role only reaches you at all if code read it as remote, so remote is the baseline there rather than a bonus, and a US posting that turns out on reading to require regular office attendance IS worth a flag.
+Working pattern: in Europe and Canada, on-site or hybrid in the resolved market is normal and expected -- the candidate is relocating for the role and needs an employer with an office there. Do NOT treat an on-site or hybrid requirement, a named-office requirement, or the absence of remote flexibility as a risk in those markets, and do not raise a flag about it. A fully remote European role is the opposite case and is handled through work_arrangement above, not in a dimension score or a flag. The US is the exception and inverts this: a US role only reaches you at all if code read it as remote, so remote is the baseline there rather than a bonus, and a US posting that turns out on reading to require regular office attendance IS worth a flag.
 
 flags: short risk notes, one sentence and under 25 words each, [] if none. Write each one whole -- it is displayed as written, and a note that stops mid-thought is worse than no note. Do not add a flag for missing comp, a title band, or the CSM-outside-NL case -- those are added in code from the observations above, and duplicating them crowds out anything genuinely new you noticed. Never add a flag for language or salary either way -- report them accurately in the fields above and say nothing more; code decides whether the role is dropped.
 verdict: one blunt sentence, max 22 words."""
@@ -1217,6 +1316,7 @@ DROP_MAX_ROWS = 400
 DROP_KEEP_PER_STAGE = {"prefilter": 80, "age": 40, "dedupe": 40,
                        "stage1-kill": 120, "score-error": 40, "sponsor-required": 40,
                        "no-sponsorship": 60, "language-required": 60,
+                       "eu-remote": 40, "eu-contract": 40,
                        "below-visa-floor": 60, "below-comp-floor": 60,
                        "us-comp-unstated": 40}
 DROP_KEEP_DEFAULT = 40
@@ -2065,6 +2165,12 @@ def prefilter(title, location, country=""):
         return f"title: excluded term '{m.group(0).strip()}'"
     if market is None:
         return f"location: outside target markets ({location or 'unspecified'})"
+    if market in EUROPE_MARKETS:
+        if EU_REMOTE_TITLE.search(t) and not EU_OFFICE_TITLE.search(t):
+            return "title: fully remote role in Europe (no sponsorship route)"
+        m = EU_CONTRACT_TITLE.search(t)
+        if m:
+            return f"title: contract/temporary role in Europe ('{m.group(0).strip()}')"
     return None
 
 def parse_date_loose(v):
@@ -4399,6 +4505,17 @@ def main():
         for k in ("title", "company", "location"):
             if j.get(k):
                 j[k] = clean_text(j[k])
+
+    kept = []
+    for j in found:
+        if blocked_poster(j):
+            record_drop(j, "prefilter", f"title: posted by {j.get('company')}, a repost "
+                                        f"board rather than the employer")
+        else:
+            kept.append(j)
+    found = kept
+    # And any already on the dashboard from before the block existed.
+    existing = [j for j in existing if not blocked_poster(j)]
 
     # age filter: drop anything older than a week when the source told us its post date
     kept_age, no_date = [], 0
