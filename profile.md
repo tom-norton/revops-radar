@@ -155,6 +155,13 @@ these are the facts behind them.
 Reject entirely: Germany, Spain, other UK cities, on-site or hybrid US roles,
 remote-from-anywhere, and remote-EMEA roles.
 
+Also rejected in Europe (NL, IE, UK, BE), and only there:
+- Fully remote roles, even when they name a single country ("Ireland (Remote)"). A remote
+  hire is too long a shot for a sponsored work permit to be real. Hybrid and on-site are
+  fine.
+- Contract, fixed-term, interim and temporary roles, which rarely carry sponsorship.
+Both are fine in Canada and the US, where no permit is needed and a contract is runway.
+
 Visa reality: every European role needs employer sponsorship. A company on the UK or NL
 sponsor register CAN sponsor but the specific role must still clear the salary/threshold
 rules. "Not on register" is a caution (registers use legal names and miss trading names),

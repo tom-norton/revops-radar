@@ -5,14 +5,23 @@ counts, and a model asked to tally 700 rows is a model asked to get some of them
 
     python tools/review_data.py              -> JSON on stdout
     python tools/review_data.py --days 7     (window length; default 7)
+    python tools/review_data.py --tracker /tmp/tracker.csv
 
 Reads docs/jobs.json, docs/excluded.json and the dashboard's shared state (Hidden,
 Applied, and the optional "why" notes) from Firebase. Writes nothing. If Firebase cannot
 be reached the report still runs; the sections that need it say so.
+
+--tracker is a CSV export of the Applications tab of Tom's Job Search Tracker sheet
+(Company, Title, Location, Score, Date Applied, Status, Link, Referral?, Interview Date).
+It is the only record of what happened AFTER he applied, and the only one that goes back
+further than the dashboard's 45 days, so the coaching half of the review is built on it.
+Without it the "applications" block says so and the rest still runs.
 """
 
+import csv
 import json
 import os
+import re
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -25,6 +34,14 @@ FIREBASE_STATE_URL = ("https://revops-radar-2822a-default-rtdb.europe-west1."
 STRONG = 7.5
 GATE = 6.5
 BASELINE_WEEKS = 4
+# Tom's own rule: an application with no answer after three weeks is a no-response, whether
+# or not he has got round to changing it in the sheet.
+NO_RESPONSE_DAYS = 21
+CS_TITLE = re.compile(r"customer success|\bcsm\b|customer business|customer experience"
+                      r"|customer enablement", re.I)
+TRACKER_MARKETS = {"netherlands": "NL", "ireland": "IE", "uk": "UK-London",
+                   "united kingdom": "UK-London", "belgium": "BE", "canada": "CA",
+                   "us-remote": "US-Remote", "us": "US-Remote"}
 
 
 def load(path, default):
@@ -73,10 +90,127 @@ def summarise(rows):
     }
 
 
+def tracker_date(s, today):
+    """The sheet stores "9/25" with no year. The latest such date not after today (plus a
+    day of timezone slack), so a January review reads "12/30" as last December."""
+    m = re.match(r"^\s*(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\s*$", s or "")
+    if not m:
+        return None
+    mo, d, y = int(m.group(1)), int(m.group(2)), m.group(3)
+    try:
+        if y:
+            y = int(y)
+            return datetime(y + 2000 if y < 100 else y, mo, d, tzinfo=timezone.utc)
+        dt = datetime(today.year, mo, d, tzinfo=timezone.utc)
+        return dt if dt <= today + timedelta(days=1) else dt.replace(year=today.year - 1)
+    except ValueError:
+        return None
+
+
+def outcome_of(row, applied_on, today):
+    """One of interview / rejected / no_response / pending, from the sheet's Status and
+    Interview Date columns, with Tom's three-week rule applied to a stale "Applied"."""
+    status = (row.get("Status") or "").strip().lower()
+    if (row.get("Interview Date") or "").strip() or re.search(r"interview|offer|screen", status):
+        return "interview"
+    if "reject" in status or "declin" in status:
+        return "rejected"
+    if "no response" in status or "ghost" in status:
+        return "no_response"
+    if applied_on and (today - applied_on).days >= NO_RESPONSE_DAYS:
+        return "no_response"
+    return "pending"
+
+
+def score_band(v):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "unscored"
+    return "7.5+" if v >= STRONG else ("6.5-7.4" if v >= GATE else "under 6.5")
+
+
+def outcome_table(apps, key):
+    """{group: {applied, interview, rejected, no_response, pending, interview_rate}}.
+    The rate is over DECIDED applications only (pending excluded), so a burst of fresh
+    applications does not read as a falling hit rate."""
+    out = defaultdict(Counter)
+    for a in apps:
+        out[key(a)][a["outcome"]] += 1
+    table = {}
+    for g, c in sorted(out.items(), key=lambda kv: -sum(kv[1].values())):
+        decided = c["interview"] + c["rejected"] + c["no_response"]
+        table[g] = {"applied": sum(c.values()), **{k: c[k] for k in
+                    ("interview", "rejected", "no_response", "pending")},
+                    "interview_rate": round(c["interview"] / decided, 3) if decided else None}
+    return table
+
+
+def applications(path, jobs, now, start):
+    """The coaching block: outcomes from the tracker, joined to the radar's own reading of
+    each role where the dashboard still has it."""
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        rows = [r for r in csv.DictReader(f) if (r.get("Company") or "").strip()]
+    by_link, by_name = {}, {}
+    for j in jobs:
+        for u in [j.get("url"), j.get("apply_url")] + [a.get("url") for a in j.get("also_seen") or []]:
+            if u:
+                by_link.setdefault(u.split("?")[0].rstrip("/)"), j)
+        by_name.setdefault(((j.get("company") or "").lower(), (j.get("title") or "").lower()), j)
+    apps = []
+    for r in rows:
+        on = tracker_date(r.get("Date Applied"), now)
+        link = (r.get("Link") or "").strip()
+        j = by_link.get(link.split("?")[0].rstrip("/)")) or by_name.get(
+            ((r.get("Company") or "").strip().lower(), (r.get("Title") or "").strip().lower()))
+        loc = (r.get("Location") or "").strip()
+        a = {"company": r.get("Company", "").strip(), "title": r.get("Title", "").strip(),
+             "market": TRACKER_MARKETS.get(loc.lower(), loc or "?"),
+             "track": "cs" if CS_TITLE.search(r.get("Title") or "") else "revops",
+             "score": r.get("Score", "").strip(), "band": score_band(r.get("Score")),
+             "applied_on": on.date().isoformat() if on else None,
+             "status_in_sheet": (r.get("Status") or "").strip(),
+             "referral": bool((r.get("Referral?") or "").strip()),
+             "interview_date": (r.get("Interview Date") or "").strip() or None}
+        a["outcome"] = outcome_of(r, on, now)
+        a["stale_in_sheet"] = (a["outcome"] == "no_response"
+                               and a["status_in_sheet"].lower() == "applied")
+        if j:
+            a["radar"] = {"verdict": j.get("verdict"), "hard_gaps": j.get("hard_gaps"),
+                          "dimensions": j.get("dimensions"), "flags": j.get("flags"),
+                          "sponsor": j.get("sponsor")}
+        apps.append(a)
+    month = lambda a: (a["applied_on"] or "?")[:7]
+    return {
+        "total": len(apps),
+        "outcomes_all_time": dict(Counter(a["outcome"] for a in apps)),
+        "interviews": [a for a in apps if a["outcome"] == "interview"],
+        "applied_this_window": [a for a in apps if (a["applied_on"] or "") >= start[:10]],
+        # Rows still reading "Applied" in the sheet after three weeks: counted here as no
+        # response, and listed so Tom can update the sheet.
+        "stale_in_sheet": [{k: a[k] for k in ("company", "title", "applied_on")}
+                           for a in apps if a["stale_in_sheet"]],
+        "by_market": outcome_table(apps, lambda a: a["market"]),
+        "by_track": outcome_table(apps, lambda a: a["track"]),
+        "by_score_band": outcome_table(apps, lambda a: a["band"]),
+        "by_referral": outcome_table(apps, lambda a: "referral" if a["referral"] else "cold"),
+        "by_month": dict(sorted(outcome_table(apps, month).items())),
+        # Hard gaps on the applications the radar still holds a reading for, rejected vs
+        # not: the gap a screener keeps stopping on is the one worth closing first.
+        "hard_gaps_on_rejected": Counter(
+            g.strip().lower()[:80] for a in apps if a["outcome"] == "rejected"
+            for g in (a.get("radar") or {}).get("hard_gaps") or []).most_common(10),
+        "rows_with_radar_detail": sum(1 for a in apps if a.get("radar")),
+    }
+
+
 def main():
     days = 7
     if "--days" in sys.argv:
         days = int(sys.argv[sys.argv.index("--days") + 1])
+    tracker = None
+    if "--tracker" in sys.argv:
+        tracker = sys.argv[sys.argv.index("--tracker") + 1]
     now = datetime.now(timezone.utc)
     start = (now - timedelta(days=days)).isoformat()
     base_start = (now - timedelta(days=days * (BASELINE_WEEKS + 1))).isoformat()
@@ -184,6 +318,23 @@ def main():
         },
         "tom_error": st_err,
     }
+    # Every role marked applied on the dashboard in this window, with the radar's reading
+    # of it -- not just the ones under the gate -- so the review can say what he is
+    # choosing, not only where he overrode the score.
+    if out["tom"] is not None:
+        out["tom"]["applied_rows_this_window"] = [
+            row_brief(i, {"applied_at": applied_at.get(i), "dimensions": j.get("dimensions"),
+                          "flags": j.get("flags")})
+            for i, j in marked_rows(applied) if (applied_at.get(i) or "") >= start]
+    out["applications"], out["applications_error"] = None, None
+    if not tracker:
+        out["applications_error"] = ("no --tracker CSV given: export the Applications tab "
+                                     "of Job Search Tracker and pass it")
+    else:
+        try:
+            out["applications"] = applications(tracker, jobs, now, start)
+        except Exception as e:
+            out["applications_error"] = f"tracker unreadable: {str(e)[:160]}"
     json.dump(out, sys.stdout, indent=1, default=str)
     print()
 

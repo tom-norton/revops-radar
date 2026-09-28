@@ -3108,5 +3108,100 @@ def test_a_cancel_that_never_settles_hands_everything_to_the_live_scorer():
                                     sleep=sleep, clock=lambda: t[0])
     assert api.cancelled and out == {}
 
+
+# ---------------------------------------------------------------- Europe: remote / contract
+def test_fully_remote_and_contract_titles_are_dropped_in_europe():
+    """Tom's rule for the four European markets: a remote role is too long a shot for a
+    work permit and a contract rarely carries one. Afiniti's "Ireland (Remote)" and FOSSA's
+    "RevOps Contractor" were both hidden by hand."""
+    assert "fully remote" in scan.prefilter("Revenue Operations Manager (Remote)",
+                                            "Dublin, Ireland", "ie")
+    assert "contract" in scan.prefilter("RevOps Contractor", "London, UK", "gb")
+    assert "contract" in scan.prefilter("Sales Operations Manager - 12 month Fixed Term",
+                                        "Amsterdam", "nl")
+    assert "contract" in scan.prefilter("Revenue Operations Manager (Maternity Cover)",
+                                        "London", "gb")
+    # An office on offer is not fully remote.
+    assert scan.prefilter("Revenue Operations Manager - Hybrid or Remote", "Amsterdam",
+                          "nl") is None
+    # "Contracts" as a subject is not a contract role... unless it says contractor.
+    assert scan.prefilter("Revenue Operations Manager", "Brussels", "be") is None
+
+
+def test_remote_and_contract_titles_stay_in_north_america():
+    assert scan.prefilter("Senior Revenue Operations Manager (Remote Canada)",
+                          "Toronto, Ontario, Canada", "ca") is None
+    assert scan.prefilter("Revenue Operations Contractor", "Toronto, Ontario, Canada",
+                          "ca") is None
+    assert scan.prefilter("Revenue Operations Manager - Contract", "Remote, US", "us") is None
+
+
+def test_deep_score_drops_a_european_role_the_posting_says_is_remote_or_contract():
+    ie = {"market": "IE", "title": "Senior Manager Customer Success"}
+    stage, _ = scan.deep_score_disqualifier(ie, dict(NO_OBS, work_arrangement="fully_remote"))
+    assert stage == "eu-remote"
+    stage, reason = scan.deep_score_disqualifier(ie, dict(NO_OBS, employment_type="fixed_term"))
+    assert stage == "eu-contract" and "fixed-term" in reason
+    for obs in (dict(NO_OBS, work_arrangement="hybrid", employment_type="permanent"),
+                dict(NO_OBS, work_arrangement="unstated", employment_type="unstated"), NO_OBS):
+        assert scan.deep_score_disqualifier(ie, obs) == (None, None)
+    ca = {"market": "CA", "title": "Revenue Operations Manager"}
+    assert scan.deep_score_disqualifier(
+        ca, dict(NO_OBS, work_arrangement="fully_remote", employment_type="contract")) == (None, None)
+
+
+def test_score_schema_asks_for_work_arrangement_and_employment_type():
+    for k in ("work_arrangement", "employment_type"):
+        assert k in scan.SCORE_SCHEMA["required"]
+        assert k in scan.score_system()
+
+
+def test_repost_boards_are_blocked_as_posters():
+    assert scan.blocked_poster({"company": "RevOps Report"})
+    assert scan.blocked_poster({"company": " revops report "})
+    assert not scan.blocked_poster({"company": "RevOps Reporting Ltd"})
+    assert not scan.blocked_poster({"company": "Wayflyer"})
+
+
+# ---------------------------------------------------------------- language, part two
+def test_an_inline_preferred_label_does_not_soften_the_next_line():
+    """Atlassian's France-territory CSM: the "Preferred: ..." line sat directly above "Be
+    fluent in French and English", and the section lookback read that as a Preferred
+    heading, so the role reached the dashboard at 7.8."""
+    ad = ("Qualifications\nExperience in Customer Success.\n"
+          "Preferred: Experience with Atlassian-powered solutions, ITSM certification, "
+          "experience with MEDDPICC or similar deal qualification frameworks.\n"
+          "Be fluent in French and English\nBenefits & Perks\n")
+    assert scan.requires_other_language(ad) == "Be fluent in French and English"
+    # A real heading on its own line still governs what follows it.
+    assert not scan.requires_other_language(
+        "Preferred:\nBe fluent in French and English\nBenefits\n")
+
+
+DUTCH_AD = ("Bij ons team zoeken wij een Customer Success Specialist die verder kijkt dan "
+            "service alleen. Je bouwt relaties op met onze klanten en je ziet kansen. "
+            "Wat breng je mee? Je hebt ervaring met klanten en je bent een teamspeler. "
+            "Wij bieden een goed salaris, een laptop en een leuk team in Amsterdam. "
+            "Je werkt nauw samen met de sales en de support afdeling van het bedrijf, "
+            "en je bent het eerste aanspreekpunt voor onze klanten in de regio. "
+            "Als je dat leuk vindt, dan ben jij wie wij zoeken voor deze rol bij ons. ") * 2
+
+
+def test_a_posting_written_in_dutch_is_a_language_requirement():
+    """Waste Vision: an all-Dutch ad with no sentence the requirement regex could match.
+    Tom's note: "JD is in dutch, they clearly want a dutch speaker"."""
+    assert "written in Dutch" in scan.requires_other_language(DUTCH_AD)
+
+
+def test_an_english_ad_or_a_bilingual_one_is_not_read_as_foreign():
+    english = ("We are hiring a Revenue Operations Manager to own the forecast and the "
+               "pipeline process for our team. You will work with sales and finance on the "
+               "operating rhythm, and you have experience with Salesforce. ") * 6
+    assert scan.written_in_other_language(english) == ""
+    assert scan.written_in_other_language(english + DUTCH_AD) == ""
+    # Too little text to count is not a verdict either way.
+    assert scan.written_in_other_language("Wij zoeken een collega voor het team.") == ""
+
+
 if __name__ == "__main__":
     sys.exit(_run())
