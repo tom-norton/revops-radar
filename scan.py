@@ -1532,11 +1532,24 @@ def dedupe_city(location, market=""):
     market = MARKET_ALIASES.get(market or "", market or "")
     return f"market:{market.lower()}" if market else ""
 
+# How much of the posting text two rows in different cities must share before they are
+# treated as one posting advertised in several places. The opening, not the whole text:
+# Adzuna hands over a truncated snippet at fetch time while the dashboard row holds the full
+# JD, and both start the same way. Long enough that a company's one-line tagline is not
+# enough on its own.
+MULTI_CITY_TEXT_CHARS = 200
+
+def posting_opening(desc):
+    """The first MULTI_CITY_TEXT_CHARS of a posting's text, lowercased and reduced to words,
+    or "" when there is not that much text to compare -- a stub never vouches for anything."""
+    t = re.sub(r"[^a-z0-9]+", " ", (desc or "").lower()).strip()
+    return t[:MULTI_CITY_TEXT_CHARS] if len(t) >= MULTI_CITY_TEXT_CHARS else ""
+
 def role_key(j):
-    """(company words, title words, city, seniority, company initials) identity of a
-    posting. Not hashable as an equality key -- same_role() compares two of these --
-    because the whole point is that two rows can name the same job with different numbers
-    of words."""
+    """(company words, title words, city, seniority, company initials, market, posting
+    opening) identity of a posting. Not hashable as an equality key -- same_role() compares
+    two of these -- because the whole point is that two rows can name the same job with
+    different numbers of words."""
     tt = title_tokens(j.get("title"))
     # The stored market where there is one, resolved from the row otherwise, so a row
     # fetched this run buckets the same way as the dashboard row it is a duplicate of.
@@ -1544,7 +1557,8 @@ def role_key(j):
               or market_of(j.get("country") or "", j.get("location") or "") or "")
     return (company_tokens(j.get("company")), tt,
             dedupe_city(j.get("location"), market),
-            title_seniority(tt), company_initials(j.get("company")))
+            title_seniority(tt), company_initials(j.get("company")),
+            MARKET_ALIASES.get(market, market), posting_opening(j.get("description")))
 
 def role_key_complete(k):
     """Company, title and city all present. A row missing any of them is never deduped, so
@@ -1591,6 +1605,27 @@ def same_role(ka, kb):
         return False
     return not any(w in DISTINGUISHING or w.isdigit() for w in extra)
 
+def same_posting_other_city(ka, kb):
+    """True when two rows in different cities are one posting the employer listed in each.
+
+    The Varicent case: one Senior CSM ad, filed on Adzuna under Toronto, Mississauga,
+    Brampton, Burlington, Hamilton and Cambridge within five minutes of each other. The
+    same_role() city check kept all six apart, so the six were screened and deep-scored
+    separately against the same 5,038-character JD.
+
+    The city check is there for a reason, though -- the same title in Amsterdam and in
+    Rotterdam can be two openings -- so this asks for much more than same_role() does:
+    the same market, the exact same title words (no shortening allowed), and the same
+    opening to the posting text itself. Two openings that really are different jobs are
+    written differently; one ad copied across a region is not."""
+    if not (role_key_complete(ka) and role_key_complete(kb)):
+        return False
+    if ka[2] == kb[2] or not ka[5] or ka[5] != kb[5]:
+        return False
+    if not ka[6] or ka[6] != kb[6]:
+        return False
+    return ka[1] == kb[1] and _same_company(ka, kb)
+
 # Which copy of a duplicate to keep. A scored row always beats an unscored one, then the
 # source: an employer's own ATS feed carries the clean company name, the full description
 # and the real location, while the big aggregators are the ones that shorten a title to
@@ -1608,12 +1643,24 @@ def prefer_row(a, b):
     return a if _row_rank(a) <= _row_rank(b) else b
 
 DEDUPE_ALSO_CAP = 4
+DEDUPE_ALSO_IN_CAP = 10
 
 def absorb_duplicate(winner, loser):
     """Fold a duplicate into the row that survives it. The loser's id is carried on the
     winner so the dashboard can treat a Hide or Mark-applied recorded against either id as
     applying to the surviving row -- otherwise collapsing a duplicate would silently
-    un-apply a job Tom had already applied to."""
+    un-apply a job Tom had already applied to.
+
+    A loser from another city (see same_posting_other_city()) leaves its location behind
+    in `also_in`, so folding a multi-city ad into one card never hides where else it is."""
+    here = dedupe_city(winner.get("location"), winner.get("market") or "")
+    places = list(winner.get("also_in") or [])
+    for loc in [loser.get("location") or ""] + list(loser.get("also_in") or []):
+        if (loc and dedupe_city(loc, loser.get("market") or "") != here
+                and loc not in places):
+            places.append(loc)
+    if places:
+        winner["also_in"] = places[:DEDUPE_ALSO_IN_CAP]
     ids = set(winner.get("dupe_ids") or []) | set(loser.get("dupe_ids") or [])
     ids.add(str(loser.get("id", "")))
     ids.discard(str(winner.get("id", "")))
@@ -1660,6 +1707,16 @@ def group_duplicates(rows):
                     union(i, j)
             buckets.setdefault(k[2], []).append(i)
 
+    # One ad listed in several cities. Never meets the city buckets above, so it gets its
+    # own, keyed on everything same_posting_other_city() requires to be equal.
+    spread = {}
+    for i, k in enumerate(keys):
+        if role_key_complete(k) and k[5] and k[6]:
+            for j in spread.get((k[5], k[1], k[6]), ()):
+                if same_posting_other_city(k, keys[j]):
+                    union(i, j)
+            spread.setdefault((k[5], k[1], k[6]), []).append(i)
+
     groups = {}
     for i in range(len(rows)):
         groups.setdefault(find(i), []).append(i)
@@ -1694,9 +1751,11 @@ def collapse_duplicates(rows):
         dropped.extend((rows[i], winner) for i in idxs if rows[i] is not winner)
     return kept, dropped
 
-def dupe_reason(winner):
+def dupe_reason(winner, loser=None):
     """The drop reason written into the excluded log, naming what it collapsed into."""
     where = f"{winner.get('company') or '?'} - {winner.get('title') or '?'}"
+    if loser is not None and loser.get("location") in (winner.get("also_in") or []):
+        where += f", listed in {winner.get('location') or '?'} too"
     return f"same posting as {where} ({winner.get('source') or 'dashboard'}), already kept"
 
 def dedupe_by_id(rows):
@@ -3918,7 +3977,7 @@ def cmd_dedupe():
               f"| id {d.get('id')} was on the dashboard twice\n")
     kept, dropped = collapse_duplicates(jobs)
     for loser, winner in dropped:
-        record_drop(loser, "dedupe", dupe_reason(winner))
+        record_drop(loser, "dedupe", dupe_reason(winner, loser))
         print(f"  keep {winner.get('score', '-'):>4}  {winner.get('company')} | "
               f"{winner.get('title')} | {winner.get('location')} [{winner.get('source')}]")
         print(f"  drop {loser.get('score', '-'):>4}  {loser.get('company')} | "
@@ -4377,7 +4436,7 @@ def main():
 
     existing, found, dedupe_drops = merge_found_into_dashboard(existing, found)
     for loser, winner in dedupe_drops:
-        record_drop(loser, "dedupe", dupe_reason(winner))
+        record_drop(loser, "dedupe", dupe_reason(winner, loser))
     src_status["dedupe"] = f"{len(dedupe_drops)} duplicates collapsed (dashboard + this run's fetches)"
 
     new_jobs = [j for j in found if j["id"] not in seen]

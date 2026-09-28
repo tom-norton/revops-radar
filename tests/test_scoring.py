@@ -704,6 +704,61 @@ def test_group_duplicates_closes_a_non_transitive_chain():
         or set(kept[0]["dupe_ids"]) == {"az-1", "hc-1"}
 
 
+VARICENT_JD = ("Varicent is the leading provider of sales performance management and "
+               "incentive compensation software. As a Senior Customer Success Manager you "
+               "will own a book of enterprise customers, drive adoption and renewals, and "
+               "partner with sales on expansion across North America.")
+
+
+def _varicent(i, city, **kw):
+    row = {"id": f"az-ca-{i}", "company": "Varicent", "title": "Senior Customer Success Manager",
+           "location": city, "country": "ca", "market": "CA", "source": "adzuna",
+           "description": VARICENT_JD}
+    row.update(kw)
+    return row
+
+
+def test_one_ad_listed_in_six_cities_is_scored_once():
+    """The live case: Varicent's Senior CSM ad reached Adzuna six times, once per Ontario
+    city, within five minutes. The city check kept all six apart, so the same JD was
+    screened and deep-scored six times and sat on the dashboard as six cards."""
+    cities = ["Toronto, Ontario", "Mississauga, Peel region", "Brampton, Peel region",
+              "Burlington, Halton", "Hamilton, Hamilton region", "Cambridge, Waterloo region"]
+    rows = [_varicent(i, c) for i, c in enumerate(cities)]
+    kept, dropped = scan.collapse_duplicates(rows)
+    assert len(kept) == 1 and len(dropped) == 5
+    winner = kept[0]
+    # nothing is hidden: every other city is on the surviving card, every id on its dupe list
+    assert sorted(winner["also_in"] + [winner["location"]]) == sorted(cities)
+    assert len(winner["dupe_ids"]) == 5
+    assert "listed in" in scan.dupe_reason(winner, dropped[0][0])
+
+    # and a later run's copy in a seventh city folds into the dashboard row without a score
+    existing = [dict(winner, score=6.4)]
+    fresh = [_varicent(9, "Oakville, Halton", description=VARICENT_JD[:220] + "…")]
+    kept_existing, kept_found, _ = scan.merge_found_into_dashboard(existing, fresh)
+    assert kept_found == [] and "Oakville, Halton" in kept_existing[0]["also_in"]
+
+
+def test_a_multi_city_match_needs_the_same_ad_not_just_the_same_title():
+    """Loosening the city check is only safe while these stay apart."""
+    base = _varicent(1, "Toronto, Ontario")
+    # no posting text to compare: the Adyen Amsterdam/Rotterdam rule still holds
+    assert len(scan.group_duplicates([_varicent(1, "Toronto", description=""),
+                                      _varicent(2, "Hamilton", description="")])) == 2
+    # a different ad for the same title is a different opening
+    other_jd = "Join our Hamilton team! " + VARICENT_JD
+    assert len(scan.group_duplicates([base, _varicent(2, "Hamilton", description=other_jd)])) == 2
+    # a different market is scored on different terms (visa, pay floor), so never merged
+    assert len(scan.group_duplicates([base, _varicent(2, "Chicago, IL", country="us",
+                                                      market="US-Remote")])) == 2
+    # the title must match exactly -- no shortening across cities
+    assert len(scan.group_duplicates([base, _varicent(2, "Hamilton",
+                                                      title="Senior Customer Success Manager, Enterprise")])) == 2
+    # and another company's copy of the same text is not the same posting
+    assert len(scan.group_duplicates([base, _varicent(2, "Hamilton", company="Xactly")])) == 2
+
+
 def test_group_duplicates_does_not_chain_through_an_unrelated_row():
     """The closure has to stop at same_role(), not run away with anything in the same city
     bucket. A fourth London row that matches neither AWS name must stay its own group."""
