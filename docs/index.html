@@ -737,7 +737,11 @@ function card(j, reviewed){
       </div>
       <div class="hd">
         <div class="title">${isNew(j) && !reviewed ? '<span class="newdot" title="Found since you last opened this page"></span>' : ""}${esc(j.title||"")}</div>
-        <div class="company">${esc([j.company, j.location].filter(Boolean).join(" · "))}</div>
+        <div class="company">${esc([j.company, j.location].filter(Boolean).join(" · "))}${
+          // One ad the employer listed in several cities, folded into this card.
+          (j.also_in||[]).length ? `<span title="${esc(j.also_in.join("; "))}"> · also in ${
+            esc(j.also_in.length > 2 ? `${j.also_in.slice(0, 2).join("; ")} +${j.also_in.length - 2} more`
+                                     : j.also_in.join("; "))}</span>` : ""}</div>
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
