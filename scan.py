@@ -536,24 +536,61 @@ VISA_FLOORS = {
 #
 # Canada has no entry, deliberately: no visa floor applies (citizen) and he has set no comp
 # floor for it.
+#
+# The US floor depends on the track, because the two US tracks pay differently. A realistic
+# RevOps target is around 115K base, and since the floor is read against the TOP of the band
+# (salary_floor_flag), a 125K floor keeps the band midpoints it admits near 115K. Senior CS
+# stays at 130K. The track comes from the title -- see comp_track().
 COMP_FLOORS = {
-    "US-Remote": (130000, "USD"),
+    "US-Remote": {
+        "revops": (125000, "USD"),
+        "cs": (130000, "USD"),
+    },
 }
+# How a track's floor is named in a drop reason or a flag: "your 125000 USD RevOps floor".
+TRACK_LABELS = {"revops": "RevOps", "cs": "CS"}
 
 
-def floor_for(market):
-    """(amount, currency, kind) for a market's salary floor, or (0, "", "") if it has none.
+def comp_track(title):
+    """"revops" or "cs": which of the US comp floors a title is held to.
+
+    REVOPS_CORE is checked first, so a customer success operations title is RevOps, which
+    is what it is (CS operations is in REVOPS_CORE on purpose) -- including one that also
+    matches SENIOR_CS, like "Senior Customer Success Operations Manager". SENIOR_CS is
+    second.
+
+    A title matching neither should never get here: prefilter() drops a US title that
+    clears neither gate before anything reads its salary. If one does anyway -- a test
+    fixture with no title, or a caller that skipped the gate -- it gets the CS floor,
+    because that is the stricter of the two, and an unknown title should not be let
+    through on the more lenient number."""
+    if REVOPS_CORE.search(title or ""):
+        return "revops"
+    return "cs"
+
+
+def floor_for(market, title=""):
+    """(amount, currency, kind, label) for a market's salary floor, or (0, "", "", "") if
+    it has none. The one lookup every floor check goes through.
 
     Two tables, one lookup, because salary_floor_flag() needs to word the drop differently:
     a visa floor is a legal fact about what Tom can be hired at, a comp floor is his own
-    decision about what is worth taking."""
+    decision about what is worth taking. `label` names the US track ("RevOps" / "CS") so
+    the drop reason and the straddle flag can say which floor the band was held to; it is
+    "" for a visa floor, which has no tracks. `title` only matters for a comp floor."""
     if market in VISA_FLOORS:
         amount, cur = VISA_FLOORS[market]
-        return amount, cur, "visa"
+        return amount, cur, "visa", ""
     if market in COMP_FLOORS:
-        amount, cur = COMP_FLOORS[market]
-        return amount, cur, "comp"
-    return 0, "", ""
+        track = comp_track(title)
+        amount, cur = COMP_FLOORS[market][track]
+        return amount, cur, "comp", TRACK_LABELS[track]
+    return 0, "", "", ""
+
+
+def floor_text(floor, cur, label):
+    """"125000 USD RevOps floor" for a track floor, "71304 EUR floor" for one without."""
+    return f"{floor} {cur} {label} floor" if label else f"{floor} {cur} floor"
 
 # ---------------------------------------------------------------- hard disqualifiers
 # Two facts that end an application before it starts, both stated in plain English in the
@@ -896,10 +933,10 @@ def title_band(title):
 def is_csm_title(title):
     return bool(re.search(r"customer success", title or "", re.I))
 
-def salary_floor_flag(market, obs):
+def salary_floor_flag(market, title, obs):
     """A note when a salary is actually stated, in the market's own currency, and below that
     market's floor; "" otherwise. No FX guessing: a GBP figure is never compared to a EUR
-    floor.
+    floor. `title` picks the US track floor (see comp_track()); Europe ignores it.
 
     Despite the name this is no longer a dashboard flag -- deep_score_disqualifier() below
     uses it to drop the job outright, the same way says_no_sponsorship() and
@@ -926,7 +963,7 @@ def salary_floor_flag(market, obs):
     if not market or not obs.get("salary_stated"):
         return ""
     low, high = salary_band(obs)
-    floor, cur, kind = floor_for(market)
+    floor, cur, kind, label = floor_for(market, title)
     if high <= 0 or not floor:
         return ""
     stated = (obs.get("salary_currency") or "").upper()
@@ -937,8 +974,8 @@ def salary_floor_flag(market, obs):
         if kind == "visa":
             return (f"stated salary {band} {cur} entirely below the {market} visa floor "
                     f"({floor} {cur})")
-        return (f"stated salary {band} {cur} entirely below the {floor} {cur} floor for "
-                f"taking a {market} role at all")
+        return (f"stated salary {band} {cur} entirely below the "
+                f"{floor_text(floor, cur, label)} for taking a {market} role at all")
     return ""
 
 
@@ -1001,7 +1038,7 @@ def us_comp_unstated(job):
     leaving Europe on the table for.
 
     Absence, not value. The value check is downstream and better placed: COMP_FLOORS via
-    salary_floor_flag() drops a US role whose JD-STATED base is under the floor, reading
+    salary_floor_flag() drops a US role whose JD-STATED base is under its track floor, reading
     the figure the deep scorer took off the posting. The feed's salary string is not the
     posting, so it is trusted for "is there a number" and nothing more.
 
@@ -1027,9 +1064,9 @@ def us_comp_unstated(job):
         return ""
     if jd_pay_figures(job.get("description")):
         return ""
-    floor, cur = COMP_FLOORS["US-Remote"]
+    floor, cur, _kind, label = floor_for("US-Remote", job.get("title"))
     return (f"no salary in the feed or anywhere in the ad; a US role is only worth taking "
-            f"at confirmed pay (floor {floor} {cur})")
+            f"at confirmed pay ({floor_text(floor, cur, label)})")
 
 
 def deep_score_disqualifier(job, obs):
@@ -1068,18 +1105,18 @@ def deep_score_disqualifier(job, obs):
     # here; it was never relying on the ad.
     if (job.get("market") == "US-Remote" and not (job.get("salary") or "").strip()
             and not obs.get("salary_stated")):
-        floor, cur = COMP_FLOORS["US-Remote"]
+        floor, cur, _kind, label = floor_for("US-Remote", job.get("title"))
         return "us-comp-unstated", (f"the ad mentions money but states no salary for the "
                                     f"role; a US role is only worth taking at confirmed "
-                                    f"pay (floor {floor} {cur})")
-    note = salary_floor_flag(job.get("market"), obs)
+                                    f"pay ({floor_text(floor, cur, label)})")
+    note = salary_floor_flag(job.get("market"), job.get("title"), obs)
     if note:
         # Two stage names for one check, because they mean different things and both are
         # worth being able to read separately in the drop log: a visa floor is a legal
         # fact about what Tom can be hired at in Europe, a comp floor is his own decision
         # that a US role below it is not worth leaving Europe on the table for. The old
         # name is kept for the visa case so historical rows keep rendering.
-        _amt, _cur, kind = floor_for(job.get("market"))
+        _amt, _cur, kind, _label = floor_for(job.get("market"), job.get("title"))
         return ("below-visa-floor" if kind == "visa" else "below-comp-floor"), note
     return None, None
 
@@ -1139,13 +1176,13 @@ def score_flags(job, obs):
     # below the floor is disqualifying, because a posting is not an offer and the whole
     # negotiation happens inside the range -- but the bottom being under the floor is a
     # real risk and Tom decides on it, which means he has to see it.
-    floor, cur, _kind = floor_for(market)
+    floor, cur, _kind, label = floor_for(market, title)
     if floor and obs.get("salary_stated"):
         low, high = salary_band(obs)
         currency_matches = (obs.get("salary_currency") or "").upper() in ("", cur)
         if currency_matches and 0 < low < floor <= high:
             flags.append(f"band {int(low)}-{int(high)} {cur} starts below your "
-                         f"{floor} {cur} floor -- only the top half clears it")
+                         f"{floor_text(floor, cur, label)} -- only the top half clears it")
 
     # CSM track: a primary target in NL, a weaker one elsewhere unless the company is a
     # genuine standout (see the CSM track weighting section of profile.md). The model is
@@ -1265,7 +1302,7 @@ Calibration, so the dimension scores land on a consistent scale: 8-10 is a bulls
 
 Do NOT compute a total. The weighted total is computed in code from the six dimension scores you give, and for every role that actually gets scored nothing overrides it afterwards -- there are no caps or ceilings. Every consideration that should move the score has to land inside a dimension: if the posting reads junior, that belongs in Seniority Fit; if the function is off-target, that belongs in Domain and Career Trajectory.
 
-Two facts are handled differently: a stated salary below the market's floor (a visa floor in Europe, and in the US Tom's own floor for whether the role is worth taking at all), and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_max_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
+Two facts are handled differently: a stated salary below the market's floor (a visa floor in Europe; in the US, Tom's own floor for whether the role is worth taking at all, which depends on the track: the RevOps floor for a core RevOps title, CS operations included, and the higher CS floor for a senior customer success title, both given in the profile's Salary handling. Either way a band is only below the floor when its TOP is), and a posting that makes another language (other than English) a hard requirement to do the job. Neither gets scored at all -- code drops the role outright the moment you report either one true, the same way it already drops a role whose ad rules out sponsorship. Do NOT fold either into a dimension score, and do NOT soften your reading of either one because you like the rest of the role -- report salary_stated / salary_min_base / salary_max_base / salary_currency and language_hard_requirement exactly as the posting states them. A wrong "false" here puts a role in front of Tom that he cannot actually take; a wrong "true" throws away a role that was fine.
 
 Thin evidence: some rows arrive with no retrievable posting text at all, and those say "EVIDENCE: THIN" where the description would be. Treat that as a real constraint on how high you can score, not as a neutral absence. Do not fill the gap with what a role of that title usually involves -- the whole point of reading the posting is that titles mislead, and on these rows you have not read one. Score each dimension on what is actually stated and no further, cap the total's optimism accordingly, and note the missing evidence in your verdict. A thin row that looks like a 7 is a 7 you cannot support; 5 to 6 is the honest range unless the title and market alone genuinely settle it. Both hard disqualifier checks are also unrun on these rows, so do not treat a silent posting as a clean one.
 
@@ -3368,7 +3405,8 @@ APIFY_HIRINGCAFE_SEARCHES = {
     },
     # US RevOps: remote, transparent salaries only, and a compensation bound.
     #
-    # maxCompensationLowEnd is Tom's own setting, kept verbatim at his explicit direction.
+    # maxCompensationLowEnd is Tom's own setting, kept at his explicit direction, and its
+    # value now mirrors the track floors: 125000 here for RevOps, 130000 on us-cs below.
     # It is INERT, whichever way hiring.cafe reads it: the US rows this search returns
     # arrive with bottom-of-band figures from 95k to 200k, so it is bounding nothing. What
     # actually holds the US floor is code -- COMP_FLOORS, judged against the TOP of the
@@ -3380,7 +3418,7 @@ APIFY_HIRINGCAFE_SEARCHES = {
         "dateFetchedPastNDays": 14,
         "restrictJobsToTransparentSalaries": True,
         "roleTypes": ["Individual Contributor"],
-        "maxCompensationLowEnd": "130000",
+        "maxCompensationLowEnd": "125000",
         "seniorityLevel": ["Mid Level", "Senior Level"],
         "excludedLanguageRequirements": ["dutch", "german", "spanish", "french"],
         "sortBy": "date",

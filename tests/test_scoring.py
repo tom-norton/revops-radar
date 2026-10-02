@@ -136,13 +136,13 @@ def test_below_floor_never_compares_across_currencies():
     one. Guessing an FX rate here would produce confident nonsense, so a mismatched
     currency must not disqualify the role at all."""
     obs = dict(NO_OBS, salary_stated=True, salary_min_base=55000, salary_currency="GBP")
-    assert scan.salary_floor_flag("BE", obs) == ""
-    assert "GBP" in scan.salary_floor_flag("UK-London", obs)
+    assert scan.salary_floor_flag("BE", "", obs) == ""
+    assert "GBP" in scan.salary_floor_flag("UK-London", "", obs)
     # unparseable, absent or market-less salary never disqualifies either
-    assert scan.salary_floor_flag("NL", dict(NO_OBS, salary_stated=True,
-                                             salary_min_base="n/a")) == ""
-    assert scan.salary_floor_flag("NL", NO_OBS) == ""
-    assert scan.salary_floor_flag(None, obs) == ""
+    assert scan.salary_floor_flag("NL", "", dict(NO_OBS, salary_stated=True,
+                                                 salary_min_base="n/a")) == ""
+    assert scan.salary_floor_flag("NL", "", NO_OBS) == ""
+    assert scan.salary_floor_flag(None, "", obs) == ""
 
 
 def test_flag_off_target_function():
@@ -1764,11 +1764,11 @@ def _obs(stated, low, cur, high=None):
 def test_us_comp_floor_drops_a_role_only_on_a_figure_stated_in_the_ad():
     """The US floor is Tom's own, not a legal one, and it fires on the same terms as the
     visa floors: a real, market-matched, stated figure."""
-    stage, reason = scan.deep_score_disqualifier(
-        {"market": "US-Remote"}, _obs(True, 110000, "USD"))
-    assert stage == "below-comp-floor" and "130000 USD" in reason
+    cs = {"market": "US-Remote", "title": "Senior Customer Success Manager"}
+    stage, reason = scan.deep_score_disqualifier(cs, _obs(True, 110000, "USD"))
+    assert stage == "below-comp-floor" and "130000 USD CS floor" in reason, reason
     for o in [_obs(True, 130000, "USD"), _obs(True, 145000, "USD")]:
-        assert scan.deep_score_disqualifier({"market": "US-Remote"}, o) == (None, None)
+        assert scan.deep_score_disqualifier(cs, o) == (None, None)
     # A US row that states nothing is unconfirmed pay, and that is a drop rather than a
     # survivor now: us_comp_unstated() lets a row through on a figure seen anywhere in the
     # ad, so this is where a figure that turned out not to be a salary gets settled.
@@ -1785,17 +1785,18 @@ def test_a_band_is_only_disqualifying_when_all_of_it_is_below_the_floor():
     """The bug Tom caught. A posting is not an offer: $120k-$150k against a $130k floor was
     dropped on the 120, throwing away a role where most of the band clears and the whole
     negotiation happens inside it."""
+    cs_title = "Senior Customer Success Manager"
+    cs = {"market": "US-Remote", "title": cs_title}
     straddles = _obs(True, 120000, "USD", 150000)
-    assert scan.deep_score_disqualifier({"market": "US-Remote"}, straddles) == (None, None)
-    assert scan.salary_floor_flag("US-Remote", straddles) == ""
+    assert scan.deep_score_disqualifier(cs, straddles) == (None, None)
+    assert scan.salary_floor_flag("US-Remote", cs_title, straddles) == ""
     # Entirely below the floor is still a drop -- no amount of negotiating reaches it.
-    stage, reason = scan.deep_score_disqualifier(
-        {"market": "US-Remote"}, _obs(True, 90000, "USD", 110000))
+    stage, reason = scan.deep_score_disqualifier(cs, _obs(True, 90000, "USD", 110000))
     assert stage == "below-comp-floor", stage
     assert "90000-110000" in reason and "entirely below" in reason, reason
     # A single stated figure behaves exactly as it did before.
-    assert scan.salary_floor_flag("US-Remote", _obs(True, 110000, "USD")) != ""
-    assert scan.salary_floor_flag("US-Remote", _obs(True, 140000, "USD")) == ""
+    assert scan.salary_floor_flag("US-Remote", cs_title, _obs(True, 110000, "USD")) != ""
+    assert scan.salary_floor_flag("US-Remote", cs_title, _obs(True, 140000, "USD")) == ""
 
 
 def test_a_straddling_band_is_kept_but_flagged():
@@ -1803,7 +1804,8 @@ def test_a_straddling_band_is_kept_but_flagged():
     Tom is the one who decides on it, so it has to be on the card."""
     flags = scan.score_flags({"market": "US-Remote", "title": "Revenue Operations Manager"},
                              _obs(True, 120000, "USD", 150000))
-    assert any("starts below your" in f and "130000 USD" in f for f in flags), flags
+    assert any("starts below your" in f and "125000 USD RevOps floor" in f
+               for f in flags), flags
     # A band clearing the floor outright says nothing.
     clear = scan.score_flags({"market": "US-Remote", "title": "Revenue Operations Manager"},
                              _obs(True, 135000, "USD", 160000))
@@ -1843,8 +1845,9 @@ def test_pay_detection_ignores_money_that_is_not_a_salary():
 def test_no_salary_floor_guesses_across_currencies_or_from_an_estimate():
     """A USD floor is never compared to a EUR figure, and Adzuna's predicted salaries are
     discarded upstream by adzuna_salary() so they can never reach the floor check at all."""
-    assert scan.salary_floor_flag("US-Remote", _obs(True, 110000, "EUR")) == ""
-    assert scan.salary_floor_flag("NL", _obs(True, 50000, "USD")) == ""
+    assert scan.salary_floor_flag("US-Remote", "Revenue Operations Manager",
+                                  _obs(True, 110000, "EUR")) == ""
+    assert scan.salary_floor_flag("NL", "", _obs(True, 50000, "USD")) == ""
     # the upstream guard: a predicted figure produces no salary string to begin with
     predicted = {"salary_min": 40000, "salary_max": 40000, "salary_is_predicted": "1"}
     assert scan.adzuna_salary(predicted, "us") == ""
@@ -1853,16 +1856,91 @@ def test_no_salary_floor_guesses_across_currencies_or_from_an_estimate():
 def test_canada_has_no_salary_floor_because_tom_is_a_citizen():
     for o in [_obs(True, 60000, "CAD"), _obs(True, 40000, "CAD")]:
         assert scan.deep_score_disqualifier({"market": "CA"}, o) == (None, None)
-    assert scan.floor_for("CA") == (0, "", "")
+    assert scan.floor_for("CA") == (0, "", "", "")
 
 
 def test_floor_for_reports_which_kind_of_floor_a_market_has():
-    assert scan.floor_for("NL") == (71304, "EUR", "visa")
-    assert scan.floor_for("IE") == (68911, "EUR", "visa")
-    assert scan.floor_for("US-Remote") == (130000, "USD", "comp")
-    assert scan.floor_for("") == (0, "", "")
+    assert scan.floor_for("NL") == (71304, "EUR", "visa", "")
+    assert scan.floor_for("IE") == (68911, "EUR", "visa", "")
+    # a visa floor has no tracks, so the title changes nothing
+    assert scan.floor_for("NL", "Revenue Operations Manager") == (71304, "EUR", "visa", "")
+    assert scan.floor_for("US-Remote", "Revenue Operations Manager") == \
+        (125000, "USD", "comp", "RevOps")
+    assert scan.floor_for("US-Remote", "Senior Customer Success Manager") == \
+        (130000, "USD", "comp", "CS")
+    assert scan.floor_for("") == (0, "", "", "")
     # the two tables must not both claim a market, or the drop would be mislabelled
     assert not (set(scan.VISA_FLOORS) & set(scan.COMP_FLOORS))
+
+
+def test_floor_for_resolves_each_us_track_from_the_title():
+    """RevOps 125K, senior CS 130K, both read against the top of the band."""
+    for title in ["Revenue Operations Manager", "Senior Sales Operations Manager",
+                  "GTM Strategy Lead", "Sales Enablement Manager"]:
+        assert scan.floor_for("US-Remote", title)[:2] == (125000, "USD"), title
+        assert scan.comp_track(title) == "revops", title
+    for title in ["Senior Customer Success Manager", "Principal Customer Success Manager",
+                  "Enterprise Customer Success Lead"]:
+        assert scan.floor_for("US-Remote", title)[:2] == (130000, "USD"), title
+        assert scan.comp_track(title) == "cs", title
+    # A title matching neither gate never reaches the floor in practice (prefilter drops
+    # it), but if one does it gets the stricter CS floor, not the lenient one.
+    assert not scan.REVOPS_CORE.search("Account Executive")
+    assert not scan.SENIOR_CS.search("Account Executive")
+    assert scan.floor_for("US-Remote", "Account Executive")[:2] == (130000, "USD")
+    assert scan.floor_for("US-Remote")[:2] == (130000, "USD")
+
+
+def test_customer_success_operations_is_held_to_the_revops_floor():
+    """A customer success title, but CS operations is in REVOPS_CORE, which is checked
+    first -- so it is RevOps, not held to the higher CS floor."""
+    title = "Customer Success Operations Manager"
+    assert scan.REVOPS_CORE.search(title)
+    assert scan.floor_for("US-Remote", title) == (125000, "USD", "comp", "RevOps")
+    # 110000-127000 would be dropped against the CS floor; against RevOps it is kept.
+    job = {"market": "US-Remote", "title": title}
+    assert scan.deep_score_disqualifier(job, _obs(True, 110000, "USD", 127000)) == (None, None)
+    # A title matching BOTH gates takes the RevOps floor, because REVOPS_CORE goes first.
+    both = "Senior Customer Success Operations Manager"
+    assert scan.REVOPS_CORE.search(both) and scan.SENIOR_CS.search(both)
+    assert scan.floor_for("US-Remote", both)[:2] == (125000, "USD")
+
+
+def test_a_revops_band_straddling_125000_is_kept_and_flagged():
+    job = {"market": "US-Remote", "title": "Revenue Operations Manager"}
+    obs = _obs(True, 110000, "USD", 130000)
+    assert scan.deep_score_disqualifier(job, obs) == (None, None)
+    flags = scan.score_flags(job, obs)
+    assert ("band 110000-130000 USD starts below your 125000 USD RevOps floor -- only the "
+            "top half clears it") in flags, flags
+
+
+def test_a_revops_band_entirely_below_125000_is_dropped():
+    job = {"market": "US-Remote", "title": "Revenue Operations Manager"}
+    stage, reason = scan.deep_score_disqualifier(job, _obs(True, 100000, "USD", 120000))
+    assert stage == "below-comp-floor", stage
+    assert reason == ("stated salary 100000-120000 USD entirely below the 125000 USD RevOps "
+                      "floor for taking a US-Remote role at all"), reason
+
+
+def test_a_senior_cs_band_topping_out_below_130000_is_dropped():
+    """128K clears the RevOps floor but not the CS one, so the track decides."""
+    job = {"market": "US-Remote", "title": "Senior Customer Success Manager"}
+    stage, reason = scan.deep_score_disqualifier(job, _obs(True, 110000, "USD", 128000))
+    assert stage == "below-comp-floor", stage
+    assert "130000 USD CS floor" in reason, reason
+
+
+def test_an_unstated_us_salary_names_the_track_floor():
+    ad = "No pay here."
+    assert "125000 USD RevOps floor" in scan.us_comp_unstated(
+        {"market": "US-Remote", "title": "Revenue Operations Manager", "description": ad})
+    assert "130000 USD CS floor" in scan.us_comp_unstated(
+        {"market": "US-Remote", "title": "Senior Customer Success Manager",
+         "description": ad})
+    _stage, reason = scan.deep_score_disqualifier(
+        {"market": "US-Remote", "title": "Revenue Operations Manager"}, _obs(False, 0, ""))
+    assert "125000 USD RevOps floor" in reason, reason
 
 
 def test_every_drop_stage_the_floor_check_emits_has_a_retention_budget():
