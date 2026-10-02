@@ -14,15 +14,16 @@ on:
     # best-effort and this repo is being deprioritised; no cron expression fixes that, which
     # is why punctuality moved to a scheduler that has some.
     #
-    # Cron here is UTC with no DST awareness. These are set for Eastern daylight time
-    # (UTC-4); on 1 Nov 2026 they drift an hour early relative to Tom's clock, which costs
-    # nothing -- a backstop that fires at 7am instead of 8am is still hours ahead of when
-    # GitHub actually delivers it. Left as-is deliberately; the DST handling that matters
-    # is in the Worker.
-    - cron: "0 12 * * 1-5"   # 12:00 UTC weekdays (8am Eastern under EDT)
-    - cron: "30 16 * * 1-5"  # 16:30 UTC weekdays (12:30pm Eastern under EDT)
-    - cron: "0 0 * * 2-6"    # 00:00 UTC Tue-Sat (8pm Mon-Fri Eastern under EDT)
-    - cron: "0 13 * * 0,6"   # 13:00 UTC weekends (9am Eastern under EDT)
+    # Cron here is UTC with no DST awareness. These are the EST (UTC-5) instant of each
+    # Worker slot -- the LATER of the two offsets -- so that whichever offset is in force,
+    # the Worker's scan for a slot lands no earlier than 90 minutes before the matching
+    # cron and the stand-down step below can see it. Under EDT a backstop that does run
+    # (the Worker having missed) runs an hour behind Tom's clock, which costs nothing next
+    # to how late GitHub delivers it anyway. tools/backstop.py has the full reasoning.
+    - cron: "0 13 * * 1-5"   # 13:00 UTC weekdays (8am Eastern under EST)
+    - cron: "30 17 * * 1-5"  # 17:30 UTC weekdays (12:30pm Eastern under EST)
+    - cron: "0 1 * * 2-6"    # 01:00 UTC Tue-Sat (8pm Mon-Fri Eastern under EST)
+    - cron: "0 14 * * 0,6"   # 14:00 UTC weekends (9am Eastern under EST)
   workflow_dispatch:
     inputs:
       backfill:
@@ -102,7 +103,7 @@ jobs:
         # ones. Adzuna answered 503 on the later run almost every day, which is what a
         # free-tier quota already spent looks like.
         #
-        # So a SCHEDULED run stands down when a scan committed inside the last two hours.
+        # So a SCHEDULED run stands down when a scan already exists for its slot.
         # A dispatch never does: asking for a run by hand means you want one now. If the
         # Worker stops firing, nothing commits, and the next scheduled run goes ahead --
         # the backstop is intact, only the duplicate is gone.
@@ -112,18 +113,14 @@ jobs:
           # The scan's own commit, by message, rather than any commit touching
           # docs/status.json -- a hand edit to that file is not a scan and must not
           # make the backstop stand down.
+          #
+          # Stands down when a scan already exists for the SLOT this cron stands in for,
+          # not merely when one ran in the last two hours -- GitHub delivering a backstop
+          # three hours late used to get past that and run a duplicate scan, 5-6 a day
+          # in all, and hiring.cafe ran the Apify plan dry on 1 Oct. See tools/backstop.py.
           last=$(git log -1 --format=%ct --grep="^scan:")
-          if [ -z "$last" ]; then
-            echo "no scan commit in history; running"
-            exit 0
-          fi
-          age=$(( ( $(date -u +%s) - last ) / 60 ))
-          if [ "$age" -lt 120 ]; then
-            echo "skipped: scan ran $age min ago"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "last scan was $age min ago; running"
-          fi
+          python tools/backstop.py "${{ github.event.schedule }}" "$last" | tee /tmp/backstop
+          grep -q "^skip=true$" /tmp/backstop && echo "skip=true" >> "$GITHUB_OUTPUT" || true
 
       - name: Run scanner
         # Skipped on a backfill run. The backfill is a repair of rows already scored; a scan

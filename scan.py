@@ -3451,7 +3451,37 @@ def hiringcafe_url(search_state):
                                                            separators=(",", ":"))},
                                 quote_via=urllib.parse.quote_plus)
     return f"https://hiringcafe.com/?{qs}"
-APIFY_MAX_ITEMS = 200   # across all four searches combined; ~$0.25/run at $1.25/1000 results
+# The actor bills $1.25 per 1000 rows it pushes, out of the Starter plan's $19/month. It ran
+# dry on 1 Oct 2026 at roughly $35/month of usage: ~175 rows per scan, 5-6 scans a day
+# (the late GitHub backstop getting past its stand-down), and nearly every row the same
+# one the scan before had already paid for. Two fixes, and this cap is the third line:
+#
+#   - incremental mode (apify_watch_key below), so a row the actor has already handed us
+#     is never pushed or billed again -- steady state is a handful of new rows per scan;
+#   - the backstop in scan.yml standing down whenever the Worker covered its slot.
+#
+# The cap is the bill if incremental mode silently stopped working: 150 rows x 3 scans a
+# day x 31 days x $1.25/1000 is $17.44, inside the $19 the plan includes. Pinned by
+# test_apify_worst_case_month_fits_the_plan. Raise it and that test says what it costs.
+APIFY_MAX_ITEMS = 150   # across all five searches combined
+APIFY_PRICE_PER_ROW = 1.25 / 1000
+APIFY_PLAN_USD = 19.0
+SCANS_PER_DAY = 3
+# Incremental state lives in Apify, one history per watchStateKey, so each search keeps
+# its own: a shared key would have cs-nl mark a Dutch CS role as seen and revops never
+# return it. The version suffix is the reset switch -- bump it and the next scan treats
+# every row in the window as new again (~$0.25), which is how to recover rows a scan
+# fetched but crashed before committing. Incremental state is written when the actor
+# pushes a row, not when the radar saves it.
+APIFY_WATCH_VERSION = "v1"
+def apify_watch_key(label):
+    return f"revops-radar-{label}-{APIFY_WATCH_VERSION}"
+# How long one search's actor run may take before we stop waiting and read what it has
+# pushed so far. The run is started asynchronously rather than with run-sync: run-sync
+# hung up at 280s several times in September while the actor carried on, and under
+# incremental mode a row pushed into a run we stopped listening to is a row marked seen
+# that the radar never got.
+APIFY_RUN_DEADLINE_S = 600
 
 # hiring.cafe states the work mode as structured data, not inside the location string, and
 # these are the keys it has been seen to use for it. Tried in order; the value is used as
@@ -3491,11 +3521,62 @@ def hc_search_work_mode(search):
     return "Remote" if all(m == ("Remote",) for m in modes) else ""
 
 
+def _apify_run_search(token, label, url, budget):
+    """One actor run for one search, started async and read from its dataset.
+
+    Returns (items, note). note is "" for a clean finish and otherwise says why the rows
+    may be partial -- they are still returned, because under incremental mode anything the
+    run pushed is already marked seen and will not come back on the next scan."""
+    # Token goes in the header, never in the query string. requests puts the full
+    # effective URL into the text of every exception it raises -- a 429 from this API
+    # reads "429 Client Error: ... for url: ...?token=apify_api_..." -- and that text is
+    # written straight into docs/status.json, which is committed and pushed. It leaked the
+    # token into a commit on 6 Sep 2026 and GitHub push protection rejected the push,
+    # which stopped every scan since.
+    headers = {"Authorization": f"Bearer {token}"}
+    api = "https://api.apify.com/v2"
+    r = requests.post(f"{api}/acts/{APIFY_ACTOR}/runs", headers=headers,
+                      params={"waitForFinish": 60},
+                      json={"startUrls": [url], "maxItems": budget,
+                            "enrichDescription": True,
+                            "incrementalMode": True, "skipUnchanged": True,
+                            "watchStateKey": apify_watch_key(label)},
+                      timeout=90)
+    r.raise_for_status()
+    run = r.json()["data"]
+    deadline = time.time() + APIFY_RUN_DEADLINE_S
+    while run.get("status") in ("READY", "RUNNING") and time.time() < deadline:
+        try:
+            r = requests.get(f"{api}/actor-runs/{run['id']}", headers=headers,
+                             params={"waitForFinish": 60}, timeout=90)
+            r.raise_for_status()
+            run = r.json()["data"]
+        except Exception:
+            # A dropped poll is not a failed run; ask again until the deadline.
+            time.sleep(5)
+    status = run.get("status", "")
+    r = requests.get(f"{api}/datasets/{run['defaultDatasetId']}/items", headers=headers,
+                     params={"clean": "true", "format": "json"}, timeout=90)
+    r.raise_for_status()
+    items = r.json()
+    if status == "SUCCEEDED":
+        return items, ""
+    if status in ("READY", "RUNNING"):
+        return items, f"still running after {APIFY_RUN_DEADLINE_S}s, read what it had"
+    return items, f"run {status}"
+
+
 def fetch_apify_hiringcafe(token, diag=None):
     """Runs Tom's saved hiring.cafe searches through the Apify actor
     memo23/apify-hiring-cafe-scraper. Each search already encodes its own
     location/title/language filters; dateFetchedPastNDays=21 in the searches is wider
     than our own MAX_POST_AGE_DAYS, so the age filter downstream still applies.
+
+    Incremental: the actor only returns (and only bills) rows that are NEW or UPDATED
+    since the last scan of the same search -- see APIFY_MAX_ITEMS for why. So a search
+    reporting "charged 0" is normal; it means nothing new was posted since the last scan.
+    The radar already remembers every row it has seen (seen.json), so not being handed
+    the unchanged ones again loses nothing.
 
     One actor call per search, not one call for all four startUrls together. A combined
     call was silently returning a flat ~30 items total run after run for six-plus weeks
@@ -3505,8 +3586,8 @@ def fetch_apify_hiringcafe(token, diag=None):
     actor's own docs only document a global maxItems, not a per-URL cap, so the most
     likely explanation is the four searches starving each other (or the actor only
     paginating the first of them) inside one run -- calling separately, each with its own
-    budget, is the direct fix and also gives a raw count per search (diag) instead of one
-    opaque total, so a search silently going quiet again is visible in the status footer."""
+    budget, is the direct fix and also gives a count per search (diag) instead of one
+    opaque total, so a search failing is visible in the status footer."""
     out = []
     # Ids already returned by an earlier search in THIS run. The five searches overlap by
     # design -- cs-nl and revops-nl both match a Dutch CS Ops role -- and every other
@@ -3518,26 +3599,17 @@ def fetch_apify_hiringcafe(token, diag=None):
     for label, state in APIFY_HIRINGCAFE_SEARCHES.items():
         url = hiringcafe_url(state)
         try:
-            # Token goes in the header, never in the query string. requests puts the
-            # full effective URL into the text of every exception it raises -- a 429 from
-            # this endpoint reads "429 Client Error: ... for url: ...?token=apify_api_..."
-            # -- and that text is written straight into docs/status.json, which is
-            # committed and pushed. It leaked the token into a commit on 6 Sep 2026 and
-            # GitHub push protection rejected the push, which stopped every scan since.
-            r = requests.post(
-                f"https://api.apify.com/v2/acts/{APIFY_ACTOR}/run-sync-get-dataset-items",
-                headers={"Authorization": f"Bearer {token}"},
-                json={"startUrls": [url], "maxItems": per_url_budget,
-                      "enrichDescription": True},
-                timeout=280)
-            r.raise_for_status()
-            items = r.json()
+            items, note = _apify_run_search(token, label, url, per_url_budget)
         except Exception as e:
             if diag is not None:
                 diag[f"hiringcafe:{label}"] = f"FAIL: {e}"
             continue
         if diag is not None:
-            diag[f"hiringcafe:{label}"] = f"raw {len(items)}"
+            # Every row returned is a row billed. new/updated is the actor's own
+            # _watchStatus; a run with no incremental state yet calls everything NEW.
+            upd = sum(1 for j in items if j.get("_watchStatus") == "UPDATED")
+            diag[f"hiringcafe:{label}"] = (f"charged {len(items)} (new {len(items) - upd}, "
+                                           f"updated {upd})" + (f" -- {note}" if note else ""))
         bump_raw("hiring.cafe", len(items))
         # What this search asked hiring.cafe for, so a row it returns can be gated on the
         # fact rather than on a location string that never carried it. See

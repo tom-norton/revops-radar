@@ -1162,10 +1162,16 @@ schedulers were firing: the Worker on time, GitHub's cron 20 minutes to 5 hours 
 17 Sep that was four runs — 13:00 dispatch, 13:23 schedule, 17:22 schedule, 18:00 dispatch —
 where the second of each pair found nothing new and still paid for five Apify actor calls
 and up to 60 Adzuna ones, with Adzuna answering 503 on the later run almost every day
-(a free-tier quota already spent). So a **scheduled** run now exits before the scanner if a
-scan committed inside the last two hours. A `workflow_dispatch` never stands down — asking
-for a run by hand means you want one now — and if the Worker stops firing, nothing commits
-and the next scheduled run goes ahead, which is the whole point of a backstop.
+(a free-tier quota already spent). So a **scheduled** run exits before the scanner if a
+scan already exists **for the slot that cron stands in for** (`tools/backstop.py`). The
+first version asked "did a scan commit in the last two hours", and GitHub delivering a
+backstop three or more hours late got past that most days: 5–6 scans a day where 3 were
+asked for, until hiring.cafe ran the Apify plan dry on 1 Oct 2026. The cron's own time is
+fixed and known; its delivery time is not, so the slot is what is checked. The crons are the
+EST instant of each slot (the later offset), which is what lets one 90-minute lead cover
+both offsets — `tests/test_scoring.py` pins them. A `workflow_dispatch` never stands down —
+asking for a run by hand means you want one now — and if the Worker stops firing, nothing
+commits and the next scheduled run goes ahead, which is the whole point of a backstop.
 
 **Deploying is merging.** `.github/workflows/worker-deploy.yml` uploads `worker/` to
 Cloudflare on any push to `main` that touches it, so a schedule change goes live when the PR
@@ -1291,6 +1297,20 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   instead of once for all four `startUrls` together; the status footer now shows a raw count
   per search (`hiringcafe:cs-nl=raw 15`, etc.) so a search going quiet again is visible instead
   of hiding inside one opaque total.
+- **hiring.cafe ran the Apify plan dry on 1 Oct 2026** (every search 403 from that evening).
+  The Starter plan includes $19/month of usage and the actor bills $1.25 per 1000 rows; the
+  radar was spending about $35, because every scan re-bought the same ~175 rows and there
+  were 5–6 scans a day (see the backstop above). The actor now runs in **incremental mode**,
+  one `watchStateKey` per search, so it only returns and bills rows that are new or updated
+  since the last scan — steady state is a few dollars a month. The footer reads
+  `cs-nl=charged 3 (new 3, updated 0)`, and **`charged 0` is normal**: nothing new was posted.
+  `APIFY_MAX_ITEMS` (150) is the ceiling if incremental mode ever silently stops working —
+  3 scans a day at the full cap is $17.44/month, still inside the plan, and a test holds it
+  there. The run is started async and polled rather than `run-sync`, which hung up at 280s
+  several times in September: under incremental mode a row the actor pushed is marked seen
+  whether or not the radar received it, so a run we stop waiting for is still read. To
+  re-fetch everything in the window once (a scan that crashed after fetching, say), bump
+  `APIFY_WATCH_VERSION` in `scan.py`; it costs about $0.25.
 - **JobSpy/Indeed** may be blocked from GitHub's datacenter IPs some days; it's marked "skipped"
   in the status footer and the other sources carry the run. Ireland still comes through the ATS feeds.
 - **LinkedIn's guest search endpoint** is unofficial and could change or get rate-limited without

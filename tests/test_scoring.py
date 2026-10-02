@@ -1489,9 +1489,145 @@ def test_apify_call_keeps_the_token_out_of_the_url():
     """Guards the call site itself. Header auth is what stops the exception text from ever
     containing the token; redact() is the backstop, not the fix."""
     import inspect
-    src = inspect.getsource(scan.fetch_apify_hiringcafe)
+    src = inspect.getsource(scan._apify_run_search)
     assert '"Authorization": f"Bearer {token}"' in src
     assert 'params={"token": token}' not in src
+
+
+def test_apify_worst_case_month_fits_the_plan():
+    """The cap is the bill if incremental mode silently stopped working: every scan
+    paying for its full budget, three scans a day, a 31-day month. Hiring.cafe went dark
+    on 1 Oct 2026 because usage outran the Starter plan's $19; this keeps the ceiling
+    under it even with nothing else going right."""
+    worst = (scan.APIFY_MAX_ITEMS * scan.SCANS_PER_DAY * 31 * scan.APIFY_PRICE_PER_ROW)
+    assert worst <= scan.APIFY_PLAN_USD, f"worst case ${worst:.2f}/month"
+
+
+class _FakeApify:
+    """Stands in for the three Apify calls one search makes: start the run, poll it,
+    read its dataset."""
+    def __init__(self, items_per_run, final_status="SUCCEEDED"):
+        self.items_per_run, self.final_status = items_per_run, final_status
+        self.started, self.urls, self.auth = [], [], set()
+
+    def _resp(self, payload):
+        class R:
+            def raise_for_status(self_inner): pass
+            def json(self_inner): return payload
+        return R()
+
+    def post(self, url, headers=None, params=None, json=None, timeout=None):
+        self.urls.append(url); self.auth.add(headers.get("Authorization"))
+        self.started.append(json)
+        n = len(self.started)
+        return self._resp({"data": {"id": f"run{n}", "status": "RUNNING",
+                                    "defaultDatasetId": f"ds{n}"}})
+
+    def get(self, url, headers=None, params=None, timeout=None):
+        self.urls.append(url); self.auth.add(headers.get("Authorization"))
+        if "/actor-runs/" in url:
+            n = url.rsplit("run", 1)[1]
+            return self._resp({"data": {"id": f"run{n}", "status": self.final_status,
+                                        "defaultDatasetId": f"ds{n}"}})
+        n = int(url.split("/datasets/ds")[1].split("/")[0])
+        return self._resp([{"id": f"job{n}-{i}", "_watchStatus": "NEW",
+                            "job_information": {"title": "Revenue Operations Manager"},
+                            "v5_processed_job_data": {"company_name": "Acme",
+                                "formatted_workplace_location": "Amsterdam, Netherlands"}}
+                           for i in range(self.items_per_run)])
+
+
+def _with_fake_apify(fake, fn):
+    real = (scan.requests.post, scan.requests.get)
+    scan.requests.post, scan.requests.get = fake.post, fake.get
+    try:
+        return fn()
+    finally:
+        scan.requests.post, scan.requests.get = real
+
+
+def test_apify_runs_each_search_incrementally_under_its_own_watch_key():
+    """skipUnchanged is what stops a scan paying again for rows the last scan already
+    bought. Each search needs its own history: with one shared key, a Dutch CS Ops role
+    that cs-nl returned first would be UNCHANGED to revops and never come back from it."""
+    fake = _FakeApify(items_per_run=2)
+    diag = {}
+    _with_fake_apify(fake, lambda: scan.fetch_apify_hiringcafe("apify_api_secret", diag))
+    assert len(fake.started) == len(scan.APIFY_HIRINGCAFE_SEARCHES)
+    keys = [body["watchStateKey"] for body in fake.started]
+    assert len(set(keys)) == len(keys), keys
+    for body in fake.started:
+        assert body["incrementalMode"] is True and body["skipUnchanged"] is True
+        assert body["maxItems"] * len(fake.started) <= scan.APIFY_MAX_ITEMS
+    assert fake.auth == {"Bearer apify_api_secret"}
+    assert not any("apify_api_secret" in u for u in fake.urls)
+    assert diag["hiringcafe:revops"] == "charged 2 (new 2, updated 0)"
+
+
+def test_apify_run_that_outlives_the_deadline_still_has_its_rows_read():
+    """Under incremental mode a row the actor pushed is marked seen whether or not we
+    read it. run-sync hung up at 280s several times in September; had that been
+    incremental, those rows would have been gone for good. A run we stop waiting for is
+    read anyway, and the footer says it was partial."""
+    fake = _FakeApify(items_per_run=1, final_status="RUNNING")
+    saved = scan.APIFY_RUN_DEADLINE_S
+    scan.APIFY_RUN_DEADLINE_S = 0
+    diag = {}
+    try:
+        jobs = _with_fake_apify(fake, lambda: scan.fetch_apify_hiringcafe("t", diag))
+    finally:
+        scan.APIFY_RUN_DEADLINE_S = saved
+    assert jobs, "the partial run's rows must reach the pipeline"
+    assert "still running" in diag["hiringcafe:cs-nl"]
+
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "tools"))
+import backstop  # noqa: E402
+
+
+def _utc(day, hhmm, month=9):
+    from datetime import datetime, timezone
+    h, m = (int(x) for x in hhmm.split(":"))
+    return datetime(2026, month, day, h, m, tzinfo=timezone.utc)
+
+
+def test_a_backstop_delivered_hours_late_stands_down_when_the_worker_covered_its_slot():
+    """The live cases from 24-30 Sep under EDT, re-read against the new crons. The Worker's
+    8am scan committed at 12:11Z; the old two-hour rule let a backstop delivered at 16:09Z
+    run a second, identical scan. Same for the 8pm scan (00:14Z) and a 04:31Z backstop."""
+    assert backstop.should_stand_down("0 13 * * 1-5", _utc(24, "16:09"), _utc(24, "12:11"))
+    assert backstop.should_stand_down("30 17 * * 1-5", _utc(30, "21:23"), _utc(30, "17:04"))
+    assert backstop.should_stand_down("0 1 * * 2-6", _utc(30, "04:31"), _utc(30, "00:14"))
+    assert backstop.should_stand_down("0 14 * * 0,6", _utc(27, "17:52"), _utc(27, "13:13"))
+
+
+def test_a_backstop_runs_when_the_worker_missed_its_slot():
+    """The point of a backstop. The last scan is the previous slot's, 4.5 hours earlier,
+    and must not count for this one -- under either offset."""
+    # EDT: 8am scan at 12:11Z, Worker misses 12:30pm; backstop for 17:30Z arrives 19:00Z.
+    assert not backstop.should_stand_down("30 17 * * 1-5", _utc(24, "19:00"), _utc(24, "12:11"))
+    # EST: 8pm scan at 01:20Z, Worker misses 8am (13:00Z); backstop arrives 13:40Z.
+    assert not backstop.should_stand_down("0 13 * * 1-5", _utc(3, "13:40", month=11),
+                                          _utc(3, "01:20", month=11))
+    assert not backstop.should_stand_down("0 13 * * 1-5", _utc(24, "16:09"), None)
+
+
+def test_the_backstop_slot_is_found_across_midnight():
+    """The 8pm backstop (01:00Z) delivered at 00:30Z the next night is late for the
+    previous day's slot, not early for today's."""
+    assert backstop.slot_of("0 1 * * 2-6", _utc(30, "00:30")) == _utc(29, "01:00")
+
+
+def test_the_backstop_crons_are_the_ones_the_stand_down_was_reasoned_for():
+    """tools/backstop.py's SLOT_LEAD only works if each cron is the EST instant of its
+    Worker slot. Changing a cron without re-reading that reasoning is how duplicates
+    come back."""
+    wf = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           ".github", "workflows", "scan.yml")).read()
+    import re
+    crons = re.findall(r'- cron: "([^"]+)"', wf)
+    assert crons == ["0 13 * * 1-5", "30 17 * * 1-5", "0 1 * * 2-6", "0 14 * * 0,6"], crons
 
 
 # ---- North America: Canada and the US
