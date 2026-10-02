@@ -147,7 +147,10 @@ these are the facts behind them.
   success only, and the posting must state a salary. This is a financial-runway backstop
   and not a destination — Tom and his family do not want to live here — so a US role is
   only worth taking at pay that is confirmed rather than hoped for, and a US row carrying
-  no published salary is dropped before it is scored. Score 2-3, or 4-5 when the employer
+  no published salary is dropped before it is scored. The pay floor depends on the track:
+  USD 125,000 base for a core RevOps title (CS operations included) and USD 130,000 base
+  for a senior customer success title, read against the TOP of the stated band (see Salary
+  handling). Score 2-3, or 4-5 when the employer
   also posts roles in the Netherlands, Ireland, the UK or Canada, because an internal
   transfer later is a route abroad without changing employer and sponsorship is a lighter
   ask once they know you.
@@ -174,16 +177,27 @@ field for those three.
 Most EU postings don't list salary. If a posting states a salary and its base is genuinely
 below the market's floor, the role is dropped outright, not scored and not shown. In Europe
 that floor is a visa threshold and a role below it is one Tom cannot legally take. In the US
-it is his own floor — USD 130,000 base — because a US role is only worth taking if it pays
-enough to make staying somewhere he does not want to live comfortable for his family.
-Canada has no floor, since no permit threshold applies.
+it is his own floor, because a US role is only worth taking if it pays enough to make
+staying somewhere he does not want to live comfortable for his family, and it depends on
+the track:
+- RevOps track — USD 125,000 base. Any core RevOps title, for example revenue, sales, CS or
+  customer success operations, revenue or sales strategy, revenue or sales enablement,
+  commercial operations, GTM strategy or operations, sales compensation, territory
+  planning. A title that is both customer success and operations ("Customer Success
+  Operations Manager") is RevOps.
+- Customer success track — USD 130,000 base. Senior, principal, lead, enterprise or
+  strategic customer success, and customer success management roles, when the title is not
+  also a RevOps title.
+The floor is checked against the TOP of the stated band, not the bottom or the midpoint: a
+band is below the floor only when all of it is, and a band that straddles the floor is kept
+and flagged. Canada has no floor, since no permit threshold applies.
 
 Only a figure the POSTING states counts. Job-board salary estimates, Adzuna's especially,
 are not evidence and must never be reported as a stated salary.
 
 The US is stricter still, and in two stages. A US row that reaches you at all has already
 had to carry a published salary, or code dropped it before scoring. What you then report is
-checked against the USD 130,000 floor, so report the stated base exactly and let the drop
+checked against the track floor above, so report the stated base exactly and let the drop
 happen in code. Report the salary fields
 accurately regardless of how strong the rest of the posting looks; the drop happens in code
 from what you report, not from your own judgment call on whether it's close enough. If

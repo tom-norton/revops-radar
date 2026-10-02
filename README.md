@@ -360,12 +360,17 @@ fact is missing rather than flattening both into one sentence.
     on the 120, even though most of that band clears the floor and the entire negotiation
     happens inside it. A band is disqualifying only when **all** of it is below the floor —
     then no amount of negotiating reaches it, and that is the fact worth acting on. A band
-    that straddles the floor is kept and **flagged** on the card (`band 120000-150000 USD
-    starts below your 130000 USD floor`), so Tom sees the risk instead of never seeing the
-    role. Opus now reports `salary_max_base` alongside `salary_min_base` for this; a row
-    scored before that field existed falls back to its bottom figure, which reproduces the
-    old answer exactly rather than reading a missing top as zero and disqualifying the
-    whole stored corpus in one pass.
+    that straddles the floor is kept and **flagged** on the card (`band 110000-130000 USD
+    starts below your 125000 USD RevOps floor`), so Tom sees the risk instead of never
+    seeing the role. Opus now reports `salary_max_base` alongside `salary_min_base` for
+    this; a row scored before that field existed falls back to its bottom figure, which
+    reproduces the old answer exactly rather than reading a missing top as zero and
+    disqualifying the whole stored corpus in one pass.
+    **The US floor depends on the track** (`COMP_FLOORS`, resolved from the title by
+    `floor_for()`): USD 125,000 for a RevOps title (anything `REVOPS_CORE` matches, CS
+    operations included) and USD 130,000 for senior customer success. Both are read against
+    the top of the band; 125K there keeps the midpoints of the bands it admits near the
+    ~115K realistic RevOps target.
 17. **The score itself is computed in Python**, not by the model, for every role that
     survives to be scored — `weighted_total()` does the arithmetic, so the number is
     reproducible from the six dimension scores instead of being whatever total the model
@@ -1001,10 +1006,10 @@ The deep score reads `profile.md`. Edit that file whenever your background, targ
 floors, or market list change. Keep it factual.
 
 Two things are **not** driven by `profile.md` alone, because code reads them directly: the
-salary floors in `VISA_FLOORS` (used by `deep_score_disqualifier()` to drop a stated salary
-below the floor) and the market list in `market_of()` (which gates the pipeline). Change a
-comp floor or add a market and you need to update both, or the prose and the code will
-disagree.
+salary floors in `VISA_FLOORS` and `COMP_FLOORS` (the US floor, per track; both used by
+`deep_score_disqualifier()` to drop a stated salary below the floor) and the market list in
+`market_of()` (which gates the pipeline). Change a comp floor or add a market and you need
+to update both, or the prose and the code will disagree.
 
 `profile.md` diverges from the `job-application-workflow` skill in exactly two places, both
 deliberate: **markets** — it rejects Germany, Spain, and remote-EMEA outright (the skill
