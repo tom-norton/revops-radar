@@ -3417,5 +3417,142 @@ def test_an_english_ad_or_a_bilingual_one_is_not_read_as_foreign():
     assert scan.written_in_other_language("Wij zoeken een collega voor het team.") == ""
 
 
+# ---------------------------------------------------------------- feed health
+
+class _Resp:
+    def __init__(self, status, results=()):
+        self.status_code, self._results, self.text = status, list(results), "busy"
+
+    def json(self):
+        return {"results": self._results}
+
+
+def _az(i, title="Revenue Operations Manager", loc="Amsterdam"):
+    return {"id": i, "title": title, "location": {"display_name": loc},
+            "company": {"display_name": "Acme"}, "description": "", "created": ""}
+
+
+def test_adzuna_retries_a_503_before_giving_up_on_the_page():
+    calls, waits = [], []
+    replies = [_Resp(503), _Resp(200, [_az(1)])]
+
+    def fetch(url, params=None):
+        calls.append(url)
+        return replies.pop(0)
+    r = scan.adzuna_get("u", {}, sleep=waits.append, fetch=fetch)
+    assert r.status_code == 200 and len(calls) == 2 and waits == [2]
+    # A 401 is an answer, not a blip: no retry.
+    calls.clear(); waits.clear()
+    r = scan.adzuna_get("u", {}, sleep=waits.append, fetch=lambda u, params=None: (
+        calls.append(u), _Resp(401))[1])
+    assert r.status_code == 401 and len(calls) == 1 and waits == []
+
+
+def test_adzuna_skips_a_failed_phrase_instead_of_dropping_the_country():
+    old = dict(scan.ADZUNA_COUNTRIES), scan.FEED_ERRORS.copy()
+    scan.ADZUNA_COUNTRIES.clear(); scan.ADZUNA_COUNTRIES["nl"] = "EUR"
+    scan.FEED_ERRORS.clear()
+    try:
+        def fetch(url, params=None):
+            if params["what"] == scan.ADZUNA_PHRASES[0]:
+                return _Resp(503)
+            return _Resp(200, [_az(params["what"])])
+        diag = {}
+        out = scan.fetch_adzuna("i", "k", diag, sleep=lambda s: None, fetch=fetch)
+        # Every phrase after the failing first one still came back.
+        assert len(out) == len(scan.ADZUNA_PHRASES) - 1, len(out)
+        assert "1 of" in diag["adzuna:nl"] and "adzuna:nl" in scan.FEED_ERRORS
+
+        # Two failures in a row is an outage: stop asking.
+        asked = []
+        def down(url, params=None):
+            asked.append(params["what"])
+            return _Resp(503)
+        scan.fetch_adzuna("i", "k", {}, sleep=lambda s: None, fetch=down)
+        assert len(set(asked)) == scan.ADZUNA_GIVE_UP_AFTER
+    finally:
+        scan.ADZUNA_COUNTRIES.clear(); scan.ADZUNA_COUNTRIES.update(old[0])
+        scan.FEED_ERRORS.clear(); scan.FEED_ERRORS.update(old[1])
+
+
+def test_a_jobspy_row_with_nan_cells_converts_instead_of_crashing():
+    nan = float("nan")
+    target = scan.JOBSPY_TARGETS[2]          # Ireland
+    row = {"title": "Revenue Operations Manager", "company": nan, "location": nan,
+           "job_url": "https://ie.indeed.com/viewjob?jk=abc", "min_amount": nan,
+           "max_amount": nan, "currency": nan, "description": nan, "date_posted": nan}
+    job = scan.jobspy_row(row, target)
+    assert job["salary"] == "" and job["company"] == "" and job["posted_at"] == ""
+    assert job["location"] == "Ireland" and job["description"] == ""
+    # Only the top of the range missing: the bottom stands in for it.
+    row.update(min_amount=55000.0, max_amount=nan, currency="EUR")
+    assert scan.jobspy_row(row, target)["salary"] == "55000-55000 EUR"
+
+
+def test_feed_warnings_name_errors_and_feeds_far_below_their_usual_count():
+    history = {"adzuna:nl": [210, 0, 230, 220, 0, 216], "reed": [100] * 6}
+    raw = {"adzuna:nl": 30, "reed": 100}
+    hist, warns = scan.feed_warnings(history, raw, {"adzuna", "reed"}, {})
+    assert len(warns) == 1 and "Adzuna NL returned 30" in warns[0] and "220" in warns[0]
+    assert hist["adzuna:nl"][-1] == 30 and hist["reed"][-1] == 100
+    # A feed that already reported an error is not reported twice.
+    errs = {"adzuna:nl": "Adzuna NL: 9 of 9 searches failed"}
+    _, warns = scan.feed_warnings(history, raw, {"adzuna", "reed"}, errs)
+    assert warns == ["Adzuna NL: 9 of 9 searches failed"]
+    # A source that did not run (no key on a local run) records nothing and warns nothing.
+    hist, warns = scan.feed_warnings(history, {}, {"reed"}, {})
+    assert hist["adzuna:nl"] == history["adzuna:nl"]
+    assert not any("Adzuna" in w for w in warns)
+    # Too little history: no judgement yet.
+    _, warns = scan.feed_warnings({"reed": [100, 0]}, {"reed": 0}, {"reed"}, {})
+    assert warns == []
+
+
+# ---------------------------------------------------------------- re-posts
+
+def _now():
+    return scan.datetime(2026, 10, 5, tzinfo=scan.timezone.utc)
+
+
+def test_remember_dealt_names_marked_rows_and_forgets_undone_marks():
+    rows = [{"id": "li-1", "company": "Jobber", "title": "Sales Operations Manager",
+             "market": "CA", "found_at": "2026-09-30T10:00:00+00:00", "dupe_ids": ["az-ca-9"]},
+            {"id": "li-2", "company": "Acme", "title": "RevOps Lead", "market": "NL"}]
+    state = {"applied": ["az-ca-9"], "hidden": ["li-2", "gone-3"],
+             "applied_at": [{"id": "az-ca-9", "at": "2026-10-01T12:00:00Z"}],
+             "hide_notes": [{"id": "gone-3", "company": "FareHarbor", "market": "NL",
+                             "title": "Manager, Commercial Operations"}]}
+    dealt = scan.remember_dealt([], state, rows, _now())
+    by = {d["id"]: d for d in dealt}
+    assert by["az-ca-9"]["company"] == "Jobber" and by["az-ca-9"]["action"] == "applied"
+    assert by["az-ca-9"]["at"] == "2026-10-01"
+    assert by["gone-3"]["company"] == "FareHarbor"          # named from the hide note
+    # The row aged off the dashboard: the stored entry still names it.
+    state2 = dict(state, hidden=["li-2"], hide_notes=[])
+    again = scan.remember_dealt(dealt, state2, [], _now())
+    assert {d["id"] for d in again} == {"az-ca-9", "li-2"}
+    # Firebase unreachable: keep the memory, only age it.
+    assert scan.remember_dealt(again, None, [], _now()) == again
+    # Older than the window: forgotten.
+    later = _now() + scan.timedelta(days=scan.REPOST_WINDOW_DAYS + 2)
+    assert scan.remember_dealt(again, None, [], later) == []
+
+
+def test_a_repost_of_an_applied_role_is_matched_but_not_a_different_role():
+    dealt = [{"id": "hc-1", "company": "FareHarbor", "market": "NL", "action": "applied",
+              "title": "Manager, Commercial Operations, New Markets", "at": "2026-07-30"}]
+    repost = {"id": "li-9", "company": "FareHarbor", "market": "NL",
+              "title": "Manager, Commercial Operations - New Markets", "location": "Amsterdam"}
+    d = scan.repost_of(repost, dealt)
+    assert d and "applied to on 2026-07-30" in scan.repost_reason(d)
+    # Another market, a more senior title, or another company is a different role.
+    assert scan.repost_of(dict(repost, market="UK-London"), dealt) is None
+    assert scan.repost_of(dict(repost, title="Senior Manager, Commercial Operations, "
+                                             "New Markets"), dealt) is None
+    assert scan.repost_of(dict(repost, company="Booking.com"), dealt) is None
+    # The original row itself is never its own re-post.
+    assert scan.repost_of(dict(repost, id="hc-1"), dealt) is None
+
+
 if __name__ == "__main__":
     sys.exit(_run())

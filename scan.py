@@ -117,6 +117,14 @@ ADZUNA_CORE_PHRASES = ["revenue operations", "sales operations", "revenue strate
 ADZUNA_MAX_DAYS = 7      # Tom doesn't want postings older than a week
 ADZUNA_PER_PAGE = 30     # per phrase
 ADZUNA_PAGES = 2         # pages per phrase; page 1 alone capped the feed at 540 results/run
+# Adzuna's NL endpoint answered HTTP 503 in half the runs sampled in the week to 5 Oct
+# 2026, and on 4 Oct every country did. The first error used to end that country's fetch
+# for the run, so one transient 503 cost every phrase after it. A 429, a 5xx or a dropped
+# connection is now retried with these waits between attempts, and a phrase that still
+# fails is skipped rather than ending the country: only ADZUNA_GIVE_UP_AFTER failures in a
+# row do that, which is an outage rather than a blip.
+ADZUNA_RETRY_WAITS = (2, 6)
+ADZUNA_GIVE_UP_AFTER = 2
 
 # The literal OR-keyword search string. Reed and LinkedIn both take a single free-text
 # query, and both want the same terms -- one constant so they can't drift apart.
@@ -1403,6 +1411,59 @@ def bump_raw(source, n):
     zeroes a source looks different from a genuinely quiet week."""
     RAW_COUNTS[source] = RAW_COUNTS.get(source, 0) + n
 
+# A source that half-fails still says "ok" in its status line, and one that dies says
+# "skipped" in grey at the foot of the page. Adzuna NL failing in half the runs and
+# Indeed not running at all in four of ten went unnoticed for two weeks that way, while
+# NL roles on the dashboard halved. FEED_ERRORS collects what a fetcher could not do;
+# feed_warnings() adds the feeds that came back far smaller than they usually do, and the
+# dashboard puts both at the top of the page.
+FEED_ERRORS = {}
+
+# The feeds whose raw count is steady enough to judge against its own history. hiring.cafe
+# is fetched incrementally (only rows new since the last run are charged) and revopsroles
+# is however many emails arrived, so a small number from either is not a fault.
+RAW_WATCH = ("adzuna:nl", "adzuna:gb", "adzuna:ca", "adzuna:us", "reed", "linkedin", "ats",
+             "indeed:nl", "indeed:be", "indeed:ie", "indeed:ca", "indeed:us")
+RAW_HISTORY_RUNS = 30        # runs kept per feed in status.json, about ten days
+RAW_HISTORY_MIN = 3          # working runs needed before a feed is judged against them
+RAW_LOW_SHARE = 0.5          # under this share of the usual count is a warning
+RAW_LOW_MIN_USUAL = 10       # a feed that usually returns fewer than this is too noisy
+
+FEED_LABELS = {"adzuna": "Adzuna", "reed": "Reed", "linkedin": "LinkedIn",
+               "ats": "Company ATS feeds", "indeed": "Indeed/JobSpy"}
+
+def feed_label(key):
+    src, _, cc = key.partition(":")
+    return FEED_LABELS.get(src, src) + (f" {cc.upper()}" if cc else "")
+
+def feed_warnings(history, raw, ran, errors):
+    """(new history, warnings) for one run.
+
+    history: {feed: [raw counts of previous runs, oldest first]}, from status.json.
+    raw: this run's RAW_COUNTS. ran: the source names that were actually attempted, so a
+    local run without the Adzuna key neither records a zero nor raises a warning.
+    A feed is compared with the median of its own past runs, not with the other feeds:
+    Adzuna GB returning 500 rows and Indeed IE returning 20 are both normal. Only runs
+    where the feed returned something count towards "usual": a feed that has been broken
+    for half the window would otherwise drag its own median to zero and stop warning."""
+    warnings = list(errors.values())
+    history = {k: list(v) for k, v in (history or {}).items()}
+    for key in RAW_WATCH:
+        if key.split(":")[0] not in ran:
+            continue
+        n = raw.get(key, 0)
+        past = history.get(key, [])
+        working = sorted(v for v in past if v > 0)
+        if len(working) >= RAW_HISTORY_MIN:
+            usual = working[len(working) // 2]
+            # A feed that already reported an error is not reported twice.
+            reported = key in errors or key.split(":")[0] in errors
+            if usual >= RAW_LOW_MIN_USUAL and n < usual * RAW_LOW_SHARE and not reported:
+                warnings.append(f"{feed_label(key)} returned {n} rows this run; it usually "
+                                f"returns about {usual}.")
+        history[key] = (past + [n])[-RAW_HISTORY_RUNS:]
+    return history, warnings
+
 def src_line(source, kept):
     raw = RAW_COUNTS.get(source)
     return f"ok (raw {raw} -> kept {kept})" if raw is not None else f"ok ({kept})"
@@ -1731,7 +1792,11 @@ def same_role(ka, kb):
         return False
     if not _same_company(ka, kb):
         return False
-    ta, tb = ka[1], kb[1]
+    return _same_title(ka[1], kb[1])
+
+def _same_title(ta, tb):
+    """Identical title word sets, or the shorter inside the longer with at most a few
+    extra words, none of them DISTINGUISHING. Seniority is the caller's check."""
     if ta == tb:
         return True
     short, long_ = (ta, tb) if len(ta) <= len(tb) else (tb, ta)
@@ -1762,6 +1827,103 @@ def same_posting_other_city(ka, kb):
     if not ka[6] or ka[6] != kb[6]:
         return False
     return ka[1] == kb[1] and _same_company(ka, kb)
+
+# ---------------------------------------------------------------- re-posts
+# A role Tom already applied to or hid, listed again under a new id. Dedupe cannot catch
+# it: by the time the re-post arrives the original has usually been hidden for weeks, or
+# has aged off the dashboard altogether, so there is nothing left to fold it into. In the
+# week to 5 Oct 2026, 3 of 30 hides were re-posts: Jobber's Sales Operations Manager a
+# second time, and two roles he had applied to back in July.
+#
+# dealt.json is the memory: company, title and market of everything he applied to or
+# hid, refreshed every run from the dashboard's shared state while the row can still be
+# named. Only for REPOST_WINDOW_DAYS, so a role genuinely re-opened months later comes
+# back to be judged again.
+DEALT_FILE = "dealt.json"
+REPOST_WINDOW_DAYS = 120
+FIREBASE_STATE_URL = ("https://revops-radar-2822a-default-rtdb.europe-west1."
+                      "firebasedatabase.app/revops-radar-state.json")
+
+def load_dashboard_state(fetch=None):
+    """Hidden, Applied and the hide notes from Firebase, or None when unreachable."""
+    try:
+        r = (fetch or get)(FIREBASE_STATE_URL, timeout=20)
+        r.raise_for_status()
+        return r.json() or {}
+    except Exception:
+        return None
+
+def remember_dealt(dealt, state, rows, now):
+    """dealt.json brought up to date with the dashboard's Hide and Mark-applied.
+
+    dealt: the stored entries. state: the Firebase state, or None when it could not be
+    read, in which case the stored memory is only aged, never rebuilt. rows: the dashboard
+    rows, which are where a marked id gets its company and title from.
+
+    A mark that has been undone on the dashboard is forgotten here too. An applied mark
+    wins over a hidden one for the same row, because the reason shown on a dropped re-post
+    should be the one that matters."""
+    cutoff = (now - timedelta(days=REPOST_WINDOW_DAYS)).isoformat()
+    by_entry = {d["id"]: d for d in dealt if d.get("id")}
+    if state is not None:
+        by_id = {}
+        for j in rows:
+            for i in [j.get("id")] + list(j.get("dupe_ids") or []):
+                if i:
+                    by_id[str(i)] = j
+        marked_at = {}
+        for key in ("hidden_at", "applied_at"):
+            for r in state.get(key) or []:
+                if r and r.get("id"):
+                    marked_at[r["id"]] = r.get("at") or ""
+        notes = {n["id"]: n for n in state.get("hide_notes") or [] if n and n.get("id")}
+        live = {}
+        for action in ("hidden", "applied"):
+            for i in state.get(action) or []:
+                i = str(i)
+                j = by_id.get(i) or notes.get(i)
+                old = by_entry.get(i)
+                if j is None and old is None:
+                    continue              # nothing left that can name the role
+                src = j or old
+                if not (src.get("company") and src.get("title")):
+                    continue
+                at = (marked_at.get(i) or (old or {}).get("at") or src.get("found_at")
+                      or now.isoformat())
+                live[i] = {"id": i, "company": src["company"], "title": src["title"],
+                           "market": src.get("market") or "", "action": action,
+                           "at": at[:10]}
+        by_entry = live
+    return sorted((d for d in by_entry.values() if d["at"] >= cutoff[:10]),
+                  key=lambda d: (d["at"], d["id"]))
+
+def repost_of(job, dealt):
+    """The dealt.json entry this row re-lists, or None.
+
+    Same employer (by _same_company), same title (by _same_title) and the same seniority,
+    in the same market. The city is deliberately not compared: a re-post often changes
+    it, Varicent's one ad was filed under six Ontario towns, and the market check already
+    keeps a London role from suppressing an Amsterdam one."""
+    ka = role_key(job)
+    if not (ka[0] and ka[1]):
+        return None
+    for d in dealt:
+        if d.get("id") == job.get("id"):
+            continue
+        kb = role_key({"company": d.get("company"), "title": d.get("title"),
+                       "market": d.get("market")})
+        if not (kb[0] and kb[1]) or ka[3] != kb[3]:
+            continue
+        if ka[5] and kb[5] and ka[5] != kb[5]:
+            continue
+        if _same_company(ka, kb) and _same_title(ka[1], kb[1]):
+            return d
+    return None
+
+def repost_reason(d):
+    what = "applied to" if d.get("action") == "applied" else "hidden"
+    return (f"re-post of {d.get('company')} - {d.get('title')}, {what} on "
+            f"{d.get('at')}; suppressed for {REPOST_WINDOW_DAYS} days from then")
 
 # Which copy of a duplicate to keep. A scored row always beats an unscored one, then the
 # source: an employer's own ATS feed carries the clean company name, the full description
@@ -2261,21 +2423,41 @@ def adzuna_salary(j, cc):
     high = int(j.get("salary_max") or j["salary_min"])
     return f"{low}-{high} {ADZUNA_COUNTRIES.get(cc, '')}".strip()
 
-def fetch_adzuna(app_id, app_key, diag):
+def adzuna_get(url, params, sleep=time.sleep, fetch=None):
+    """One Adzuna page, retried through ADZUNA_RETRY_WAITS on a 429, a 5xx or a network
+    error. Returns the last response, which the caller still checks: a 4xx other than 429
+    is a real answer (a bad key, a bad country) and retrying it only wastes calls."""
+    fetch = fetch or get
+    waits = list(ADZUNA_RETRY_WAITS)
+    while True:
+        try:
+            r = fetch(url, params=params)
+            if r.status_code != 429 and r.status_code < 500:
+                return r
+        except requests.RequestException:
+            if not waits:
+                raise
+        else:
+            if not waits:
+                return r
+        sleep(waits.pop(0))
+
+def fetch_adzuna(app_id, app_key, diag, sleep=time.sleep, fetch=None):
     out, ids = [], set()
     for cc in ADZUNA_COUNTRIES:
         raw = kept = 0
-        err = None
+        failed, in_a_row, last_err = 0, 0, None
         phrases = (ADZUNA_CORE_PHRASES if cc in ADZUNA_CORE_COUNTRIES
                    else ADZUNA_PHRASES)
         for phrase in phrases:
+            err = None
             for page in range(1, ADZUNA_PAGES + 1):
                 try:
-                    r = get(f"https://api.adzuna.com/v1/api/jobs/{cc}/search/{page}", params={
+                    r = adzuna_get(f"https://api.adzuna.com/v1/api/jobs/{cc}/search/{page}", {
                         "app_id": app_id, "app_key": app_key,
                         "what": phrase, "results_per_page": ADZUNA_PER_PAGE,
                         "max_days_old": ADZUNA_MAX_DAYS, "sort_by": "date",
-                    })
+                    }, sleep=sleep, fetch=fetch)
                     if r.status_code != 200:
                         err = f"HTTP {r.status_code}: {r.text[:100]}"
                         break
@@ -2305,16 +2487,30 @@ def fetch_adzuna(app_id, app_key, diag):
                             "salary": adzuna_salary(j, cc), "posted_at": j.get("created", ""),
                         })
                         kept += 1
-                    time.sleep(0.25)
+                    sleep(0.25)
                     if len(results) < ADZUNA_PER_PAGE:
                         break            # last page for this phrase
                 except Exception as e:
                     err = f"error: {e}"
                     break
             if err:
-                break
+                failed += 1
+                in_a_row += 1
+                last_err = err
+                if in_a_row >= ADZUNA_GIVE_UP_AFTER:
+                    break
+            else:
+                in_a_row = 0
         bump_raw("adzuna", raw)
-        diag[f"adzuna:{cc}"] = err or f"raw {raw}, kept {kept}"
+        bump_raw(f"adzuna:{cc}", raw)
+        line = f"raw {raw}, kept {kept}"
+        if failed:
+            gave_up = in_a_row >= ADZUNA_GIVE_UP_AFTER
+            line += (f"; {failed} of {len(phrases)} phrases failed"
+                     + (", gave up" if gave_up else "") + f" ({last_err})")
+            FEED_ERRORS[f"adzuna:{cc}"] = (f"Adzuna {cc.upper()}: {failed} of {len(phrases)} "
+                                           f"searches failed after retries ({last_err[:60]})")
+        diag[f"adzuna:{cc}"] = line
     return out
 
 # ---------------------------------------------------------------- Reed (UK)
@@ -2381,6 +2577,47 @@ JOBSPY_TARGETS = [
 ]
 
 
+def _cell(v):
+    """A JobSpy cell as text, "" for a missing one. pandas fills a missing cell with NaN,
+    and NaN is truthy, so `row.get("company") or ""` turned an absent company into the
+    string "nan"."""
+    if v is None or (isinstance(v, float) and v != v):
+        return ""
+    return str(v)
+
+def _amount(v):
+    """A JobSpy salary cell as an int, or None for a missing or unreadable one. A NaN
+    min_amount passed the old truthiness test and int() raised "cannot convert float NaN
+    to integer", which escaped fetch_jobspy and skipped Indeed for the whole run: 4 of 10
+    runs sampled in the week to 5 Oct 2026."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f == f and f > 0 else None
+
+def jobspy_row(row, target):
+    """One JobSpy result as a radar row, or None when it has nothing to identify it."""
+    cc = target["cc"]
+    title = _cell(row.get("title"))
+    url = _cell(row.get("job_url"))
+    if not (title or url):
+        return None
+    loc = _cell(row.get("location")) or target["location"]
+    lo, hi = _amount(row.get("min_amount")), _amount(row.get("max_amount"))
+    sal = (f"{lo}-{hi or lo} {_cell(row.get('currency')) or target['currency']}"
+           if lo else "")
+    return {
+        "id": "js-" + re.sub(r"\W+", "-", url or title)[-70:],
+        "company": _cell(row.get("company")),
+        "title": title, "location": loc, "country": cc,
+        "market": market_of(cc, loc),
+        "url": url, "source": "indeed",
+        "description": strip_html(_cell(row.get("description"))),
+        "salary": sal,
+        "posted_at": _cell(row.get("date_posted")),
+    }
+
 def fetch_jobspy(diag=None):
     """Indeed (plus Google Jobs everywhere except Ireland) via JobSpy. Best-effort: import and
     scrape may both fail on CI IPs, and neither is allowed to break the run.
@@ -2392,9 +2629,11 @@ def fetch_jobspy(diag=None):
     out, seen = [], set()
     for target in JOBSPY_TARGETS:
         cc = target["cc"]
-        raw = kept = 0
+        raw = kept = bad = 0
         err = None
-        for term in (target["terms"] or JOBSPY_TERMS):
+        terms = target["terms"] or JOBSPY_TERMS
+        failed = 0
+        for term in terms:
             try:
                 df = scrape_jobs(site_name=target["sites"], search_term=term,
                                  location=target["location"], results_wanted=20,
@@ -2402,41 +2641,42 @@ def fetch_jobspy(diag=None):
                                  hours_old=MAX_POST_AGE_DAYS * 24)
             except Exception as e:
                 err = f"error: {e}"
+                failed += 1
                 continue
             if df is None or len(df) == 0:
                 continue
             raw += len(df)
             bump_raw("indeed", len(df))
+            bump_raw(f"indeed:{cc}", len(df))
             for _, row in df.iterrows():
-                title = str(row.get("title") or "")
-                loc = str(row.get("location") or target["location"])
-                jid = "js-" + re.sub(r"\W+", "-", str(row.get("job_url") or title))[-70:]
-                reason = prefilter(title, loc, cc)
+                # One malformed row costs that row, never the rest of the feed.
+                try:
+                    job = jobspy_row(row, target)
+                except Exception:
+                    job = None
+                if job is None:
+                    bad += 1
+                    continue
+                reason = prefilter(job["title"], job["location"], cc)
                 if reason:
-                    record_drop({"id": jid, "title": title, "location": loc,
-                                 "company": str(row.get("company") or ""),
-                                 "source": "indeed"}, "prefilter", reason)
+                    record_drop({k: job[k] for k in ("id", "title", "location", "company",
+                                                     "source")}, "prefilter", reason)
                     continue
-                if jid in seen:
+                if job["id"] in seen:
                     continue
-                seen.add(jid)
-                sal = ""
-                if row.get("min_amount"):
-                    sal = (f"{int(row['min_amount'])}-"
-                           f"{int(row.get('max_amount') or row['min_amount'])} "
-                           f"{row.get('currency') or target['currency']}")
-                out.append({
-                    "id": jid, "company": str(row.get("company") or ""),
-                    "title": title, "location": loc, "country": cc,
-                    "market": market_of(cc, loc),
-                    "url": str(row.get("job_url") or ""), "source": "indeed",
-                    "description": strip_html(str(row.get("description") or "")),
-                    "salary": sal,
-                    "posted_at": str(row.get("date_posted") or ""),
-                })
+                seen.add(job["id"])
+                out.append(job)
                 kept += 1
+        if failed:
+            FEED_ERRORS[f"indeed:{cc}"] = (f"Indeed/JobSpy {cc.upper()}: {failed} of "
+                                           f"{len(terms)} searches failed ({err[:60]})")
         if diag is not None:
-            diag[f"jobspy:{cc}"] = err or f"raw {raw}, kept {kept}"
+            line = f"raw {raw}, kept {kept}"
+            if failed:
+                line += f"; {failed} of {len(terms)} searches failed ({err})"
+            if bad:
+                line += f"; {bad} unreadable row(s) skipped"
+            diag[f"jobspy:{cc}"] = line
     return out
 
 # ---------------------------------------------------------------- ATS supplements (companies.json)
@@ -4533,31 +4773,37 @@ def main():
                 for j in (json.load(open("docs/jobs.json")) if os.path.exists("docs/jobs.json") else [])
                 if not str(j.get("id", "")).startswith("demo-")]
     src_status, diag, found = {}, {}, []
+    ran = set()      # sources actually attempted this run, for feed_warnings()
 
     # 1. Adzuna (NL + UK)
     aid, akey = os.environ.get("ADZUNA_APP_ID", ""), os.environ.get("ADZUNA_APP_KEY", "")
     if aid and akey:
+        ran.add("adzuna")
         try:
             jobs = fetch_adzuna(aid, akey, diag); found += jobs
             src_status["Adzuna (NL+UK+CA+US)"] = f"{src_line('adzuna', len(jobs))} | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("adzuna:"))
         except Exception as e:
             src_status["Adzuna (NL+UK+CA+US)"] = f"FAIL: {e}"
+            FEED_ERRORS["adzuna"] = f"Adzuna failed outright: {str(e)[:80]}"
     else:
         src_status["Adzuna (NL+UK+CA+US)"] = "skipped: no ADZUNA_APP_ID/KEY set"
 
     # 2. Reed (UK)
     reed_key = os.environ.get("REED_API_KEY", "")
     if reed_key:
+        ran.add("reed")
         try:
             jobs = fetch_reed(reed_key); found += jobs
             src_status["Reed (UK)"] = src_line("reed", len(jobs))
         except Exception as e:
             src_status["Reed (UK)"] = f"FAIL: {e}"
+            FEED_ERRORS["reed"] = f"Reed failed: {str(e)[:80]}"
     else:
         src_status["Reed (UK)"] = "skipped: no REED_API_KEY set"
 
     # 3. JobSpy: Indeed for Ireland (Adzuna has no Ireland endpoint), Indeed + Google Jobs
     #    for Canada and the US.
+    ran.add("indeed")
     try:
         diag = {}
         jobs = fetch_jobspy(diag); found += jobs
@@ -4566,9 +4812,12 @@ def main():
             + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items()))
     except Exception as e:
         src_status["Indeed/JobSpy (NL+BE+IE+CA+US)"] = f"skipped: {e}"
+        FEED_ERRORS["indeed"] = f"Indeed/JobSpy did not run: {str(e)[:80]}"
 
     # 4. Company ATS feeds (Greenhouse/Lever/Ashby)
     ats_n = 0
+    if companies:
+        ran.add("ats")
     for c in companies:
         try:
             jobs = fetch_company(c); found += jobs; ats_n += len(jobs)
@@ -4585,15 +4834,18 @@ def main():
             src_status["hiring.cafe (Apify)"] = f"{src_line('hiring.cafe', len(jobs))} | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("hiringcafe:"))
         except Exception as e:
             src_status["hiring.cafe (Apify)"] = f"FAIL: {e}"
+            FEED_ERRORS["hiring.cafe"] = f"hiring.cafe failed: {str(e)[:80]}"
     else:
         src_status["hiring.cafe (Apify)"] = "skipped: no APIFY_API_TOKEN set"
 
     # 6. LinkedIn (public guest search, mirrors Tom's own "based on your preferences" page)
+    ran.add("linkedin")
     try:
         jobs = fetch_linkedin(); found += jobs
         src_status["LinkedIn"] = src_line("linkedin", len(jobs))
     except Exception as e:
         src_status["LinkedIn"] = f"skipped: {e}"
+        FEED_ERRORS["linkedin"] = f"LinkedIn did not run: {str(e)[:80]}"
 
     # 7. revopsroles.com (parsed from Tom's daily digest email via Gmail IMAP; direct
     # scraping is blocked by Vercel's bot-challenge since 2026-07-31)
@@ -4607,6 +4859,7 @@ def main():
                 + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items()))
         except Exception as e:
             src_status["revopsroles.com"] = f"FAIL: {e}"
+            FEED_ERRORS["revopsroles"] = f"revopsroles.com failed: {str(e)[:80]}"
     else:
         src_status["revopsroles.com"] = "skipped: no GMAIL_ADDRESS/GMAIL_APP_PASSWORD set"
 
@@ -4667,6 +4920,27 @@ def main():
     src_status["dedupe"] = f"{len(dedupe_drops)} duplicates collapsed (dashboard + this run's fetches)"
 
     new_jobs = [j for j in found if j["id"] not in seen]
+
+    # Re-posts of roles already applied to or hidden. Checked against the memory as it
+    # stood plus anything marked since the last run; see remember_dealt().
+    dash_state = load_dashboard_state()
+    dealt = remember_dealt(load_json(DEALT_FILE, []), dash_state, existing,
+                           datetime.now(timezone.utc))
+    kept_new, reposts = [], 0
+    for j in new_jobs:
+        d = repost_of(j, dealt)
+        if d:
+            record_drop(j, "repost", repost_reason(d))
+            seen.add(j["id"])
+            reposts += 1
+        else:
+            kept_new.append(j)
+    new_jobs = kept_new
+    src_status["re-posts"] = (
+        f"{reposts} re-post(s) of roles already applied to or hidden dropped; "
+        f"{len(dealt)} remembered from the last {REPOST_WINDOW_DAYS} days"
+        + ("" if dash_state is not None else
+           " (dashboard state unreachable, using the stored memory)"))
     print(f"Fetched {len(found)} relevant, {len(new_jobs)} new.")
 
     # 8. sponsor registers (load once)
@@ -5087,12 +5361,26 @@ def main():
     rows = trim_drop_rows(DROPS + load_json("docs/excluded.json", {}).get("rows", []))
 
     json.dump(sorted(seen), open("seen.json", "w"))
+    json.dump(dealt, open(DEALT_FILE, "w"), indent=1)
     json.dump(merged, open("docs/jobs.json", "w"), indent=1)
     json.dump({"last_run": now_iso(), "counts": DROP_COUNTS, "rows": rows},
               open("docs/excluded.json", "w"), indent=1)
+    # Feed health, judged against each feed's own recent runs. A dry run reports the
+    # warnings but does not add its counts to the history.
+    raw_history = load_json("docs/status.json", {}).get("raw_history", {})
+    new_history, warnings = feed_warnings(raw_history, RAW_COUNTS, ran, FEED_ERRORS)
+    if not dry:
+        raw_history = new_history
+    for w in warnings:
+        print(f"  WARN  {w}")
+
     # Last line of defence before this dict becomes a committed, pushed file.
     src_status = {k: redact(v) for k, v in src_status.items()}
+    warnings = [redact(w) for w in warnings]
     json.dump({"last_run": now_iso(), "new_this_run": len(scored), "sources": src_status,
+               # Shown at the top of the dashboard: a feed that failed or came back far
+               # smaller than usual. Empty on a healthy run.
+               "warnings": warnings, "raw_history": raw_history,
                "gate": GATE, "floor": FLOOR, "score_model": CLAUDE_SCORE_MODEL,
                "screen_model": CLAUDE_SCREEN_MODEL,
                # Same reason gate/floor are here: the dashboard reads the ordering from
