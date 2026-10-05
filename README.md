@@ -955,11 +955,14 @@ What it covers, and the rule that it only reports and never changes anything, ar
 `tools/weekly_review.md`. Edit that file to change the review; the schedule just points
 at it. The numbers come from `python tools/review_data.py`, which anyone can run.
 
-**Answering the review.** Put replies in `docs/review/notes.md`: a decision not to apply,
-something a contact told you, a suggestion you've turned down. Every review reads that
-file first and treats it as fact. It won't flag a role you've ruled out again, won't
-re-suggest a change you've declined unless the evidence has changed, and watches for
-anything you ask it to. The review never edits the file. The repo is public, so write
+**Answering the review.** Reply to the review in its own session. It saves your reply
+to `docs/review/notes.md` and shows you what it wrote. You can also edit that file
+directly. Notes cover things like a decision not to apply, something a contact told
+you, or a suggestion you've turned down. Every review reads that file first and treats
+it as fact. It won't flag a role you've ruled out again, won't re-suggest a change
+you've declined unless the evidence has changed, and watches for anything you ask it
+to. It only writes to the file when you reply, and never edits an older note unless you
+ask. The repo is public, so write
 only what the review needs to know.
 
 **Telling it why you hid something.** Hide is still one tap. After it, the card offers an

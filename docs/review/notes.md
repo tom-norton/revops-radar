@@ -4,8 +4,10 @@ Tom's replies to the weekly review, and context the radar can't see on its own: 
 conversation with someone at a company, a decision not to apply, a change of plan. The
 Monday review reads this file before it writes anything and treats what's here as true.
 
-Add a note by editing this file (the GitHub web or mobile editor is fine), or by telling
-a Claude session to add one. Newest at the top. Give each note a date. If it's about a
+The easiest way to add a note is to reply to the Monday review in its own session (the
+push notification when it finishes opens it). The review writes your reply here and
+shows you what it saved. You can also edit this file directly, or ask any Claude
+session to. Newest at the top. Give each note a date. If it's about a
 role, give the company and title so the review can match it to the dashboard row. Say
 what you want the review to do differently, if anything. A note stays in force until you
 delete it or it says when it stops.

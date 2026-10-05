@@ -37,12 +37,14 @@ report, and Tom decides.
    expired. It overrides your own reading of the data: a role he says he's decided not
    to apply to is a decision, not a missed role, so don't list it as untouched or nudge
    him toward it. Where a note asks you to watch for something (a company, a kind of
-   role), check for it every week and report it even when nothing turns up. Never edit
-   `notes.md`. It's his file. If a note looks out of date (a role closed, a date passed),
-   say so in one line and leave it to him.
+   role), check for it every week and report it even when nothing turns up. Don't edit
+   `notes.md` while writing the review. It's his file. If a note looks out of date (a role closed, a date passed),
+   say so in one line and leave it to him. The only time you write to it is when he
+   replies. See "When Tom replies".
 6. Read last week's report in `docs/review/` if there is one, so you can say whether last
    week's suggestions changed anything.
-7. Write the report to `docs/review/YYYY-MM-DD.md` (today's date).
+7. End the report with one line: *Reply to this session to add a note for future reviews.*
+   Then write the report to `docs/review/YYYY-MM-DD.md` (today's date).
 8. Commit only that file, on `main`, with the message `review: YYYY-MM-DD`. Scans push to
    `main` often: `git pull --rebase` before pushing, and retry the push if it is rejected.
 9. Send Tom a push notification:
@@ -50,6 +52,29 @@ report, and Tom decides.
    -d "<3 short lines: the headline finding and the one action>" https://ntfy.sh/<topic>`
    where the topic is `NTFY_TOPIC` in `scan.py` and the link is
    `https://github.com/tom-norton/revops-radar/blob/main/docs/review/YYYY-MM-DD.md`.
+
+## When Tom replies
+
+Tom can answer the review in the same session it was written in. When he does, his reply
+is the one exception to "reads and reports". Turn whatever should outlast this session
+into a note in `docs/review/notes.md`, written the way that file asks:
+- dated, newest at the top
+- naming the company and title when the note is about a role
+- saying what the review should do differently from now on.
+
+Then commit only that file to `main` with the message `review notes: YYYY-MM-DD`
+(`git pull --rebase` first, and retry if the push is rejected). If the session's
+checkout has gone, clone the repo again first.
+
+- The repo is public. Write what the review needs to know, not everything he said: no
+  names, nothing told to him in confidence, nothing about someone else's job or plans.
+  If you left something out, tell him what. If a note can't be written safely, don't
+  write it, and say so.
+- Show him the note you committed, word for word, so he can correct it.
+- A question, or a request to change what the radar does (a filter, a prompt, the
+  scorer), is not a note. Answer the question. For a change, say what it would be and
+  that it needs a separate session. Don't edit `scan.py` or anything else from here.
+- Don't rewrite or delete an older note unless he asks you to.
 
 ## The report
 
