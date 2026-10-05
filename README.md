@@ -955,6 +955,13 @@ What it covers, and the rule that it only reports and never changes anything, ar
 `tools/weekly_review.md`. Edit that file to change the review; the schedule just points
 at it. The numbers come from `python tools/review_data.py`, which anyone can run.
 
+**Answering the review.** Put replies in `docs/review/notes.md`: a decision not to apply,
+something a contact told you, a suggestion you've turned down. Every review reads that
+file first and treats it as fact. It won't flag a role you've ruled out again, won't
+re-suggest a change you've declined unless the evidence has changed, and watches for
+anything you ask it to. The review never edits the file. The repo is public, so write
+only what the review needs to know.
+
 **Telling it why you hid something.** Hide is still one tap. After it, the card offers an
 optional "why": a few reasons that match the scorer's own dimensions (not my function,
 too junior, too senior, location / visa, pay, company, skills I lack, stale) and a line
@@ -985,6 +992,18 @@ python scan.py --rescore                   # clear all scored rows and rescore f
 python scan.py --dedupe                    # collapse duplicates already on the dashboard,
                                            # without running a scan
 ```
+
+**Re-posts.** A new listing of a role you already applied to or hid (same employer, same
+title and seniority, same market) is dropped before screening, at the `repost` stage, for
+120 days from when you marked it. `dealt.json` remembers what you marked after the row has
+left the dashboard. Each run rebuilds it from Hide and Mark applied, so un-hiding a role
+lets its re-posts through again.
+
+**Feed problems.** If a feed errors, or returns less than half its usual raw count, the
+dashboard shows a warning at the top of the page. "Usual" means the median of that feed's
+own recent working runs, which `docs/status.json` keeps under `raw_history`. Adzuna retries
+a 429 or 5xx twice before skipping a search, and one failed search no longer stops the
+whole country.
 
 `docs/excluded.json` keeps only a bounded sample per stage, so a week of scans can produce
 twice as many stage-1 kills as the committed file holds. `--unkill-history` reads every

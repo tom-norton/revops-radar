@@ -160,11 +160,15 @@
   .toast.on{opacity:1} .toast.ok{border-color:var(--good); color:var(--good)}
   .toast.bad{border-color:var(--warn); color:var(--warn)}
   .sources .ok{color:var(--sub)} .sources .bad{color:var(--warn)}
+  .feedwarn{margin:8px 0 10px; padding:8px 12px; border:1px solid var(--warn);
+        border-radius:8px; font-size:12px; color:var(--warn)}
+  .feedwarn div{margin:2px 0}
 </style>
 </head>
 <body>
   <h1><span>RevOps</span> Radar</h1>
   <div class="meta" id="meta">Loading…</div>
+  <div class="feedwarn" id="feedwarn" hidden></div>
   <div class="note" id="synclabel">Hide / Mark applied are saved in this browser only — they won't follow you to another device.</div>
 
   <div class="filters" id="filters">
@@ -764,6 +768,7 @@ const STAGE_LABELS = {
   "prefilter": "Filtered on title or location (free, before any model call) — one example per distinct title",
   "age": "Older than the age limit",
   "dedupe": "Same role already on the dashboard",
+  "repost": "A new listing of a role you already applied to or hid — suppressed for 120 days from when you did",
   "no-sponsorship": "The ad itself rules out visa sponsorship — its own words are quoted below",
   "language-required": "Requires fluency in a language other than English — quoted below, or noted by the deep scorer when the wording didn't match the regex",
   "below-visa-floor": "Stated salary is below the market's visa floor — the deep scorer read it off the ad",
@@ -1106,6 +1111,16 @@ Promise.all([
   jobs.sort(byScore);
   document.getElementById("apply-h").textContent = `Apply — ${GATE.toFixed(1)} and up`;
   renderAll();
+
+  // A feed that failed, or came back far smaller than it usually does, last run. Up here
+  // rather than in the grey footer, where two weeks of Adzuna 503s went unnoticed.
+  const warns = Array.isArray(allStatus.warnings) ? allStatus.warnings : [];
+  const fw = document.getElementById("feedwarn");
+  fw.hidden = !warns.length;
+  fw.innerHTML = warns.length
+    ? "<div style='font-weight:650'>Feed problems on the last run — fewer roles than usual may have come in</div>"
+      + warns.map(w=>`<div>${esc(w)}</div>`).join("")
+    : "";
 
   const s = allStatus.sources || {};
   const models = [allStatus.screen_model && `screen ${allStatus.screen_model}`,

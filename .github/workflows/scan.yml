@@ -147,7 +147,8 @@ jobs:
           # deferred.json is committed for the same reason board-cache.json is: it is the
           # scoring queue's memory of which roles have been passed over, and a counter that
           # does not survive the checkout is a counter that can never escalate a role out
-          # of the backlog.
-          git add seen.json deferred.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json deferred.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json
+          # of the backlog. dealt.json is the re-post memory: company and title of what Tom
+          # applied to or hid, kept after the row itself has aged off the dashboard.
+          git add seen.json deferred.json dealt.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json deferred.json dealt.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json
           git diff --cached --quiet || git commit -m "scan: $(date -u +%F)"
           git push

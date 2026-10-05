@@ -32,12 +32,20 @@ report, and Tom decides.
 4. Read `/tmp/review.json`. Open `docs/jobs.json` or `docs/excluded.json` only to look at
    specific rows the numbers point to; both are large, so query them with a short Python
    snippet rather than reading them whole.
-5. Read last week's report in `docs/review/` if there is one, so you can say whether last
+5. Read `docs/review/notes.md`, Tom's replies to earlier reviews, before anything else
+   in `docs/review/`. Everything in it is true and in force unless the note says it has
+   expired. It overrides your own reading of the data: a role he says he's decided not
+   to apply to is a decision, not a missed role, so don't list it as untouched or nudge
+   him toward it. Where a note asks you to watch for something (a company, a kind of
+   role), check for it every week and report it even when nothing turns up. Never edit
+   `notes.md`. It's his file. If a note looks out of date (a role closed, a date passed),
+   say so in one line and leave it to him.
+6. Read last week's report in `docs/review/` if there is one, so you can say whether last
    week's suggestions changed anything.
-6. Write the report to `docs/review/YYYY-MM-DD.md` (today's date).
-7. Commit only that file, on `main`, with the message `review: YYYY-MM-DD`. Scans push to
+7. Write the report to `docs/review/YYYY-MM-DD.md` (today's date).
+8. Commit only that file, on `main`, with the message `review: YYYY-MM-DD`. Scans push to
    `main` often: `git pull --rebase` before pushing, and retry the push if it is rejected.
-8. Send Tom a push notification:
+9. Send Tom a push notification:
    `curl -s -H "Title: RevOps Radar weekly review" -H "Tags: bar_chart" -H "Click: <link>"
    -d "<3 short lines: the headline finding and the one action>" https://ntfy.sh/<topic>`
    where the topic is `NTFY_TOPIC` in `scan.py` and the link is
@@ -58,7 +66,8 @@ section with nothing worth saying and say so in one line.
    - Roles he hid that scored 7.5+, and roles he applied to that scored under 6.5. Look
      for what they have in common (market, track, title wording, company type, a
      dimension) and say what the scorer is getting wrong.
-   - Strong roles still untouched: list them. He may have missed them.
+   - Strong roles still untouched: list them. He may have missed them. Leave out any
+     role `notes.md` covers.
 4. **Your applications**: the coaching section, from `applications` (the tracker) and
    `tom.applied_rows_this_window` (the dashboard). This is the section that should get
    sharper every week as outcomes accumulate.
@@ -91,7 +100,17 @@ section with nothing worth saying and say so in one line.
 7. **Recurring gaps**: the hard gaps that keep appearing, and what would close the most
    common one: a certification, a CV bullet from work he has done, a small project.
 8. **Suggested changes**: at most three, each with the file, the change, the evidence,
-   and what it would cost or risk. Nothing here is applied.
+   and what it would cost or risk. Nothing here is applied. Don't re-suggest a change
+   `notes.md` says he declined, unless the evidence has changed. If it has, say what
+   changed.
+9. **From your notes**: one line per note in `notes.md` that bears on this week: what
+   you did with it, and anything you were asked to watch for. Skip this section if
+   there are no notes.
+
+Feed health: `docs/status.json` carries `warnings` (feeds that failed or came back far
+smaller than usual on the last run) and `raw_history` (each feed's raw count over recent
+runs). Check them before you explain a drop in a market's volume. Re-posts of roles he
+already applied to or hid are dropped at the stage named `repost` in the excluded log.
 
 ## Tone
 
