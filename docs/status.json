@@ -1,35 +1,30 @@
 {
- "last_run": "2026-10-07T12:12:54.368165+00:00",
- "new_this_run": 16,
+ "last_run": "2026-10-07T17:03:42.766262+00:00",
+ "new_this_run": 11,
  "sources": {
-  "Adzuna (NL+UK+CA+US)": "ok (raw 1127 -> kept 49) | nl=raw 211, kept 8; gb=raw 526, kept 19; ca=raw 360, kept 22; us=raw 30, kept 0; 2 of 6 phrases failed, gave up (HTTP 503: <!DOCTYPE html>\n<html>\n<!-- This file is managed by Chef -->\n    <head>\n        <meta charset=\"UTF-8)",
+  "Adzuna (NL+UK+CA+US)": "ok (raw 1456 -> kept 45) | nl=raw 212, kept 8; gb=raw 524, kept 17; ca=raw 360, kept 20; us=raw 360, kept 0",
   "Reed (UK)": "ok (raw 100 -> kept 8)",
-  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 450 -> kept 5) | nl=raw 94, kept 0; be=raw 83, kept 1; ie=raw 93, kept 2; ca=raw 100, kept 1; us=raw 80, kept 1",
-  "Company ATS (43 watched)": "ok (raw 6648 -> kept 57)",
-  "hiring.cafe (Apify)": "ok (raw 22 -> kept 14) | revops=charged 7 (new 7, updated 0); cs-eu-ca=charged 5 (new 4, updated 1); cs-nl=charged 0 (new 0, updated 0); us-revops=charged 3 (new 3, updated 0); us-cs=charged 7 (new 7, updated 0)",
+  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 450 -> kept 6) | nl=raw 93, kept 0; be=raw 84, kept 1; ie=raw 93, kept 2; ca=raw 100, kept 1; us=raw 80, kept 2",
+  "Company ATS (43 watched)": "ok (raw 6658 -> kept 58)",
+  "hiring.cafe (Apify)": "ok (raw 5 -> kept 4) | revops=charged 1 (new 1, updated 0); cs-eu-ca=charged 2 (new 2, updated 0); cs-nl=charged 1 (new 1, updated 0); us-revops=charged 0 (new 0, updated 0); us-cs=charged 1 (new 1, updated 0)",
   "LinkedIn": "ok (raw 180 -> kept 46)",
   "revopsroles.com": "ok (raw 22 -> kept 17) | email1=kept 8; email2=kept 4; email3=kept 5; emails=3 emails, 17 row(s) with a salary",
-  "age filter": "dropped 47 older than 7d; 3 had no usable date (kept)",
-  "dedupe": "77 duplicates collapsed (dashboard + this run's fetches)",
+  "age filter": "dropped 46 older than 7d; 3 had no usable date (kept)",
+  "dedupe": "76 duplicates collapsed (dashboard + this run's fetches)",
   "re-posts": "0 re-post(s) of roles already applied to or hidden dropped; 489 remembered from the last 120 days",
   "UK sponsor register": "ok - 143176 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-10-07.csv",
   "NL sponsor register": "ok - 12775 names (IND + override)",
-  "board lookup": "95 rows with no known board, 15 resolved; 0 companies newly cached, 247 known",
-  "apply links": "aggregator only 511, auto-fillable 114, company ATS 188",
-  "screening": "stage1 kept 16, killed 12; stage2 scored 16",
-  "set aside": "4 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
-  "jd from duplicates": "1 thin row(s) asked the copies dedupe folded away, 1 recovered",
-  "jd rescue": "6 stub row(s) looked for their real posting, 0 recovered",
+  "board lookup": "91 rows with no known board, 13 resolved; 0 companies newly cached, 248 known",
+  "apply links": "aggregator only 517, auto-fillable 114, company ATS 192",
+  "screening": "stage1 kept 11, killed 7; stage2 scored 11",
+  "jd rescue": "1 stub row(s) looked for their real posting, 0 recovered",
   "queue": "empty; every screened role was scored this run",
-  "tokens": "in 96682, out 13941, cache read 89568, written 89568; 15 scored by batch at half price",
-  "dropped": "age 47, dedupe 77, prefilter:location 242, prefilter:title 8091, stage1-kill 12"
+  "tokens": "in 62596, out 9509, cache read 111960, written 11196",
+  "dropped": "age 46, dedupe 76, prefilter:location 254, prefilter:title 8412, stage1-kill 7, us-comp-unstated 1"
  },
- "warnings": [
-  "Adzuna US: 2 of 6 searches failed after retries (HTTP 503: <!DOCTYPE html>\n<html>\n<!-- This file is managed b)"
- ],
+ "warnings": [],
  "raw_history": {
   "adzuna:nl": [
-   204,
    0,
    199,
    0,
@@ -58,10 +53,10 @@
    212,
    213,
    207,
-   211
+   211,
+   212
   ],
   "adzuna:gb": [
-   526,
    0,
    526,
    0,
@@ -90,10 +85,10 @@
    525,
    525,
    464,
-   526
+   526,
+   524
   ],
   "adzuna:ca": [
-   360,
    360,
    360,
    0,
@@ -122,6 +117,7 @@
    358,
    358,
    358,
+   360,
    360
   ],
   "adzuna:us": [
@@ -130,7 +126,6 @@
    360,
    360,
    360,
-   360,
    0,
    360,
    360,
@@ -154,7 +149,8 @@
    360,
    360,
    360,
-   30
+   30,
+   360
   ],
   "reed": [
    100,
@@ -190,7 +186,6 @@
   ],
   "linkedin": [
    180,
-   180,
    183,
    160,
    152,
@@ -218,10 +213,10 @@
    160,
    180,
    180,
+   180,
    180
   ],
   "ats": [
-   6595,
    6598,
    6597,
    6603,
@@ -250,10 +245,10 @@
    6628,
    6638,
    6651,
-   6648
+   6648,
+   6658
   ],
   "indeed:nl": [
-   99,
    100,
    90,
    98,
@@ -282,13 +277,13 @@
    93,
    91,
    93,
-   94
+   94,
+   93
   ],
   "indeed:be": [
    85,
    85,
    85,
-   85,
    84,
    0,
    83,
@@ -314,10 +309,10 @@
    82,
    82,
    84,
-   83
+   83,
+   84
   ],
   "indeed:ie": [
-   88,
    88,
    89,
    89,
@@ -346,6 +341,7 @@
    91,
    92,
    92,
+   93,
    93
   ],
   "indeed:ca": [
@@ -353,7 +349,6 @@
    100,
    100,
    100,
-   100,
    0,
    100,
    100,
@@ -374,6 +369,7 @@
    0,
    0,
    0,
+   100,
    100,
    100,
    100,
@@ -385,7 +381,6 @@
    80,
    80,
    80,
-   80,
    0,
    80,
    80,
@@ -406,6 +401,7 @@
    0,
    0,
    0,
+   80,
    80,
    80,
    80,
