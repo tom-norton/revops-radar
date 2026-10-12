@@ -136,6 +136,8 @@ Feed health: `docs/status.json` carries `warnings` (feeds that failed or came ba
 smaller than usual on the last run) and `raw_history` (each feed's raw count over recent
 runs). Check them before you explain a drop in a market's volume. Re-posts of roles he
 already applied to or hid are dropped at the stage named `repost` in the excluded log.
+Further listings of a role the screen already killed are dropped at `kill-repeat` for 14
+days, so count stage-1 kills from `stage1-kill` alone: each is one decision.
 
 ## Tone
 

@@ -988,6 +988,7 @@ Two commands act on what you find there:
 
 ```
 python scan.py --unkill                    # free every stage-1 Haiku kill still in the file
+python scan.py --unkill ID [ID ...]        # free only these ids
 python scan.py --unkill-history --days 14  # same, but walks git history for the ones the
                                            # file's per-stage sample no longer holds
 python scan.py --ignore-age                # one run with the 7-day age filter relaxed
@@ -1001,6 +1002,17 @@ title and seniority, same market) is dropped before screening, at the `repost` s
 120 days from when you marked it. `dealt.json` remembers what you marked after the row has
 left the dashboard. Each run rebuilds it from Hide and Mark applied, so un-hiding a role
 lets its re-posts through again.
+
+**Remembered kills.** A stage-1 kill is remembered in `kills.json` for 14 days (employer,
+title and seniority, market, matched the same way as a re-post). Another listing of the same
+role from another source or a later run is dropped at the `kill-repeat` stage without a
+second Haiku call, so one kill no longer shows up as six. Freeing an id with `--unkill`
+also removes it from the memory.
+
+**Restoring specific kills from a branch.** `seen.json` is rewritten by every scan, so an
+edit to it on a branch conflicts with `main`. Instead, list the ids in `unkill.json`. The
+next scan frees them from `seen.json` and `kills.json` before it fetches, then empties the
+file. A freed role only comes back if it is still live in a feed and inside the age limit.
 
 **Feed problems.** If a feed errors, or returns less than half its usual raw count, the
 dashboard shows a warning at the top of the page. "Usual" means the median of that feed's

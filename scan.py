@@ -60,7 +60,9 @@ Usage:
   python scan.py --dry       everything except the Claude calls
   python scan.py --verify    test the optional ATS company slugs, no scoring
   python scan.py --selftest  replay stored dimension scores through the scoring engine, offline
-  python scan.py --unkill    free stage-1 kills from seen.json so they get re-evaluated
+  python scan.py --unkill [ID ...]
+                             free stage-1 kills from seen.json so they get re-evaluated
+                             (all of them, or only the ids given); see also unkill.json
   python scan.py --unkill-history [--days N]
                              same, but walks git history of docs/excluded.json (default 14
                              days) to reach kills the committed sample no longer holds
@@ -629,12 +631,24 @@ _FILLER = (r"(?:\s+(?:able|willing|eligible|prepared|position|currently|presentl
            r"provides|providing|support|supports|supporting|consider|considering|accept|"
            r"accepting|seek|seeking|in|a|an|any|the|for|of|with|new|further|additional|"
            r"applicants|candidates|require|requiring|visa|visas|work|employment|"
-           r"immigration|relocation|uk|us|eu)){0,8}")
+           r"immigration|relocation|uk|us|eu|licensed|licenced|registered|approved)){0,8}")
 NO_SPONSOR_RX = re.compile(
     _NEG + _FILLER + r"\s+sponsor(?:ship|ing|s|ed)?\b"
     r"|\bsponsorship\b[^,]{0,25}\b(?:not available|unavailable|not offered|not provided"
     r"|not possible|not an option|not on offer)\b"
-    r"|\bwithout\b[^,]{0,30}\bsponsor(?:ship)?\b", re.I)
+    r"|\bwithout\b[^,]{0,30}\bsponsor(?:ship)?\b"
+    # Refusals that never use the word "sponsor". Each says outright that a visa or permit
+    # will not be supported, or that only people who already hold the right to work will be
+    # considered. Plain "must have the right to work in the UK", or "requires UK work
+    # authorization", is written by employers who do sponsor as well, so neither is here.
+    r"|" + _NEG + _FILLER + r"\s+(?:support|assist|help|facilitate)\w*\s+(?:with\s+)?"
+    r"(?:any\s+|a\s+|the\s+)?(?:visa|work[- ]permit|immigration)"
+    r"|\b(?:existing|pre-existing|unrestricted)\s+right to work\b"
+    r"|\balready\s+(?:have|hold|possess)\s+(?:the\s+|an?\s+)?(?:full\s+|valid\s+)?"
+    r"(?:right to work|work authori[sz]ation|work permit|visa)\b"
+    r"|\bonly\s+(?:be\s+)?(?:able\s+to\s+)?(?:consider|accept)\w*\s+[^.]{0,60}"
+    r"\b(?:right to work|authori[sz]ed to work|work authori[sz]ation|eligible to work)\b",
+    re.I)
 
 # English is deliberately absent -- Tom is a native speaker, so an English requirement is
 # never a disqualifier.
@@ -1268,7 +1282,7 @@ THE LOCATION IS ALREADY SETTLED. Every role you see has been through a location 
 
 You may kill a role for exactly ONE reason:
 
-FUNCTION - the role is unambiguously outside the candidate's target functions. That means: engineering or data engineering, product management, finance or accounting, quota-carrying sales (AE, SDR, BDR, account executive, business development), deal desk / quote-to-cash / billing / order management, HR or People Ops, procurement, legal, and operations that are not commercial in nature (retail store ops, restaurant ops, manufacturing, supply chain, logistics, facilities, clinical, NGO programme delivery).
+FUNCTION - the role is unambiguously outside the candidate's target functions. That means: engineering or data engineering, product management, finance or accounting, quota-carrying sales (AE, SDR, BDR, account executive, business development), deal desk / quote-to-cash / billing / order management (only when the TITLE itself names one of those -- see below), HR or People Ops, procurement, legal, and operations that are not commercial in nature (retail store ops, restaurant ops, manufacturing, supply chain, logistics, facilities, clinical, NGO programme delivery).
 
 Nothing else is grounds for a kill. Specifically, and these are all real kills you have made that cost Tom a role he would have looked at:
 - NOT the location, the country, the work pattern, or a missing location. See above.
@@ -1276,6 +1290,8 @@ Nothing else is grounds for a kill. Specifically, and these are all real kills y
 - NOT the employer: its size, its funding stage, how strong the brand is, or where it is headquartered.
 - NOT the pay, or that no pay is stated.
 - NOT a skills, tooling or technical gap. A Sales Operations role that asks for AI/ML, SQL, a CRM certification or a technical background is still Sales Operations: whether the candidate has the skill is the deep scorer's Skills Match question, never a function kill. Decide the function from what the role DOES, and when a title names a target function ("Sales Operations", "Revenue Strategy", "GTM", "Monetization Strategy & Operations") and the posting is ambiguous about the rest, KEEP.
+- NOT deal desk, quote-to-cash, billing or order management duties inside a role whose TITLE names a target function. A deal desk kill needs the title to say deal desk (or quote-to-cash, billing, order management). "Revenue Operations Specialist", "Revenue Operations Analyst", "Head of Revenue Operations" and "Sales Operations Manager" are KEEPS even when the posting lists quoting, CPQ, contracts, order forms or billing among the duties: plenty of RevOps teams own the deal desk, and that is part of the job, not a different job. You killed Diligent's Revenue Operations Specialist six times, Cpl's Revenue Operations Analyst and Oliver Wyman's Regional Head of Revenue Operations this way.
+- NOT "technical" customer success. A Customer Success Manager at a B2B software or hardware-plus-software company is in scope even when the posting calls the role technical, mentions APIs, integrations, IoT or onboarding engineers, or asks for a technical background. That is a Skills Match question for the deep scorer. Kill a customer success role only when it is really support-desk ticket handling or field engineering under a CS name.
 
 NEVER KILL ON SENIORITY. This is the single most important rule here, and getting it wrong is expensive. Analyst, Senior Analyst, Specialist, Coordinator, Associate, Senior Associate, Business Partner, Lead, Manager, Senior Manager, Principal, Director and Head of are ALL keeps. Do not kill something for being "too junior", "entry level", "below Manager", "Director+ exceeds target", or any variant of that reasoning. A title is not a seniority: an "Analyst" or "Associate" at a strong employer routinely carries manager-level scope and pay well above a junior band, and a "Head of" at a 40-person startup is often a hands-on Manager role. The deep scorer reads the full posting - the scope, the reporting line, the years-of-experience band, the stated salary - and weighs seniority properly there. You cannot see enough to make that call. The ONLY seniority-shaped exception: genuine internships, working-student roles, apprenticeships and graduate schemes may be killed.
 
@@ -1286,7 +1302,7 @@ IN SCOPE - never kill these on function. A title filter in code has already deci
 - GTM systems, RevOps systems, revenue systems, revenue technology, RevOps architecture, CRM and GTM tool-stack ownership. Systems ownership is a target track, not "tool administration".
 - Revenue analytics, sales/incentive compensation, quota and territory design
 - Renewals and renewal management, sales enablement, revenue enablement
-- Senior / Principal / Enterprise / Strategic Customer Success
+- Senior / Principal / Enterprise / Strategic Customer Success, and Customer Success Manager at a B2B company, technical or not
 
 Renewals is NOT quota-carrying sales for this purpose. Enablement is NOT marketing-ops admin. Systems ownership is NOT engineering. Kill one of these only when the work itself is plainly not commercial operations -- a supermarket's "Sales Operations Manager" running store rotas, for instance. The employer being outside B2B tech is not enough on its own; the work is what decides.
 
@@ -1359,7 +1375,7 @@ DROP_MAX_ROWS = 400
 # scoring errors and the hard disqualifiers are the ones worth actually reading, so they
 # get the most room.
 DROP_KEEP_PER_STAGE = {"prefilter": 80, "age": 40, "dedupe": 40,
-                       "stage1-kill": 120, "score-error": 40, "sponsor-required": 40,
+                       "stage1-kill": 120, "kill-repeat": 40, "score-error": 40, "sponsor-required": 40,
                        "no-sponsorship": 60, "language-required": 60,
                        "eu-remote": 40, "eu-contract": 40,
                        "below-visa-floor": 60, "below-comp-floor": 60,
@@ -1924,6 +1940,52 @@ def repost_reason(d):
     what = "applied to" if d.get("action") == "applied" else "hidden"
     return (f"re-post of {d.get('company')} - {d.get('title')}, {what} on "
             f"{d.get('at')}; suppressed for {REPOST_WINDOW_DAYS} days from then")
+
+# ---------------------------------------------------------------- remembered kills
+# A role the Haiku screen killed, listed again under another id. Diligent's Revenue
+# Operations Specialist was screened and killed seven times in the week to 12 Oct 2026:
+# the same two openings (Galway, Vancouver) arriving from Adzuna, Indeed, LinkedIn and
+# hiring.cafe on different runs, each a fresh Haiku call and a fresh line in the kill log,
+# so one decision read like seven rejections. seen.json cannot catch it, because it is
+# keyed on the listing id and every source has its own.
+#
+# kills.json remembers the company, title and market of every stage-1 kill for
+# KILL_MEMORY_DAYS, and a new listing of the same role (matched the way repost_of() matches
+# a re-post) is dropped at the `kill-repeat` stage without being screened. Short on
+# purpose: if the kill was wrong, the role is out of sight until the memory expires, so
+# --unkill and unkill.json clear the memory for every id they free.
+KILLS_FILE = "kills.json"
+KILL_MEMORY_DAYS = 14
+
+def remember_kill(kills, job, reason, now):
+    """kills.json with this stage-1 kill added."""
+    if not (job.get("company") and job.get("title")):
+        return kills
+    return kills + [{"id": str(job.get("id", "")), "company": job["company"],
+                     "title": job["title"], "market": job.get("market") or "",
+                     "reason": reason, "at": now.isoformat()[:10]}]
+
+def prune_kills(kills, now):
+    """Kills still inside the memory window."""
+    cutoff = (now - timedelta(days=KILL_MEMORY_DAYS)).isoformat()[:10]
+    return [k for k in kills if k.get("at", "") >= cutoff]
+
+def kill_repeat_reason(k):
+    return (f"same role as {k.get('company')} - {k.get('title')}, killed on {k.get('at')} "
+            f"({k.get('reason')}); not re-screened for {KILL_MEMORY_DAYS} days")
+
+# Ids queued for a second look. Each run frees them from seen.json and kills.json before it
+# fetches anything, then empties the file. A committed list rather than a one-off edit to
+# seen.json: seen.json is rewritten by every scan, so an edit made on a branch conflicts
+# with main on the next run, while this file only changes when something is queued.
+UNKILL_FILE = "unkill.json"
+
+def free_ids(ids, seen, kills):
+    """(seen, kills, freed) with `ids` released from both. `freed` is the ids that were
+    actually in seen.json, i.e. the ones that will be re-evaluated if still live."""
+    ids = {str(i) for i in ids}
+    freed = ids & seen
+    return seen - ids, [k for k in kills if str(k.get("id")) not in ids], freed
 
 # Which copy of a duplicate to keep. A scored row always beats an unscored one, then the
 # source: an employer's own ATS feed carries the clean company name, the full description
@@ -4345,16 +4407,23 @@ def cmd_selftest():
           "were produced\nunder the previous rubric wording. Re-running the scan will move "
           "some of them again.")
 
-def cmd_unkill():
+def cmd_unkill(ids=None):
     """Clear stage-1 Haiku kills out of seen.json so they get re-evaluated next run.
-    Replaces hand-editing the JSON when the cheap screen throws away something good."""
+    Replaces hand-editing the JSON when the cheap screen throws away something good.
+
+    With ids, frees only those. Without, frees every stage-1 kill and remembered-kill drop
+    still in docs/excluded.json. Either way the freed ids leave kills.json too, so the
+    memory of the kill cannot suppress the role's other listings."""
     dropped = load_json("docs/excluded.json", {}).get("rows", [])
-    killed = {d["id"] for d in dropped if d.get("stage") == "stage1-kill" and d.get("id")}
+    killed = {str(d["id"]) for d in dropped
+              if d.get("stage") in ("stage1-kill", "kill-repeat") and d.get("id")}
+    targets = {str(i) for i in ids} if ids else killed
     seen = set(load_json("seen.json", []))
-    freed = killed & seen
-    json.dump(sorted(seen - freed), open("seen.json", "w"))
+    seen, kills, freed = free_ids(targets, seen, load_json(KILLS_FILE, []))
+    json.dump(sorted(seen), open("seen.json", "w"))
+    json.dump(kills, open(KILLS_FILE, "w"), indent=1)
     print(f"Freed {len(freed)} stage-1 kills for re-evaluation "
-          f"({len(killed)} recorded, {len(killed) - len(freed)} already absent from seen.json).")
+          f"({len(targets)} asked for, {len(targets) - len(freed)} already absent from seen.json).")
 
 def cmd_unkill_history(days=14):
     """Like --unkill, but reaches back through git history instead of only the file on disk.
@@ -4378,7 +4447,7 @@ def cmd_unkill_history(days=14):
     killed, titles = {}, {}
     def absorb(rows):
         for r in rows:
-            if r.get("stage") in ("stage1-kill", "score-error") and r.get("id"):
+            if r.get("stage") in ("stage1-kill", "kill-repeat", "score-error") and r.get("id"):
                 killed[str(r["id"])] = r.get("stage")
                 titles[str(r["id"])] = f"{r.get('title','?')} - {r.get('company','?')}"
 
@@ -4392,8 +4461,9 @@ def cmd_unkill_history(days=14):
             continue   # a commit that predates the file, or a bad blob; skip it
 
     seen = set(load_json("seen.json", []))
-    freed = set(killed) & seen
-    json.dump(sorted(seen - freed), open("seen.json", "w"))
+    seen, kills, freed = free_ids(killed, seen, load_json(KILLS_FILE, []))
+    json.dump(sorted(seen), open("seen.json", "w"))
+    json.dump(kills, open(KILLS_FILE, "w"), indent=1)
 
     print(f"Walked {len(shas)} commits of docs/excluded.json over the last {days} days.")
     print(f"Found {len(killed)} distinct stage-1 kills / scoring errors; freed {len(freed)} "
@@ -4732,7 +4802,9 @@ def main():
                 print("--days needs a number; using 14.")
         return cmd_unkill_history(days)
     if "--unkill" in sys.argv:
-        return cmd_unkill()
+        # Anything after the flag that isn't another flag is an id to free on its own.
+        i = sys.argv.index("--unkill")
+        return cmd_unkill([a for a in sys.argv[i + 1:] if not a.startswith("--")])
     if "--rescore" in sys.argv:
         return cmd_rescore()
     if "--dedupe" in sys.argv:
@@ -4766,6 +4838,18 @@ def main():
 
     os.makedirs("docs", exist_ok=True)
     seen = set(json.load(open("seen.json"))) if os.path.exists("seen.json") else set()
+    # Kills remembered from earlier runs, and any ids queued in unkill.json for a second
+    # look. The queue is emptied below once the run's results are written.
+    run_now = datetime.now(timezone.utc)
+    kills = prune_kills(load_json(KILLS_FILE, []), run_now)
+    unkill_queue = [str(i) for i in load_json(UNKILL_FILE, [])]
+    if unkill_queue:
+        seen, kills, freed = free_ids(unkill_queue, seen, kills)
+        src_status_unkill = (f"{len(freed)} of {len(unkill_queue)} queued id(s) freed for "
+                             f"re-evaluation; the rest were not in seen.json")
+        print(f"unkill.json: {src_status_unkill}")
+    else:
+        src_status_unkill = ""
     # normalise_market on the way in, so nothing downstream ever meets a market name the
     # code has retired. The file is rewritten at the end of every run, so one scan fixes
     # the stored rows permanently rather than re-deciding this on every load forever.
@@ -4936,6 +5020,23 @@ def main():
         else:
             kept_new.append(j)
     new_jobs = kept_new
+
+    # Re-listings of a role the screen already killed. See kills.json.
+    kept_new, repeats = [], 0
+    for j in new_jobs:
+        k = repost_of(j, kills)
+        if k:
+            record_drop(j, "kill-repeat", kill_repeat_reason(k))
+            seen.add(j["id"])
+            repeats += 1
+        else:
+            kept_new.append(j)
+    new_jobs = kept_new
+    src_status["remembered kills"] = (
+        f"{repeats} re-listing(s) of roles already killed dropped without a screen; "
+        f"{len(kills)} kills remembered from the last {KILL_MEMORY_DAYS} days")
+    if src_status_unkill:
+        src_status["unkill queue"] = src_status_unkill
     src_status["re-posts"] = (
         f"{reposts} re-post(s) of roles already applied to or hidden dropped; "
         f"{len(dealt)} remembered from the last {REPOST_WINDOW_DAYS} days"
@@ -5124,6 +5225,7 @@ def main():
             # Recorded, so the kill is reviewable on the dashboard and reversible with
             # `scan.py --unkill` -- it used to leave nothing behind but this print.
             record_drop(j, "stage1-kill", reason or "screened out")
+            kills = remember_kill(kills, j, reason or "screened out", run_now)
             print(f"  kill  {j['title']} @ {j.get('company') or j['source']} ({reason})")
             continue
         kept += 1
@@ -5362,6 +5464,9 @@ def main():
 
     json.dump(sorted(seen), open("seen.json", "w"))
     json.dump(dealt, open(DEALT_FILE, "w"), indent=1)
+    json.dump(kills, open(KILLS_FILE, "w"), indent=1)
+    if unkill_queue:
+        json.dump([], open(UNKILL_FILE, "w"))
     json.dump(merged, open("docs/jobs.json", "w"), indent=1)
     json.dump({"last_run": now_iso(), "counts": DROP_COUNTS, "rows": rows},
               open("docs/excluded.json", "w"), indent=1)
