@@ -1282,6 +1282,16 @@ NO_SPONSOR_ADS = [
     "You must have the right to work in the UK without sponsorship.",
     "No visa sponsorship will be provided.",
     "We cannot offer sponsorship for this vacancy.",
+    # Refusals that never say "sponsor" the usual way (review of 12 Oct 2026).
+    "We are not a licensed sponsor.",
+    "Unfortunately we are unable to support visa applications for this role.",
+    "We cannot assist with work permit applications.",
+    "Applicants must have an existing right to work in the UK.",
+    "You must already have the right to work in the UK.",
+    "At this time, we are only able to accept applications from those who have a right to "
+    "work in the United Kingdom.",
+    "We can sponsor visas to Germany; for any other country, you need to have existing "
+    "right to work.",
 ]
 
 SPONSOR_OK_ADS = [
@@ -1293,6 +1303,11 @@ SPONSOR_OK_ADS = [
     "Applicants must have the right to work in the Netherlands.",
     "The company sponsors industry conferences and community events.",
     "This is a hybrid role. We sponsor Skilled Worker visas.",
+    # A requirement to hold authorisation is not a refusal to help get it.
+    "This role requires UK work authorization.",
+    "EU nationals do not require a work permit.",
+    "We support visa applications and relocation.",
+    "We only consider candidates with strong stakeholder skills.",
 ]
 
 LANG_REQUIRED_ADS = [
@@ -3552,6 +3567,52 @@ def test_a_repost_of_an_applied_role_is_matched_but_not_a_different_role():
     assert scan.repost_of(dict(repost, company="Booking.com"), dealt) is None
     # The original row itself is never its own re-post.
     assert scan.repost_of(dict(repost, id="hc-1"), dealt) is None
+
+
+def test_a_killed_role_is_remembered_across_listings_and_forgotten_after_the_window():
+    now = _now()
+    first = {"id": "li-4477860596", "company": "Diligent", "market": "IE",
+             "title": "Revenue Operations Specialist", "location": "Galway, Ireland"}
+    kills = scan.remember_kill([], first, "Deal Desk / quote-to-cash", now)
+    # The same opening from another source, under another id and a fuller company name.
+    again = dict(first, id="hc-grnhse___diligentcorporation___6221213004",
+                 company="Diligent Corporation")
+    k = scan.repost_of(again, kills)
+    assert k and "killed on" in scan.kill_repeat_reason(k)
+    # The Vancouver opening is another market, so it is screened on its own.
+    assert scan.repost_of(dict(again, market="CA", location="Vancouver"), kills) is None
+    # Out of the window, it is screened again.
+    later = now + scan.timedelta(days=scan.KILL_MEMORY_DAYS + 1)
+    assert scan.prune_kills(kills, later) == []
+    assert scan.prune_kills(kills, now) == kills
+
+
+def test_freeing_an_id_releases_it_from_seen_and_the_kill_memory():
+    now = _now()
+    kills = scan.remember_kill([], {"id": "a", "company": "Cpl", "market": "IE",
+                                    "title": "Revenue Operations Analyst"}, "deal desk", now)
+    kills = scan.remember_kill(kills, {"id": "b", "company": "EnOcean", "market": "NL",
+                                       "title": "Customer Success Manager"}, "technical", now)
+    seen, left, freed = scan.free_ids(["a", "zzz"], {"a", "b", "c"}, kills)
+    assert seen == {"b", "c"} and freed == {"a"}
+    assert [k["id"] for k in left] == ["b"]
+
+
+def test_the_screen_only_kills_deal_desk_when_the_title_says_so():
+    """Diligent's Revenue Operations Specialist was killed six times as "Deal Desk /
+    quote-to-cash", and EnOcean's Customer Success Manager as "technical customer success".
+    The screen prompt has to say both are keeps."""
+    p = scan.SCREEN_SYSTEM
+    assert "A deal desk kill needs the title to say deal desk" in p
+    assert 'NOT "technical" customer success' in p
+
+
+def test_the_unkill_queue_lists_only_real_stage1_kill_ids():
+    import json, os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", scan.UNKILL_FILE)
+    ids = json.load(open(path))
+    assert isinstance(ids, list) and all(isinstance(i, str) and i for i in ids)
+    assert len(ids) == len(set(ids))
 
 
 if __name__ == "__main__":

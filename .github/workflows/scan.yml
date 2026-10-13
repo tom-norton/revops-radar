@@ -149,6 +149,8 @@ jobs:
           # does not survive the checkout is a counter that can never escalate a role out
           # of the backlog. dealt.json is the re-post memory: company and title of what Tom
           # applied to or hid, kept after the row itself has aged off the dashboard.
-          git add seen.json deferred.json dealt.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json deferred.json dealt.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json
+          # kills.json is the same idea for stage-1 kills (14 days), and unkill.json is the
+          # queue of ids to give a second look, which the scan empties once it has freed them.
+          git add seen.json deferred.json dealt.json kills.json unkill.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json deferred.json dealt.json kills.json unkill.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json
           git diff --cached --quiet || git commit -m "scan: $(date -u +%F)"
           git push
