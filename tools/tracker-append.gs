@@ -10,9 +10,17 @@
 // The newest application goes at the top (row 2), as Tom has always entered them by hand.
 // A link already in column G is not added twice, so un-applying and re-applying a role, or
 // marking it on two devices, leaves one row.
+//
+// A GET with ?action=contacts&token=... answers with the Contacts tab's people who have a
+// Chat Date: the dashboard flags roles at their companies as referral candidates. That
+// list goes only to a browser holding the token, never into the public repo. It is a GET
+// rather than a POST action on purpose: a deployment still running the older version of
+// this file would take a POST it did not understand for an application and add a blank
+// row, where a GET it has no doGet for just fails.
 
 const SHEET_NAME = "Applications";
 const LINK_COL = 7; // G
+const CONTACTS_SHEET = "Contacts";
 
 function doPost(e) {
   let body;
@@ -62,6 +70,31 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  const token = PropertiesService.getScriptProperties().getProperty("TOKEN");
+  if (!token || p.token !== token) return reply({ ok: false, error: "bad token" });
+  if (p.action === "contacts") return contacts(SpreadsheetApp.getActiveSpreadsheet());
+  return reply({ ok: false, error: "unknown action" });
+}
+
+// Columns are found by their header text, not position, so inserting a column in the tab
+// does not quietly turn this into a list of follow-up dates.
+function contacts(ss) {
+  const sheet = ss.getSheetByName(CONTACTS_SHEET);
+  if (!sheet) return reply({ ok: false, error: "no tab named " + CONTACTS_SHEET });
+  const rows = sheet.getDataRange().getDisplayValues();
+  const head = (rows.shift() || []).map(h => String(h).trim().toLowerCase());
+  const col = name => head.indexOf(name);
+  const [n, c, d] = [col("name"), col("company"), col("chat date")];
+  if (c < 0 || d < 0) return reply({ ok: false, error: "Contacts needs Company and Chat Date headers" });
+  const out = rows
+    .filter(r => String(r[c]).trim() && String(r[d]).trim())
+    .map(r => ({ name: n < 0 ? "" : String(r[n]).trim(),
+                 company: String(r[c]).trim(), chat: String(r[d]).trim() }));
+  return reply({ ok: true, contacts: out });
 }
 
 function reply(obj) {

@@ -1113,6 +1113,28 @@ deployments → ✏️ → Version: New version → Deploy**, which also keeps t
 row is already in (a script error after the write comes back as an HTML page). Check the
 sheet, and Apps Script's **Executions** list, before adding the row by hand.
 
+### Referral contacts
+
+The same web app also reads the **Contacts** tab. Everyone there with a **Chat Date** is a
+referral candidate, and any role at their company gets a green **★ Referral: name** tag
+(the chat date is on hover), a green edge, and a place in a **Referral contacts** section
+at the top of the page -- whatever its score, so a 5.8 at a company where you have a
+contact is not left folded away under Excluded. It also stays in its usual section, and
+**the score is not changed**. Market and track chips filter the section; the Shot toggle
+does not, since a referral is what gets a CV past the screen Shot measures. Excluded drop
+rows carry the tag too, and **Copy for Claude** adds a `Referral contact` line.
+
+The page fetches the list (a GET with `?action=contacts`) on load, only on a device that
+already holds the tracker token, and keeps the last good copy in that browser. Names never
+go into the repo. Companies match on a normalised name: legal suffixes and country words
+are ignored (Salesforce = Salesforce Ireland Ltd), anything else is not (Salesforce ≠
+Salesforce Partner Canada). If a contact's company is spelt differently from how the job
+boards spell it, fix the spelling in the sheet. Columns are found by header, so the tab
+needs `Company` and `Chat Date` (and `Name`) headers.
+
+This needs the updated `tools/tracker-append.gs` pasted in and deployed as a **New
+version** (above). Until then the dashboard simply shows no referral flags.
+
 ## Tests
 
 ```
@@ -1123,6 +1145,7 @@ python tests/test_cover.py      # the letter: the two honesty screens, the one-p
 python tests/test_submit.py     # the form: what code fills, what nobody fills, and that nothing sends
 node tests/test_worker.mjs      # the Worker: its two guards, and the scan schedule incl. DST
 node tests/test_tracker.mjs     # the country each market is written into Networking Tracker as
+node tests/test_referrals.mjs   # how a job's company is matched to the Contacts tab
 python tests/preview_messages.py # print every bot message as Telegram renders it (no asserts)
 python tests/test_cv_render.py --install  # the real render: docx -> PDF -> JPEG, measured
 python tests/test_submit_form.py --install  # a real browser filling, printing and submitting a form

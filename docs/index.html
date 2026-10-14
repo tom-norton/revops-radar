@@ -127,6 +127,11 @@
   .tag.market.t9{border-style:dashed; color:var(--warn)}
   .tag.conflict{border-color:var(--warn); color:var(--warn); font-weight:650}
   .tag.transfer{border-color:var(--teal); color:var(--teal)}
+  /* Someone at this company has already had a chat with Tom. Visibility only: nothing
+     about it touches the score. */
+  .tag.ref{background:var(--good); color:#fff; border-color:var(--good); font-weight:650}
+  .job.ref{border-color:var(--good); box-shadow:inset 3px 0 0 var(--good)}
+  #ref-wrap .note{margin:-4px 0 12px}
   .subhead{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em;
         color:var(--mut); margin:16px 0 8px; font-weight:700}
   .drop{border-bottom:1px solid var(--line); padding:8px 0; font-size:12.5px}
@@ -175,6 +180,8 @@
     <div class="chips" id="marketchips"><span class="lbl">Market</span></div>
     <div class="chips" id="trackchips"><span class="lbl">Track</span></div>
   </div>
+
+  <div id="ref-wrap"></div>
 
   <div id="apply-wrap">
     <h2 id="apply-h">Apply — 6.5 and up</h2>
@@ -336,6 +343,57 @@ function trackerCountry(j){
   return parts.length ? parts[parts.length-1] : m;
 }
 
+// Referral candidates: people in the Contacts tab of Job Search Tracker with a Chat Date.
+// Fetched from the same Apps Script as above (a GET, see tools/tracker-append.gs) with the
+// same token, and only when this device already has one -- opening the page never prompts.
+// The names stay in this browser; nothing about them is written to the repo. A role at one
+// of these companies gets a tag and a place in the section at the top. Its score is not
+// touched: a contact is a reason to look, not evidence the role fits.
+//
+// Matching is on a normalised company name. Legal suffixes and country words go, so
+// "Salesforce Ireland Ltd" is Salesforce; anything else stays, so "Salesforce Partner
+// Canada" -- a different company -- is not.
+const COMPANY_NOISE = /\b(the|inc|incorporated|ltd|limited|llc|plc|corp|corporation|co|gmbh|ag|bv|b v|nv|n v|sa|sas|srl|ulc|holdings?|group|uk|ireland|netherlands|nederland|belgium|canada|usa|us|europe|emea|international|global)\b/g;
+function companyKey(name){
+  return String(name || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/\([^)]*\)/g, " ").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ")
+    .replace(COMPANY_NOISE, " ").replace(/\s+/g, " ").trim();
+}
+function indexContacts(list){
+  const m = new Map();
+  (Array.isArray(list) ? list : []).forEach(c=>{
+    const k = companyKey(c && c.company);
+    if(!k) return;
+    if(!m.has(k)) m.set(k, []);
+    m.get(k).push({name: String(c.name || ""), chat: String(c.chat || "")});
+  });
+  return m;
+}
+let referrals = new Map();
+try { referrals = indexContacts(JSON.parse(localStorage.getItem("rr_contacts") || "[]")); } catch(e){}
+function referralOf(j){ return referrals.get(companyKey(j && j.company)) || null; }
+function referralText(refs){
+  return refs.map(r=>r.name + (r.chat ? ` (chat ${r.chat})` : "")).join("; ");
+}
+// Refreshes the cached list and re-renders if it changed. Any failure keeps the last list.
+function refreshContacts(){
+  let token = "";
+  try { token = localStorage.getItem("rr_tracker_token") || ""; } catch(e){}
+  if(!TRACKER_URL || !token) return;
+  fetch(TRACKER_URL + "?action=contacts&token=" + encodeURIComponent(token))
+    .then(r=>r.json())
+    .then(res=>{
+      if(!res || !res.ok || !Array.isArray(res.contacts)) return;
+      const raw = JSON.stringify(res.contacts);
+      let was = null; try { was = localStorage.getItem("rr_contacts"); } catch(e){}
+      if(raw === was) return;
+      try { localStorage.setItem("rr_contacts", raw); } catch(e){}
+      referrals = indexContacts(res.contacts);
+      renderAll();
+    })
+    .catch(()=>{});
+}
+
 let toastTimer = null;
 function toast(msg, kind){
   const t = document.getElementById("toast");
@@ -415,6 +473,8 @@ function packetFor(j){
          "Title: " + (j.title || "?"),
          "Location: " + (j.location || "?"),
          "Market: " + (j.tier || j.market || "?"));
+  const pRefs = referralOf(j);
+  if(pRefs) L.push("Referral contact (already chatted): " + referralText(pRefs));
   const d = j.dimensions || {};
   const dimStr = DIMS.map(([k,l])=>`${l} ${d[k] ?? "?"}`).join(", ");
   // A set-aside row was never scored, and "0.0" would read as "the radar rated this
@@ -591,7 +651,9 @@ function card(j, reviewed){
   // "—" rather than 0.0. A set-aside row has no score, and rendering one as the bottom of
   // the scale is the exact misreading this whole section exists to stop.
   const s = isSetAside(j) ? "—" : (j.score ?? 0).toFixed(1);
-  const el = document.createElement("div"); el.className = "job" + (reviewed ? " reviewed" : "");
+  const refs = referralOf(j);
+  const el = document.createElement("div");
+  el.className = "job" + (reviewed ? " reviewed" : refs ? " ref" : "");
   const dims = (j.dimensions && Object.keys(j.dimensions).length)
     ? `<div class="dims">${DIMS.map(([k,l])=>`${l} <b>${(j.dimensions[k]??0)}</b>`)
         .join(" · ")}</div>` : "";
@@ -648,6 +710,13 @@ function card(j, reviewed){
       + `in the posting text">${esc(j.salary)} (feed)</span>`;
     return "";
   })();
+  // First in the tag row: the one thing on the card that is about who Tom knows rather
+  // than what the ad says.
+  const refTag = refs
+    ? `<span class="tag ref" title="Contacts you have had a chat with: ${esc(referralText(refs))}"
+       >&#9733; Referral: ${esc((names => names.length > 2 ? `${names[0]}, ${names[1]} +${names.length - 2}`
+                                               : names.join(", "))(refs.map(r=>r.name || "contact")))}</span>`
+    : "";
   // The market, marked by tier so the backups read as backups at a glance rather than
   // needing the reader to remember which of six names is which.
   const tier = tierOf(j);
@@ -749,7 +818,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${refTag}${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${spon}${rawNote}${caps}${flags}</div>
     ${watch}${deadEnd}
     ${dims}
     <div class="foot">
@@ -786,7 +855,8 @@ const STAGE_LABELS = {
 function dropRow(d){
   const el = document.createElement("div"); el.className = "drop";
   const who = [d.company, d.location].filter(Boolean).join(" · ");
-  el.innerHTML = `<div class="dt">${esc(d.title || "(untitled)")}</div>
+  const refs = referralOf(d);
+  el.innerHTML = `<div class="dt">${refs ? `<span class="tag ref" title="${esc(referralText(refs))}">&#9733; Referral</span> ` : ""}${esc(d.title || "(untitled)")}</div>
     <div class="dr">${esc(who)}${who ? " — " : ""}${esc(d.reason || "")}
       <span style="color:var(--mut)">· ${esc(d.source || "")} · ${fresh(d.dropped_at)}</span></div>`;
   return el;
@@ -903,6 +973,26 @@ function renderAll(){
   // Rebuilt with the track chips, since renderChips clears the row it owns.
   document.getElementById("trackchips").appendChild(shotChip());
 
+  // Every recent, unreviewed role at a contact's company, whatever band its score put it
+  // in -- a 5.8 at a company where Tom has a referral would otherwise sit folded away under
+  // Excluded. Each one also stays in its usual section. The market and track chips apply;
+  // the Shot toggle does not, because Shot asks whether the screen would stop him, and a
+  // referral is exactly what gets a CV past the screen.
+  const refJobs = jobs.filter(j=>referralOf(j)
+      && (filters.market === "all" || marketOf(j) === filters.market)
+      && (filters.track === "all" || trackOf(j) === filters.track)).sort(byScore);
+  const refWrap = document.getElementById("ref-wrap");
+  refWrap.innerHTML = "";
+  if(refJobs.length){
+    const h = document.createElement("h2");
+    h.textContent = `Referral contacts — ${refJobs.length}`;
+    const note = document.createElement("div"); note.className = "note";
+    note.textContent = "Roles at companies where you have had a chat (Contacts tab, Chat Date). "
+      + "Score unchanged; each also appears in its usual section below.";
+    refWrap.append(h, note);
+    refJobs.forEach(j=>refWrap.appendChild(card(j, false)));
+  }
+
   const newCount = jobs.filter(isNew).length;
   // An unscored row has no Shot, and filtering it out would hide the rows that need his
   // eyes most. They are kept and land in their own section as always.
@@ -935,6 +1025,7 @@ function renderAll(){
       {weekday:"short",hour:"2-digit",minute:"2-digit"}) : "";
   document.getElementById("meta").textContent =
       (newCount ? `${newCount} new since ${since}  ·  ` : "")
+      + (refJobs.length ? `${refJobs.length} at referral companies  ·  ` : "")
       + `${apply.length} to apply, ${border.length} borderline`
       + (setAside.length ? `, ${setAside.length} unscored` : "")
       + (staleCount ? `  ·  ${staleCount} older than ${MAX_AGE_DAYS}d hidden` : "")
@@ -1112,6 +1203,7 @@ Promise.all([
   jobs.sort(byScore);
   document.getElementById("apply-h").textContent = `Apply — ${GATE.toFixed(1)} and up`;
   renderAll();
+  refreshContacts();
 
   // A feed that failed, or came back far smaller than it usually does, last run. Up here
   // rather than in the grey footer, where two weeks of Adzuna 503s went unnoticed.
