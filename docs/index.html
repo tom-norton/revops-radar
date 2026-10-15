@@ -568,30 +568,38 @@ function fallbackCopy(text){
   }catch(e){ return false; }
 }
 
+// Ids restored in this tab. The server can still hold them for a moment (or for good, if
+// it was stale), and a merge must not put them straight back. Marking one again here
+// takes it off the list.
+const unmarked = new Set();
+// Resolves true when the server held a mark this browser did not, so a caller knows
+// whether a re-render is worth it.
+const markState = () => JSON.stringify([[...hiddenIds], [...appliedIds], hiddenAt, appliedAt, hideNotes]);
 async function syncFromServer(){
+  const before = markState();
   try{
-    const r = await fetch(FIREBASE_STATE_URL);
-    if(!r.ok) return;
+    const r = await fetch(FIREBASE_STATE_URL, {cache: "no-store"});
+    if(!r.ok) return false;
     const server = await r.json();
     syncApi = true;
     if(server){
       // merge (union) so nothing recorded locally before sync existed gets lost
       // Firebase omits empty-array fields entirely, so treat missing as []
-      (Array.isArray(server.hidden) ? server.hidden : []).forEach(id=>hiddenIds.add(id));
-      (Array.isArray(server.applied) ? server.applied : []).forEach(id=>appliedIds.add(id));
+      (Array.isArray(server.hidden) ? server.hidden : []).forEach(id=>{ if(!unmarked.has(id)) hiddenIds.add(id); });
+      (Array.isArray(server.applied) ? server.applied : []).forEach(id=>{ if(!unmarked.has(id)) appliedIds.add(id); });
       // The timestamps ride as a list of {id, at} rather than as an object keyed by id:
       // job ids come from seven different sources and Firebase rejects a key containing
       // . $ # [ ] or /, which would lose the mark rather than just the date. Oldest
       // recorded time wins on a merge -- when a role was marked is a fact about the past,
       // and two devices disagreeing means one of them recorded it late.
       const mergeAt = (rows, into) => (Array.isArray(rows) ? rows : []).forEach(r=>{
-        if(!r || !r.id || !r.at) return;
+        if(!r || !r.id || !r.at || unmarked.has(r.id)) return;
         if(!into[r.id] || String(r.at) < String(into[r.id])) into[r.id] = String(r.at);
       });
       mergeAt(server.hidden_at, hiddenAt);
       // Newest note wins: unlike the timestamps, a reason is something he can revise.
       (Array.isArray(server.hide_notes) ? server.hide_notes : []).forEach(n=>{
-        if(!n || !n.id || !n.at) return;
+        if(!n || !n.id || !n.at || unmarked.has(n.id)) return;
         const mine = hideNotes[n.id];
         if(!mine || String(n.at) > String(mine.at)){
           const {id, ...rest} = n; hideNotes[id] = rest; }
@@ -604,12 +612,18 @@ async function syncFromServer(){
     const note = document.getElementById("synclabel");
     if(note) note.textContent = "Hide / Mark applied sync across your devices.";
   }catch(e){ /* Firebase unreachable -- stay on localStorage only */ }
+  return markState() !== before;
 }
 // Still PATCH, not PUT, even though nothing writes `queued` from the other side any more.
 // A PUT would delete the node's other keys, and the mothballed apply queue's state is worth
 // leaving intact for whenever it comes back.
-function pushState(){
+//
+// Pull before pushing. The PATCH replaces the whole id lists, so a tab left open since
+// before a mark made on another device would otherwise write its stale list over that mark
+// and erase it.
+async function pushState(){
   if(!syncApi) return;
+  await syncFromServer();
   const pairs = m => Object.entries(m).map(([id,at])=>({id, at}));
   fetch(FIREBASE_STATE_URL, {method:"PATCH", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({hidden:[...hiddenIds], applied:[...appliedIds],
@@ -1145,6 +1159,7 @@ document.body.addEventListener("click", (e)=>{
   if(!btn) return;
   const id = btn.dataset.id, act = btn.dataset.act;
   if(act === "hide"){
+    unmarked.delete(id);
     hiddenIds.add(id); hiddenAt[id] = new Date().toISOString();
     saveSet("rr_hidden", hiddenIds); saveMap("rr_hidden_at", hiddenAt);
     // Recorded and synced now; the card stays put with the optional "why" panel in place
@@ -1156,6 +1171,7 @@ document.body.addEventListener("click", (e)=>{
     openWhy(btn.closest(".job"), id);
     return; }
   else if(act === "applied"){
+    unmarked.delete(id);
     appliedIds.add(id); appliedAt[id] = new Date().toISOString();
     saveSet("rr_applied", appliedIds); saveMap("rr_applied_at", appliedAt);
     pushState();
@@ -1173,7 +1189,7 @@ document.body.addEventListener("click", (e)=>{
     // straight back into the hidden/applied section on the next render.
     const job = allJobs.find(j=>String(j.id||"") === id);
     (job ? idsOf(job) : [id]).forEach(x=>{
-      hiddenIds.delete(x); appliedIds.delete(x);
+      unmarked.add(x); hiddenIds.delete(x); appliedIds.delete(x);
       delete hiddenAt[x]; delete appliedAt[x]; delete hideNotes[x]; });
     saveMap("rr_hide_notes", hideNotes);
     saveSet("rr_hidden", hiddenIds); saveSet("rr_applied", appliedIds);
@@ -1183,6 +1199,13 @@ document.body.addEventListener("click", (e)=>{
 });
 
 syncFromServer().then(renderAll);
+// The page only read the shared state once, on load, so a tab left open on the PC never
+// heard about a role marked on the phone. Re-read whenever the tab comes back into view,
+// and re-render only if something arrived (a render would close an open "why" panel).
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "visible")
+    syncFromServer().then(changed=>{ if(changed) renderAll(); });
+});
 
 Promise.all([
   fetch("jobs.json").then(r=>r.json()).catch(()=>[]),

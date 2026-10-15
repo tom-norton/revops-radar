@@ -54,10 +54,17 @@ function doPost(e) {
       body.company || "", body.title || "", body.location || "", score,
       new Date(y, m - 1, d, 12), "Applied", link, "", "",
     ]]);
+    // Commit the row before touching formats, so nothing below can take it with it.
+    SpreadsheetApp.flush();
     // Cosmetic only, and after the data is in. The converted sheet is a Sheets table, whose
-    // typed columns refuse format changes -- the likely reason the first live run failed AFTER the row was
+    // typed columns refuse format changes -- the reason a run failed AFTER the row was
     // written, and the dashboard reported a failure for a row that had landed. The table's
     // own column formats cover it; outside a table, take the old top row's look.
+    //
+    // The flush() INSIDE the try is what makes the try work. Sheets queues these calls and
+    // only sends them when the script ends, so the refusal used to surface after doPost had
+    // returned, outside any catch: Google then answered with an HTML error page and the
+    // dashboard said "didn't confirm" for every row, though each one had gone in.
     try {
       if (last >= 2) {
         sheet.getRange(3, 1, 1, sheet.getLastColumn())
@@ -65,6 +72,7 @@ function doPost(e) {
                      SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
       }
       sheet.getRange(2, 5).setNumberFormat("M/d");
+      SpreadsheetApp.flush();
     } catch (err) { /* left to the table's formatting */ }
     return reply({ ok: true });
   } finally {

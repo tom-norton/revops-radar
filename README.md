@@ -1111,7 +1111,13 @@ deployments → ✏️ → Version: New version → Deploy**, which also keeps t
 
 "Tracker didn't confirm" means the page got no readable answer, which can happen after the
 row is already in (a script error after the write comes back as an HTML page). Check the
-sheet, and Apps Script's **Executions** list, before adding the row by hand.
+sheet, and Apps Script's **Executions** list, before adding the row by hand. Up to the
+version that flushes the sheet inside its cosmetic `try`, this showed on every tap: the
+Sheets table refused the format copy at the end of the run, outside the catch.
+
+Hide and Mark applied made on another device show up when the tab comes back into view;
+the page re-reads the shared state then, and again before every write, so a tab left open
+for days cannot overwrite a mark made on the phone.
 
 ### Referral contacts
 
