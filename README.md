@@ -1127,6 +1127,15 @@ While `TRACKER_URL` is empty, Mark applied does exactly what it did before. Afte
 the script, the live web app keeps running the OLD code until you **Deploy → Manage
 deployments → ✏️ → Version: New version → Deploy**, which also keeps the same URL.
 
+The same web app feeds the **weekly review**. `tools/review_data.py` asks it for the
+Applications tab (`?action=applications`) when `TRACKER_TOKEN` is set, and builds the
+review's outcome numbers from that. To set it up, deploy a new version of the script as
+above, then add `TRACKER_TOKEN` (the same value as the `TOKEN` script property) as an
+environment variable in the review routine's cloud environment. Without it the review
+still runs, but says the tracker could not be read. Before this, the review exported the
+tab through the Google Drive connector. That download comes back as base64 the routine
+cannot save, so outcomes were missing from the 12 and 19 Oct reviews.
+
 "Tracker didn't confirm" means the page got no readable answer, which can happen after the
 row is already in (a script error after the write comes back as an HTML page). Check the
 sheet, and Apps Script's **Executions** list, before adding the row by hand. Up to the

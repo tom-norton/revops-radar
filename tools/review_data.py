@@ -6,12 +6,14 @@ counts, and a model asked to tally 700 rows is a model asked to get some of them
     python tools/review_data.py              -> JSON on stdout
     python tools/review_data.py --days 7     (window length; default 7)
     python tools/review_data.py --tracker /tmp/tracker.csv
+    TRACKER_TOKEN=... python tools/review_data.py   (reads the tracker from the sheet)
 
 Reads docs/jobs.json, docs/excluded.json and the dashboard's shared state (Hidden,
 Applied, and the optional "why" notes) from Firebase. Writes nothing. If Firebase cannot
 be reached the report still runs; the sections that need it say so.
 
---tracker is a CSV export of the Applications tab of Tom's Job Search Tracker sheet
+The tracker is the Applications tab of Tom's Job Search Tracker sheet, fetched from the
+sheet's web app when TRACKER_TOKEN is set, or a CSV export of it passed with --tracker
 (Company, Title, Location, Score, Date Applied, Status, Link, Referral?, Interview Date).
 It is the only record of what happened AFTER he applied, and the only one that goes back
 further than the dashboard's 45 days, so the coaching half of the review is built on it.
@@ -19,6 +21,7 @@ Without it the "applications" block says so and the rest still runs.
 """
 
 import csv
+import io
 import json
 import os
 import re
@@ -146,11 +149,63 @@ def outcome_table(apps, key):
     return table
 
 
-def applications(path, jobs, now, start):
+def tracker_url():
+    """The tracker web app's /exec URL, read from the dashboard so there is one copy of it."""
+    with open(os.path.join(ROOT, "docs", "index.html"), encoding="utf-8") as f:
+        m = re.search(r'TRACKER_URL\s*=\s*"([^"]+)"', f.read())
+    return m.group(1) if m else ""
+
+
+def fetch_tracker(url, token, get=requests.get):
+    """The Applications tab as CSV text, straight from the sheet's own web app
+    (tools/tracker-append.gs, ?action=applications).
+
+    This replaced a Drive connector download that the review routine could not use: the
+    export came back as base64 inside the tool result, with no way to put it on disk short
+    of retyping 35 KB by hand, so two reviews in a row ran without outcomes. An HTTP GET
+    lands in this process, where the parsing already lives.
+
+    The web app answers JSON for an error ("bad token", "unknown action" from a deployment
+    still running the older script) and CSV otherwise. Anything that does not open with
+    the tab's own header is refused rather than parsed: a Google sign-in page or an HTML
+    error parsed as CSV would come out as zero applications, which reads like a fact."""
+    if not url:
+        raise ValueError("TRACKER_URL is empty in docs/index.html")
+    # requests puts the full URL, token included, into its error messages, and this one
+    # ends up in the review's JSON. Only the kind of failure is passed on.
+    try:
+        r = get(url, params={"action": "applications", "token": token}, timeout=30)
+        r.raise_for_status()
+    except requests.HTTPError:
+        raise ValueError(f"tracker web app answered HTTP {r.status_code}") from None
+    except requests.RequestException as e:
+        raise ValueError(f"tracker web app unreachable ({type(e).__name__})") from None
+    text = r.text.lstrip("\ufeff")
+    if text.lstrip().startswith("{"):
+        try:
+            err = json.loads(text).get("error") or text[:120]
+        except ValueError:
+            err = text[:120]
+        if err == "unknown action":
+            err += (" (the web app is running an older tracker-append.gs: paste the new one "
+                    "and deploy a new version)")
+        raise ValueError(f"tracker web app said: {err}")
+    if not text.startswith("Company"):
+        raise ValueError(f"tracker web app did not answer with the Applications tab: "
+                         f"{text[:80]!r}")
+    return text
+
+
+def applications(source, jobs, now, start):
     """The coaching block: outcomes from the tracker, joined to the radar's own reading of
-    each role where the dashboard still has it."""
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        rows = [r for r in csv.DictReader(f) if (r.get("Company") or "").strip()]
+    each role where the dashboard still has it. `source` is a CSV file's path, or a file
+    object holding the CSV."""
+    if hasattr(source, "read"):
+        rows = list(csv.DictReader(source))
+    else:
+        with open(source, newline="", encoding="utf-8-sig") as f:
+            rows = list(csv.DictReader(f))
+    rows = [r for r in rows if (r.get("Company") or "").strip()]
     by_link, by_name = {}, {}
     for j in jobs:
         for u in [j.get("url"), j.get("apply_url")] + [a.get("url") for a in j.get("also_seen") or []]:
@@ -327,13 +382,18 @@ def main():
                           "flags": j.get("flags")})
             for i, j in marked_rows(applied) if (applied_at.get(i) or "") >= start]
     out["applications"], out["applications_error"] = None, None
-    if not tracker:
-        out["applications_error"] = ("no --tracker CSV given: export the Applications tab "
-                                     "of Job Search Tracker and pass it")
+    # A CSV given by hand wins; otherwise the sheet's web app, when TRACKER_TOKEN is set.
+    token = os.environ.get("TRACKER_TOKEN", "").strip()
+    if not tracker and not token:
+        out["applications_error"] = ("no tracker: set TRACKER_TOKEN in the environment (the "
+                                     "TOKEN script property on Job Search Tracker), or pass "
+                                     "--tracker with a CSV export of the Applications tab")
     else:
         try:
-            out["applications"] = applications(tracker, jobs, now, start)
+            source = tracker or io.StringIO(fetch_tracker(tracker_url(), token))
+            out["applications"] = applications(source, jobs, now, start)
         except Exception as e:
+            # Never the URL with its query string: that would print the token.
             out["applications_error"] = f"tracker unreadable: {str(e)[:160]}"
     json.dump(out, sys.stdout, indent=1, default=str)
     print()
