@@ -18,7 +18,7 @@
  *       { heading, kind: "entries",
  *         entries: [{ left, right, roles: [{sub_left, sub_right, bullets}] }] },
  *       { heading, kind: "bullets", bullets: [...] } ],
- *     skills }
+ *     skills, certifications? }
  *
  * A bullet is a string, or {lead, text} when it has a bold lead-in. The projects section
  * is the second kind: on the real CV a project is one bullet reading
@@ -243,13 +243,24 @@ if (has(spec.summary)) {
   blocks.forEach((p) => body.push(p));
 });
 
-if (has(spec.skills)) {
-  body.push(heading("Skills"));
-  body.push(para({
-    alignment: AlignmentType.CENTER,
-    spacing: { line: LINE, lineRule: "auto", before: BEFORE_SKILLS },
-    children: [run(spec.skills)],
-  }));
+// Certifications sit above the skills line in the same section, which is retitled when
+// there are any. A CV with no certifications renders exactly as it did before.
+if (has(spec.skills) || has(spec.certifications)) {
+  body.push(heading(has(spec.certifications) ? "Skills & Certifications" : "Skills"));
+  if (has(spec.certifications)) {
+    body.push(para({
+      alignment: AlignmentType.CENTER,
+      spacing: { line: LINE, lineRule: "auto", before: BEFORE_SKILLS },
+      children: [run(spec.certifications, { bold: true })],
+    }));
+  }
+  if (has(spec.skills)) {
+    body.push(para({
+      alignment: AlignmentType.CENTER,
+      spacing: { line: LINE, lineRule: "auto", before: BEFORE_SKILLS },
+      children: [run(spec.skills)],
+    }));
+  }
 }
 
 const doc = new Document({
