@@ -2974,6 +2974,7 @@
   "dupe_ids": [
    "az-ca-5936257012",
    "az-ca-5936617066",
+   "hc-smartrecruiters___quadient1___bddad4b2-e93c-429c-bf5c-567960",
    "js-https-ca-indeed-com-viewjob-jk-54a7ab54aaee96a3"
   ],
   "also_seen": [
@@ -2984,6 +2985,10 @@
    {
     "source": "adzuna",
     "url": "https://www.adzuna.ca/details/5936617066?utm_medium=api&utm_source=7c8a497a"
+   },
+   {
+    "source": "hiring.cafe",
+    "url": "https://jobs.smartrecruiters.com/Quadient1/744000156601320-customer-success-operations-analyst-"
    },
    {
     "source": "indeed",
@@ -3031,7 +3036,7 @@
   "market_conflict": null,
   "found_at": "2026-10-20T16:59:48.542580+00:00",
   "track": "cs",
-  "ats": "",
+  "ats": "smartrecruiters",
   "ats_fillable": false,
   "apply_link": "aggregator only"
  },
@@ -6583,10 +6588,12 @@
   "market_conflict": null,
   "found_at": "2026-10-21T12:23:19.736695+00:00",
   "track": "revops",
-  "ats": "ashby",
-  "ats_fillable": true,
-  "apply_link": "auto-fillable",
-  "apply_url": "https://jobs.ashbyhq.com/vertice/50694bde-c020-463e-9425-5d2b55dc20c1"
+  "ats": "",
+  "ats_fillable": false,
+  "apply_link": "company ATS",
+  "apply_url": "https://jobs.ashbyhq.com/vertice/50694bde-c020-463e-9425-5d2b55dc20c1",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "js-https-ca-indeed-com-viewjob-jk-bc52443b72e7c8d6",
@@ -7492,12 +7499,17 @@
   "ats_fillable": false,
   "apply_link": "company ATS",
   "dupe_ids": [
-   "hc-join___stratos___16841590"
+   "hc-join___stratos___16841590",
+   "li-4478972712"
   ],
   "also_seen": [
    {
     "source": "hiring.cafe",
     "url": "https://join.com/companies/stratos/16841590-commercial-operations-manager?pid=0a9968ed210507e82356"
+   },
+   {
+    "source": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/4478972712"
    }
   ]
  },
@@ -10760,6 +10772,57 @@
   "want": 6.5
  },
  {
+  "id": "li-4481131064",
+  "company": "Google",
+  "title": "Strategy and Operations Lead, Google Cloud",
+  "location": "London, England, United Kingdom",
+  "country": "",
+  "market": "UK-London",
+  "url": "https://www.linkedin.com/jobs/view/4481131064",
+  "source": "linkedin",
+  "posted_at": "2026-10-21",
+  "description": "Minimum qualifications:\nBachelor's degree or equivalent practical experience.\n6 year of experience in sales management, management consulting, or Strategy/Sales Operations in an Enterprise Software firm.\nExperience working in an Enterprise Software/Cloud Sales/Consulting organization.\n Preferred qualifications:\nExperience in leading large programs or consulting projects at a consulting firm with a focus on the enterprise sales space.\nExperience influencing and collaborating with senior stakeholders in a matrixed organization.\nAbility to thrive in an ambiguous and fast paced environment, with limited direction, balance competing priorities, and manage several time-sensitive projects at once.\nAbility to project manage and work with minimal guidance.\nComfortable crafting and communicating insights from data, as well as attentio- to-detail and an interest in metrics/understanding trends and patterns in business performance.\nExcellent strategic, problem-solving, analytical, presentation and communication skills.\n About the job As a part of the EMEA Business Strategy and Operations team, you will provide business critical insights, ensures cross-functional alignment of goals and execution, and helps teams drive strategic partnerships and new initiatives forward. You will stay focused on aligning the highest-level company priorities with effective day-to-day operations, and help evolve early stage ideas into future-growth initiatives.Google Cloud accelerates every organization\u2019s ability to digitally transform its business and industry. We deliver enterprise-grade solutions that leverage Google\u2019s technology, and tools that help developers build more sustainably. Customers in more than 200 countries and territories turn to Google Cloud as their trusted partner to enable growth and solve their most critical business problems.\n Responsibilities\nPartner with UKI Leadership team to develop the organization\u2019s strategy, growth, and business plan, becoming an integral part of the leadership team and trusted advisor.\nTailor the UKI business strategy and narrative for the local markets, leveraging data to identify specific vertical, horizontal, and competitor risks and opportunities.\nDrive the business forward by developing and executing initiatives to accelerate our growth and scale the business.\nShape the way we work and run the business as a Strategy and Sales Operations team, and manage the business for your region, own key processes, foster collaboration, and measure progress towards goals.\nGoogle is proud to be an equal opportunity workplace and is an affirmative action employer. We are committed to equal employment opportunity regardless of race, color, ancestry, religion, sex, national origin, sexual orientation, age, citizenship, marital status, disability, gender identity or Veteran status. We also consider qualified applicants regardless of criminal histories, consistent with legal requirements. See also Google's EEO Policy and EEO is the Law. If you have a disability or special need that requires accommodation, please let us know by completing our Accommodations for Applicants form .\n Show more\n Show less\n Seniority level\n Mid-Senior level\n Employment type\n Full-time\n Industries\n Information Services and Technology, Information and Internet\nReferrals increase your chances of interviewing at Google by 2x\n See who you know",
+  "desc_chars": 3376,
+  "sponsor_region": "UK",
+  "sponsor_raw": "on_register",
+  "sponsor": "UK sponsor",
+  "score": 6.2,
+  "score_raw": 6.2,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 4.0,
+   "skills": 6.0,
+   "seniority": 5.0,
+   "domain": 9.0,
+   "location_visa": 7.0,
+   "trajectory": 9.0
+  },
+  "shot": 4.9,
+  "want": 8.2,
+  "hard_gaps": [
+   "6 years in sales management, consulting, or Strategy/Sales Ops"
+  ],
+  "tier": "UK-London",
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Leadership-advisor strategy role typically filled by ex-consultants; CSM/AM background is likely to lose at the CV screen.",
+   "Owning UKI business planning and growth strategy far exceeds his evidence, which is mostly MBA case work."
+  ],
+  "verdict": "Excellent brand and pivot fit, but CS/AM tenure does not meet Google's six-year strategy/sales-ops bar; long shot.",
+  "comp": {
+   "stated": false,
+   "min_base": 0.0,
+   "max_base": 0.0,
+   "currency": ""
+  },
+  "market_conflict": null,
+  "found_at": "2026-10-21T16:36:08.633068+00:00",
+  "track": "revops",
+  "ats": "",
+  "ats_fillable": false,
+  "apply_link": "aggregator only"
+ },
+ {
   "id": "li-4479553431",
   "company": "PayPal",
   "title": "Sr Analyst, Revenue Operations",
@@ -13468,7 +13531,9 @@
   "track": "cs",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "hc-teamtailor___career.inriver.com___8569313",
@@ -16845,6 +16910,61 @@
   ]
  },
  {
+  "id": "js-https-ie-indeed-com-viewjob-jk-cd6e8ae161c7c9fb",
+  "company": "Okta",
+  "title": "Partner Strategy & Operations Manager - EMEA",
+  "location": "Dublin, D, Ireland",
+  "country": "ie",
+  "market": "IE",
+  "url": "https://ie.indeed.com/viewjob?jk=cd6e8ae161c7c9fb",
+  "source": "indeed",
+  "description": "**Secure Every Identity, from AI to Human** \nIdentity is the key to unlocking the potential of AI. Okta secures AI by building the trusted, neutral infrastructure that enables organizations to safely embrace this new era. This work requires a relentless drive to solve complex challenges with real-world stakes. We are looking for builders and owners who operate with speed and urgency and execute with excellence. \nThis is an opportunity to do career-defining work. We're all in on this mission. If you are too, let's talk.\n**The Team**\n------------\nThe Partner Strategy and Operations team drives the growth, productivity, and operational scale of Okta's Global Partner Sales organization. Reporting to the Senior Director of Partner Strategy & Operations, this team operates as a key cross-functional hub partnering directly with senior Partner ecosystem leaders to align operational performance metrics with long-term business goals.\n**Role**\n--------\nAs a Partner Strategy and Operations Manager, you will serve as a key individual contributor and thought leader playing an essential role in setting the foundation to scale our partner operations. You will combine analytical insight, strong business acumen, and cross-functional partnerships to operationalize, measure, and optimize partner performance across global regions.\n**Responsibilities**\n--------------------\n* Manage the weekly cadence of the Partner reporting foundation, including forecasting, lead generation, ad-hoc reporting, and analytics.\n* Develop formal reporting packages for Partner sales effectiveness and conduct regular metrics reviews with Partner leaders and supporting teams.\n* Measure and evaluate Partner representative and manager ramp time and productivity across global roles and regions.\n* Structure and lead key strategic initiatives, establish and track KPIs, and refine best practices and Partner sales policies.\n* Deliver data-driven recommendations for Partner business planning, scorecards, and forecasting processes.\n* Collaborate with cross-functional teams to define system requirements, optimize sales reporting frameworks, and scale operational infrastructure.\n* Identify, evaluate, and implement AI-driven tools and workflows to automate partner data analysis, streamline reporting, and enhance predictive forecasting accuracy.\n**Requirements**\n----------------\n* Deep knowledge and experience in global strategic field Partner strategy & operations or Sales strategy & operations.\n* Foundational knowledge of various Partner selling motions, including ISV, MSP, OEM, Resell, and Distribution.\n* Demonstrated experience with sales process design, documentation, and rules of engagement.\n* Proficiency with Salesforce, Clari, Tableau, or equivalent CRM, BI, and PRM tools.\n* Advanced quantitative and data modelling skills using spreadsheets and analytics platforms.\n* Experience leveraging AI platforms for data insights, automated reporting, or sales ops process optimization.\n* Excellent written and verbal communication skills with a proven track record of working independently and collaboratively across functions\nP26100\\_3588924\n#LI-ONSITE\n**The Okta Experience**\n* Supporting Your Well-Being\n* Driving Social Impact\n* Developing Talent and Fostering Connection + Community\nWe are intentional about connection. Our global community, spanning over 20 offices worldwide, is united by a drive to innovate. Your journey begins with an immersive, in-person onboarding experience designed to accelerate your impact and connect you to our mission and team from day one. \nOkta is an Equal Opportunity Employer. All qualified applicants will receive consideration for employment without regard to race, color, religion, sex, sexual orientation, gender identity, national origin, ancestry, marital status, age, physical or mental disability, or status as a protected veteran. We also consider for employment qualified applicants with arrest and convictions records, consistent with applicable laws. \nIf reasonable accommodation is needed to complete any part of the job application, interview process, or onboarding please use this Form to request an accommodation. \nNotice for New York City Applicants & Employees: Okta may use Automated Employment Decision Tools (AEDT), as defined by New York City Local Law 144, that use artificial intelligence, machine learning, or other automated processes to assist in our recruitment and hiring process. In accordance with NYC Local Law 144, if you are an applicant or employee residing in New York City, please click here to view our full NYC AEDT Notice.",
+  "salary": "78000-108000 EUR",
+  "posted_at": "2026-10-21",
+  "desc_chars": 4595,
+  "sponsor_region": "",
+  "sponsor_raw": "n/a",
+  "sponsor": "",
+  "score": 5.8,
+  "score_raw": 5.8,
+  "caps_applied": [],
+  "dimensions": {
+   "experience": 4.0,
+   "skills": 6.0,
+   "seniority": 6.0,
+   "domain": 6.0,
+   "location_visa": 7.0,
+   "trajectory": 7.0
+  },
+  "shot": 5.2,
+  "want": 6.6,
+  "hard_gaps": [
+   "Deep experience in global field partner or sales strategy & ops",
+   "Foundational knowledge of ISV, MSP, OEM, resell, distribution motions",
+   "Demonstrated sales process design and rules of engagement experience"
+  ],
+  "tier": "IE",
+  "flags": [
+   "pay not confirmed in the ad; 78000-108000 EUR came from the feed",
+   "Partner channel ops is a niche; no partner ecosystem or PRM experience on the CV to anchor the application.",
+   "Role runs a weekly forecasting and reporting cadence, which is the operating-rhythm ownership he has not held.",
+   "Clari, Tableau and PRM tooling are named; he only meets this through Salesforce and spreadsheet modelling."
+  ],
+  "verdict": "Strong brand and a Manager-level ops title, but the partner-channel requirements expose a real experience gap; apply only as a stretch.",
+  "comp": {
+   "stated": false,
+   "min_base": 0.0,
+   "max_base": 0.0,
+   "currency": ""
+  },
+  "market_conflict": null,
+  "found_at": "2026-10-21T16:36:01.467686+00:00",
+  "track": "revops",
+  "ats": "",
+  "ats_fillable": false,
+  "apply_link": "aggregator only"
+ },
+ {
   "id": "li-4481581642",
   "company": "emagine",
   "title": "CRM & Revenue Operations Analyst",
@@ -17007,12 +17127,17 @@
   "apply_link": "company ATS",
   "dupe_ids": [
    "az-gb-5934416522",
+   "az-gb-5936455370",
    "li-4481249119"
   ],
   "also_seen": [
    {
     "source": "adzuna",
     "url": "https://www.adzuna.co.uk/jobs/details/5934416522?utm_medium=api&utm_source=7c8a497a"
+   },
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.co.uk/jobs/details/5936455370?utm_medium=api&utm_source=7c8a497a"
    },
    {
     "source": "linkedin",
@@ -20285,7 +20410,9 @@
   "apply_link": "company ATS",
   "dupe_ids": [
    "az-ca-5931903480",
-   "js-https-ca-indeed-com-viewjob-jk-6047c9d2b82bb8d2"
+   "js-https-ca-indeed-com-viewjob-jk-026190ab4c309a25",
+   "js-https-ca-indeed-com-viewjob-jk-6047c9d2b82bb8d2",
+   "js-https-ca-indeed-com-viewjob-jk-ba1fbadd1eb028b1"
   ],
   "also_seen": [
    {
@@ -20294,8 +20421,19 @@
    },
    {
     "source": "indeed",
+    "url": "https://ca.indeed.com/viewjob?jk=026190ab4c309a25"
+   },
+   {
+    "source": "indeed",
     "url": "https://ca.indeed.com/viewjob?jk=6047c9d2b82bb8d2"
+   },
+   {
+    "source": "indeed",
+    "url": "https://ca.indeed.com/viewjob?jk=ba1fbadd1eb028b1"
    }
+  ],
+  "also_in": [
+   "Vancouver, BC, Canada"
   ]
  },
  {
@@ -28107,7 +28245,9 @@
   "track": "revops",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "hc-grnhse___mercury___6111944004",
@@ -30564,12 +30704,17 @@
   "posted_at": "2026-10-19T20:34:42.000Z",
   "dupe_ids": [
    "az-ca-5936498588",
+   "az-ca-5936651420",
    "js-https-ca-indeed-com-viewjob-jk-7e05f529504088c2"
   ],
   "also_seen": [
    {
     "source": "adzuna",
     "url": "https://www.adzuna.ca/details/5936498588?utm_medium=api&utm_source=7c8a497a"
+   },
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.ca/details/5936651420?utm_medium=api&utm_source=7c8a497a"
    },
    {
     "source": "indeed",
@@ -43058,7 +43203,9 @@
   "track": "cs",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "hc-ashby___deepgram___56d0068b-a787-4682-983c-3ae900ec8692",
@@ -48672,6 +48819,38 @@
   "also_seen": []
  },
  {
+  "id": "az-gb-5936756824",
+  "company": "CBSbutler Holdings Limited",
+  "title": "Sales Operations Specialist",
+  "location": "London, UK",
+  "country": "gb",
+  "market": "UK-London",
+  "url": "https://www.adzuna.co.uk/jobs/details/5936756824?utm_medium=api&utm_source=7c8a497a",
+  "source": "adzuna",
+  "description": "Sales Operations Specialist - EMEA 6 month contract - Hybrid We're looking for an experienced Sales Operations Specialist to join an international team supporting the end-to-end order and delivery process across European markets. You will be working for a leading global gaming brand in the heart of their sales operations team. You'll work closely with Sales, Commercial Planning, Supply Chain and Logistics teams, ensuring orders are processed accurately, deliveries are managed effectively and an\u2026",
+  "salary": "",
+  "posted_at": "2026-10-21T15:16:57Z",
+  "desc_chars": 500,
+  "sponsor_region": "UK",
+  "sponsor_raw": "not_found",
+  "sponsor": "not on UK register",
+  "score": null,
+  "score_raw": null,
+  "caps_applied": [],
+  "dimensions": {},
+  "tier": "UK-London",
+  "evidence": "thin",
+  "flags": [
+   "no posting text found -- nothing here has been screened or scored"
+  ],
+  "verdict": "Not scored. No posting text could be retrieved from the source, from the copies other feeds had, from the company's own board, or from a web search. What is on this card is everything that is known.",
+  "found_at": "2026-10-21T16:35:47.251436+00:00",
+  "track": "revops",
+  "ats": "",
+  "ats_fillable": false,
+  "apply_link": "aggregator only"
+ },
+ {
   "id": "rr-d49df4b9-4fc0-4524-b6fb-1a80ea87c74a",
   "company": "ServiceNow",
   "title": "Senior Sales Operations Strategy and Planning Manager",
@@ -48702,7 +48881,9 @@
   "track": "revops",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "rr-cdc89a3c-e3bb-41eb-bd71-164ad298ee11",
@@ -48736,7 +48917,9 @@
   "ats": "",
   "ats_fillable": false,
   "apply_link": "aggregator only",
-  "transfer_markets": "UK-London, CA"
+  "transfer_markets": "UK-London, CA",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "rr-87d7d558-ef8a-4d35-903e-69313d1cfedd",
@@ -48769,7 +48952,9 @@
   "track": "revops",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "az-gb-5935858204",
@@ -48801,7 +48986,9 @@
   "track": "revops",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": []
  },
  {
   "id": "az-gb-5935865619",
@@ -48833,7 +49020,14 @@
   "track": "revops",
   "ats": "",
   "ats_fillable": false,
-  "apply_link": "aggregator only"
+  "apply_link": "aggregator only",
+  "dupe_ids": [],
+  "also_seen": [
+   {
+    "source": "adzuna",
+    "url": "https://www.adzuna.co.uk/jobs/details/5935865619?utm_medium=api&utm_source=7c8a497a"
+   }
+  ]
  },
  {
   "id": "rr-e72d6024-15ff-44b0-bfbf-0bd5dd61df72",
