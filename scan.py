@@ -647,7 +647,11 @@ NO_SPONSOR_RX = re.compile(
     r"|\balready\s+(?:have|hold|possess)\s+(?:the\s+|an?\s+)?(?:full\s+|valid\s+)?"
     r"(?:right to work|work authori[sz]ation|work permit|visa)\b"
     r"|\bonly\s+(?:be\s+)?(?:able\s+to\s+)?(?:consider|accept)\w*\s+[^.]{0,60}"
-    r"\b(?:right to work|authori[sz]ed to work|work authori[sz]ation|eligible to work)\b",
+    r"\b(?:right to work|authori[sz]ed to work|work authori[sz]ation|eligible to work)\b"
+    # The same refusal stated as a consequence (review of 19 Oct 2026, TuneCore): "You must
+    # have the right to work in the UK otherwise your application will not be considered".
+    r"|\b(?:right to work|authori[sz]ed to work|work authori[sz]ation|eligible to work)\b"
+    r"[^.]{0,60}\botherwise\b[^.]{0,40}\bnot\s+(?:be\s+)?considered\b",
     re.I)
 
 # English is deliberately absent -- Tom is a native speaker, so an English requirement is
@@ -4272,6 +4276,43 @@ def screen_job(api_key, job):
     data = _extract_json(text)
     return bool(data.get("keep", True)), str(data.get("reason", ""))[:80]
 
+# Kills SCREEN_SYSTEM forbids in so many words and Haiku makes anyway. The prompt already
+# said "NEVER KILL ON SENIORITY" and named Diligent's Revenue Operations Specialist as a
+# keep; in the week after that line went in Haiku killed Diligent again, eight more Sales
+# Ops titles as "deal desk" (three claiming the title said so when it did not), Omnea's
+# Revenue Operations Associate as a "graduate scheme" and Stay22's Sales Strategy &
+# Operations Manager for asking for quota experience (review of 19 Oct 2026). A third
+# sentence would not have helped, so the rules the prompt states are checked here against
+# the title, which code can read as well as the model can.
+_KILL_DEAL_DESK = re.compile(r"deal[- ]desk|quote[- ]to[- ]cash|order management|billing", re.I)
+_KILL_SENIORITY = re.compile(r"graduate|entry[- ]level|\bjunior\b|\bintern(?:ship)?\b"
+                             r"|seniority|too senior|(?:manager|director)\s*\+", re.I)
+_KILL_QUOTA = re.compile(r"quota", re.I)
+# The only seniority kill the prompt allows.
+_EARLY_CAREER_TITLE = re.compile(r"\bintern(?:ship)?\b|graduate|apprentice|working student"
+                                 r"|werkstudent|\bco-?op\b|trainee|placement", re.I)
+
+def overrule_kill(title, reason):
+    """Why a stage-1 kill breaks one of the screen's own rules, or "" if it stands.
+
+    Any other function kill is left alone; only the three rules above are enforced, and
+    each lets the kill stand when the title itself bears it out. An overruled
+    kill costs one deep-score call, which reads the whole posting and scores function and
+    seniority properly. A wrong kill costs a role Tom never sees."""
+    title, reason = title or "", reason or ""
+    if _KILL_SENIORITY.search(reason) and not _EARLY_CAREER_TITLE.search(title):
+        return "seniority kill, but the title is not an internship or graduate scheme"
+    # The function rules only bind where the title names a core target function, which is
+    # how the prompt words them. "Head of GTM" or "Renewals Representative" killed as a
+    # quota-carrying seat is a function call the screen is allowed to make.
+    if not revops_core_title(title):
+        return ""
+    if _KILL_DEAL_DESK.search(reason) and title_band(title) != "wrong_function":
+        return "deal desk kill, but the title names a target function and not deal desk"
+    if _KILL_QUOTA.search(reason):
+        return "quota kill, but the title names a target function"
+    return ""
+
 def parse_score_result(job, data):
     """Turn the model's parsed JSON into either a disqualification or a scored result. Split
     out from score_job() so the decision can be unit-tested against a synthetic `data` dict
@@ -4587,6 +4628,62 @@ def backfill_row(job, fetch=None):
             break
     return best
 
+# Set-aside rows worth asking again on a later scan, and how many per run. LinkedIn only,
+# on evidence: its guest page answers a GitHub runner most of the time and refuses it some
+# of the time, so a LinkedIn row set aside for want of text is usually a fetch that was
+# turned away rather than a posting with nothing in it. The 14 LinkedIn rows set aside in
+# the week to 18 Oct 2026 had no text at all; asked again on 19 Oct, all four from the
+# last three days came back with 5,124 to 10,774 characters (review of 19 Oct 2026). An
+# Adzuna stub is the API's 500-character snippet, and its link leads on to an agency's own
+# site, which none of the fetchers can read; a revopsroles stub is a line of metadata from
+# the digest email. Asking either again gets the same answer, so neither is retried.
+RETRY_THIN_SOURCES = {"linkedin"}
+RETRY_THIN_DAYS = 3
+RETRY_THIN_PER_RUN = 10
+
+def retry_thin_targets(jobs, days=RETRY_THIN_DAYS, now=None):
+    """Unscored set-aside rows from a retryable source found in the last `days`, newest
+    first. Includes one whose text came back on an earlier retry but whose rescore failed."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=days)).isoformat()
+    out = [j for j in jobs
+           if j.get("evidence") == "thin" and j.get("score") is None
+           and j.get("source") in RETRY_THIN_SOURCES
+           and (j.get("found_at") or "") >= cutoff]
+    return sorted(out, key=lambda j: j.get("found_at") or "", reverse=True)
+
+def cmd_retry_thin(fetch=None):
+    """Ask again for the posting behind recent set-aside rows, and score any that arrive.
+
+    Runs after every scan. A row is only set aside once the scan has tried every route to
+    its text, and nothing after that ever looked again: the backfill skips a stub with no
+    folded-away duplicate, because for most sources a second request is the same empty page.
+    For LinkedIn it is not (see RETRY_THIN_SOURCES). A recovered row goes through
+    rescore_recovered(), which runs the two free disqualifier checks first, the same order
+    the scan uses."""
+    jobs = load_json("docs/jobs.json", [])
+    targets = retry_thin_targets(jobs)[:RETRY_THIN_PER_RUN]
+    if not targets:
+        print("No set-aside rows to retry.")
+        return
+    crossed = []
+    for j in targets:
+        # A row recovered on an earlier run whose rescore then failed already has its text.
+        got = j.get("description") or ""
+        if is_thin(got):
+            got = backfill_row(j, fetch)
+        if is_thin(got):
+            continue
+        j["description"] = sample_desc(got, DESC_STORE_CAP)
+        j["desc_chars"] = len(got)
+        crossed.append(j)
+        print(f"  OK  {len(got):>6} chars  {(j.get('company') or '?')[:28]} "
+              f"| {(j.get('title') or '')[:40]}")
+    print(f"Retried {len(targets)} set-aside row(s); {len(crossed)} now have a posting.")
+    if crossed:
+        json.dump(jobs, open("docs/jobs.json", "w"), indent=1)
+        rescore_recovered(jobs, crossed)
+
 def cmd_backfill_jd(days, fetch=None):
     """Recover the full ad for rows stored under the old 1200-character cap.
 
@@ -4773,6 +4870,9 @@ def rescore_recovered(jobs, stale):
                   f"({result['stage']}: {result['reason']})")
             continue
         j.update(result)
+        # A row set aside for want of text carries evidence "thin", which files it in the
+        # dashboard's unscored section. It has a posting and a score now.
+        j.pop("evidence", None)
         rescored += 1
         print(f"  {before} -> {j['score']:<5} {(j.get('company') or '?')[:28]} "
               f"| {(j.get('title') or '')[:40]}")
@@ -4809,6 +4909,8 @@ def main():
         return cmd_rescore()
     if "--dedupe" in sys.argv:
         return cmd_dedupe()
+    if "--retry-thin" in sys.argv:
+        return cmd_retry_thin()
     if "--backfill-jd" in sys.argv:
         days = 7
         if "--days" in sys.argv:
@@ -5066,7 +5168,7 @@ def main():
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     system_score = score_system()
-    scored, kept, killed = [], 0, 0
+    scored, kept, killed, overruled = [], 0, 0, 0
     deferrals = load_deferrals()
     # Reuses the list already read for the ATS fetchers above, rather than re-reading the
     # file (which is a dict with a "companies" key, not a bare list).
@@ -5220,6 +5322,11 @@ def main():
             keep, reason = screen_job(api_key, j)
         except Exception:
             keep, reason = True, "screen error, passed through"
+        why = "" if keep else overrule_kill(j.get("title"), reason)
+        if why:
+            overruled += 1; keep = True
+            print(f"  keep  {j['title']} @ {j.get('company') or j['source']} "
+                  f"(screen said: {reason}; overruled: {why})")
         if not keep:
             killed += 1; seen.add(j["id"])
             # Recorded, so the kill is reviewable on the dashboard and reversible with
@@ -5415,7 +5522,8 @@ def main():
             states.get(j.get("apply_link") or "unresolved", 0) + 1)
     src_status["apply links"] = ", ".join(f"{k} {v}" for k, v in sorted(states.items()))
 
-    src_status["screening"] = f"stage1 kept {kept}, killed {killed}; stage2 scored {len(scored)}"
+    src_status["screening"] = (f"stage1 kept {kept} ({overruled} kill(s) overruled), "
+                               f"killed {killed}; stage2 scored {len(scored)}")
     if set_aside:
         # Its own line because this number going UP is the signal that the recovery routes
         # have stopped working, and a set-aside row is invisible in every other counter:

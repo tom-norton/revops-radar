@@ -19,16 +19,16 @@ report, and Tom decides.
 ## Steps
 
 1. `git pull` so the data is the latest scan's.
-2. Export Tom's application tracker. With the Google Drive connector, find the
-   spreadsheet titled "Job Search Tracker", download it with export type
-   `text/csv` (that exports the first tab, Applications), base64-decode the content and
-   save it to `/tmp/tracker.csv`. Use the download, not the read tool: the read tool only
-   returns a sample of rows. If the connector is missing or the export fails, carry on
-   without it and say so in the report's applications section.
+2. Tom's application tracker comes from the sheet itself: `tools/review_data.py` fetches
+   the Applications tab from the tracker's web app when `TRACKER_TOKEN` is set in the
+   environment. Do not use the Google Drive connector for it. Its download comes back as
+   base64 inside the tool result, which cannot be saved to a file. If
+   `applications_error` in the output says the tracker could not be read, carry on
+   without it and quote that error in the report's applications section. It names the
+   fix: no token set, a wrong token, or a web app still running an older script.
 3. `pip install requests` if needed, then
-   `python tools/review_data.py --tracker /tmp/tracker.csv > /tmp/review.json`
-   (drop `--tracker` if step 2 failed). Every count in the report comes from this file.
-   Do not recount by hand.
+   `python tools/review_data.py > /tmp/review.json`. Every count in the report comes from
+   this file. Do not recount by hand. Never print `TRACKER_TOKEN` or put it in the report.
 4. Read `/tmp/review.json`. Open `docs/jobs.json` or `docs/excluded.json` only to look at
    specific rows the numbers point to; both are large, so query them with a short Python
    snippet rather than reading them whole.

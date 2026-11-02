@@ -34,3 +34,44 @@ def test_interview_rate_counts_only_decided_applications():
     apps = [{"outcome": o, "m": "NL"} for o in ("interview", "rejected", "pending", "pending")]
     t = rd.outcome_table(apps, lambda a: a["m"])["NL"]
     assert t["applied"] == 4 and t["interview_rate"] == 0.5
+
+
+class _Reply:
+    def __init__(self, text, status=200):
+        self.text, self.status_code = text, status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise rd.requests.HTTPError(f"{self.status_code} for url: https://x/exec?token=SECRET")
+
+
+CSV = ("Company,Title,Location,Score,Date Applied,Status,Link,Referral?,Interview Date\r\n"
+       'Acme,"Revenue Operations Manager, EMEA",Netherlands,7.4,9/25,Applied,,,\r\n')
+
+
+def test_the_tracker_comes_from_the_web_app_and_parses():
+    import io
+    seen = {}
+
+    def get(url, params, timeout):
+        seen.update(params)
+        return _Reply(CSV)
+    text = rd.fetch_tracker("https://x/exec", "SECRET", get=get)
+    assert seen == {"action": "applications", "token": "SECRET"}
+    apps = rd.applications(io.StringIO(text), [], TODAY, TODAY.isoformat())
+    assert apps["total"] == 1
+    assert apps["by_market"]["NL"]["applied"] == 1
+
+
+def test_a_tracker_error_is_refused_and_never_carries_the_token():
+    cases = [_Reply('{"ok":false,"error":"bad token"}'),
+             _Reply('{"ok":false,"error":"unknown action"}'),
+             _Reply("<!DOCTYPE html><html>Sign in</html>"),
+             _Reply("", status=403)]
+    for reply in cases:
+        try:
+            rd.fetch_tracker("https://x/exec", "SECRET", get=lambda *a, **k: reply)
+        except ValueError as e:
+            assert "SECRET" not in str(e), str(e)
+        else:
+            raise AssertionError(f"accepted {reply.text!r}")

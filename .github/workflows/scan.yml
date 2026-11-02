@@ -136,6 +136,16 @@ jobs:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python scan.py ${{ inputs.ignore_age && '--ignore-age' || '' }}
+      - name: Retry set-aside LinkedIn rows
+        # A LinkedIn row set aside for want of text is usually a guest-page fetch that was
+        # turned away, and the same page answers a later run. Bounded to the last 3 days
+        # and 10 rows; a recovered row is rescored, so it needs the API key. Failure here
+        # must never cost the scan its commit.
+        if: ${{ !inputs.backfill_jd && steps.recent.outputs.skip != 'true' }}
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scan.py --retry-thin
       - name: Commit results
         run: |
           git config user.name "radar-bot"

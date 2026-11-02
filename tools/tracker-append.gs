@@ -13,10 +13,11 @@
 //
 // A GET with ?action=contacts&token=... answers with the Contacts tab's people who have a
 // Chat Date: the dashboard flags roles at their companies as referral candidates. That
-// list goes only to a browser holding the token, never into the public repo. It is a GET
-// rather than a POST action on purpose: a deployment still running the older version of
-// this file would take a POST it did not understand for an application and add a blank
-// row, where a GET it has no doGet for just fails.
+// list goes only to a browser holding the token, never into the public repo.
+// ?action=applications&token=... answers with the Applications tab as CSV, for the weekly
+// review. Both reads are GETs rather than POST actions on purpose: a deployment still
+// running an older version of this file would take a POST it did not understand for an
+// application and add a blank row, where a GET it has no handler for just fails.
 
 const SHEET_NAME = "Applications";
 const LINK_COL = 7; // G
@@ -85,7 +86,26 @@ function doGet(e) {
   const token = PropertiesService.getScriptProperties().getProperty("TOKEN");
   if (!token || p.token !== token) return reply({ ok: false, error: "bad token" });
   if (p.action === "contacts") return contacts(SpreadsheetApp.getActiveSpreadsheet());
+  if (p.action === "applications") return applications(SpreadsheetApp.getActiveSpreadsheet());
   return reply({ ok: false, error: "unknown action" });
+}
+
+// The whole Applications tab as CSV, for the weekly review (tools/review_data.py). The
+// review used to export it through the Drive connector, which handed it back as base64
+// it had no way to save. Display values, so dates arrive as the sheet shows them ("9/25"),
+// which is what review_data.py's date parsing expects.
+function applications(ss) {
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) return reply({ ok: false, error: "no tab named " + SHEET_NAME });
+  const csv = sheet.getDataRange().getDisplayValues()
+    .map(r => r.map(cell).join(","))
+    .join("\r\n");
+  return ContentService.createTextOutput(csv).setMimeType(ContentService.MimeType.CSV);
+}
+
+function cell(v) {
+  const s = String(v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 // Columns are found by their header text, not position, so inserting a column in the tab

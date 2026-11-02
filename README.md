@@ -262,6 +262,13 @@ fact is missing rather than flattening both into one sentence.
     `scan.py --backfill-jd`, after it has tried to recover their ad. On the current corpus
     that is **62 rows across 45 days** — 34 revopsroles, 16 Adzuna and 12 hiring.cafe, so
     this was never only a revopsroles problem.
+    A set-aside **LinkedIn** row is asked again after every scan for 3 days
+    (`scan.py --retry-thin`, at most 10 rows a run). LinkedIn's guest page turns a runner
+    away some of the time and answers it later, so these rows are usually a refused fetch
+    rather than an empty posting. A row whose text arrives is checked against the two hard
+    disqualifiers and then scored. Adzuna and revopsroles stubs are not retried: the first is
+    the API's 500-character snippet in front of an agency site, the second a line of metadata
+    from the digest email, and asking again gets the same answer.
 13. Two **hard disqualifiers are then read off the full text in code, before either model
     call**: an ad that rules out visa sponsorship, and an ad that requires fluency in a
     language other than English. Both drop the job and log the ad's own sentence to
@@ -1009,6 +1016,17 @@ role from another source or a later run is dropped at the `kill-repeat` stage wi
 second Haiku call, so one kill no longer shows up as six. Freeing an id with `--unkill`
 also removes it from the memory.
 
+**Overruled kills.** Some kills break the screen prompt's own rules, and Haiku makes them
+anyway. `overrule_kill()` in `scan.py` checks three rules against the title and keeps the
+role for the deep scorer when one is broken:
+- a seniority kill, unless the title is an internship, co-op, apprenticeship or graduate scheme
+- a deal desk, quote-to-cash, order management or billing kill on a core RevOps title that
+  does not itself name one of those
+- a quota-carrying kill on a core RevOps title
+
+Every other function kill stands. An overruled kill costs one deep-score call. The status
+line's `screening` entry counts them.
+
 **Restoring specific kills from a branch.** `seen.json` is rewritten by every scan, so an
 edit to it on a branch conflicts with `main`. Instead, list the ids in `unkill.json`. The
 next scan frees them from `seen.json` and `kills.json` before it fetches, then empties the
@@ -1108,6 +1126,15 @@ One-time setup:
 While `TRACKER_URL` is empty, Mark applied does exactly what it did before. After editing
 the script, the live web app keeps running the OLD code until you **Deploy → Manage
 deployments → ✏️ → Version: New version → Deploy**, which also keeps the same URL.
+
+The same web app feeds the **weekly review**. `tools/review_data.py` asks it for the
+Applications tab (`?action=applications`) when `TRACKER_TOKEN` is set, and builds the
+review's outcome numbers from that. To set it up, deploy a new version of the script as
+above, then add `TRACKER_TOKEN` (the same value as the `TOKEN` script property) as an
+environment variable in the review routine's cloud environment. Without it the review
+still runs, but says the tracker could not be read. Before this, the review exported the
+tab through the Google Drive connector. That download comes back as base64 the routine
+cannot save, so outcomes were missing from the 12 and 19 Oct reviews.
 
 "Tracker didn't confirm" means the page got no readable answer, which can happen after the
 row is already in (a script error after the write comes back as an HTML page). Check the

@@ -1292,6 +1292,9 @@ NO_SPONSOR_ADS = [
     "work in the United Kingdom.",
     "We can sponsor visas to Germany; for any other country, you need to have existing "
     "right to work.",
+    # Review of 19 Oct 2026 (TuneCore).
+    "You must have the right to work in the UK otherwise your application will not be "
+    "considered.",
 ]
 
 SPONSOR_OK_ADS = [
@@ -1308,6 +1311,12 @@ SPONSOR_OK_ADS = [
     "EU nationals do not require a work permit.",
     "We support visa applications and relocation.",
     "We only consider candidates with strong stakeholder skills.",
+    # Scrive's requirements bullet (review of 19 Oct 2026). A bare requirement to hold a
+    # permit, the same as "must have the right to work": a role that sponsors still writes it.
+    "EU residency or work permit.",
+    # A US-location clause in a multi-location ad says nothing about the London seat.
+    "Right to Work Requirements for US location: This role is limited to persons with "
+    "indefinite right to work in the United States.",
 ]
 
 LANG_REQUIRED_ADS = [
@@ -3605,6 +3614,74 @@ def test_the_screen_only_kills_deal_desk_when_the_title_says_so():
     p = scan.SCREEN_SYSTEM
     assert "A deal desk kill needs the title to say deal desk" in p
     assert 'NOT "technical" customer success' in p
+
+
+def test_code_overrules_the_kills_the_screen_prompt_forbids():
+    """Real kills from the week after the prompt said all of this (review of 19 Oct 2026)."""
+    overruled = [
+        ("Revenue Operations Specialist", "Deal desk role: title names target function but "
+                                          "posting centers on deal desk dut"),
+        ("Senior Sales Operations Specialist", "Deal desk / order management role; title "
+                                               "names deal desk function."),
+        ("Revenue Operations Associate", "Entry-level graduate scheme role; candidate "
+                                         "targets Manager+ seniority."),
+        ("Sales Strategy & Operations Manager", "Quota-carrying sales experience required as "
+                                                "primary gate."),
+    ]
+    for title, reason in overruled:
+        assert scan.overrule_kill(title, reason), title
+    stands = [
+        ("Billing & Revenue Operations Lead", "Billing operations and revenue recognition"),
+        ("Revenue Enablement Co-op", "Genuine co-op/internship role. Candidate targets "
+                                     "Manager+ level."),
+        ("Sales Strategy Graduate", "Genuine graduate scheme / entry-level internship"),
+        # A function kill on a title that names no target function is the screen's call.
+        ("Head of GTM", "Quota-carrying sales role (close deals yourself)"),
+        ("Bilingual Renewal Coordinator", "Role is contract/order management"),
+        ("Staff Software Engineer, Revenue Systems", "Engineering role."),
+    ]
+    for title, reason in stands:
+        assert not scan.overrule_kill(title, reason), title
+
+
+def _set_aside(id, source, found_at, desc=""):
+    return scan.as_set_aside({"id": id, "source": source, "found_at": found_at,
+                              "url": f"https://example.com/{id}", "description": desc,
+                              "company": "Acme", "title": "Revenue Operations Manager"})
+
+
+def test_retry_thin_asks_again_only_for_recent_set_aside_linkedin_rows():
+    rows = [_set_aside("li-new", "linkedin", "2026-10-04T10:00:00+00:00"),
+            _set_aside("li-old", "linkedin", "2026-09-30T10:00:00+00:00"),
+            _set_aside("az-1", "adzuna", "2026-10-04T10:00:00+00:00"),
+            {"id": "li-scored", "source": "linkedin", "score": 7.0,
+             "found_at": "2026-10-04T10:00:00+00:00", "description": ""}]
+    got = [j["id"] for j in scan.retry_thin_targets(rows, now=_now())]
+    assert got == ["li-new"]
+
+
+def test_retry_thin_stores_the_recovered_posting_and_leaves_misses_alone():
+    import os, tempfile
+    posting = "We are hiring a Revenue Operations Manager. " * 40
+    now = scan.datetime.now(scan.timezone.utc).isoformat()
+    rows = [_set_aside("li-1", "linkedin", now), _set_aside("li-2", "linkedin", now)]
+    fetch = lambda probe: posting if probe["id"] == "li-1" else ""
+    here, key = os.getcwd(), os.environ.pop("ANTHROPIC_API_KEY", None)
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            os.chdir(d); os.makedirs("docs")
+            json.dump(rows, open("docs/jobs.json", "w"))
+            scan.cmd_retry_thin(fetch=fetch)
+            after = {j["id"]: j for j in json.load(open("docs/jobs.json"))}
+        finally:
+            os.chdir(here)
+            if key is not None:
+                os.environ["ANTHROPIC_API_KEY"] = key
+    assert not scan.is_thin(after["li-1"]["description"])
+    assert after["li-1"]["desc_chars"] == len(posting)
+    assert after["li-2"]["description"] == ""
+    # No key, no rescore: still unscored, and still in the set-aside section until scored.
+    assert after["li-1"]["score"] is None
 
 
 def test_the_unkill_queue_lists_only_real_stage1_kill_ids():
