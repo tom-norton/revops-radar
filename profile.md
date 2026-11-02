@@ -49,11 +49,13 @@ he does not have is a role he wastes a week on.
   - **Loss analysis.** Wrote the required Salesforce post-mortem for every full-product
     churn and answered leadership questions on major losses monthly. **Scope boundary: he
     did not own the churn review process.**
-  - **CRM systems.** Salesforce and Gainsight as a power user, not an administrator.
-    Confirmed August 2026: no admin rights in an employer Salesforce instance; changes went
-    through an admin team. Admin-level work exists only in his own HubSpot instance and in
-    Salesforce Admin coursework. **A role requiring hands-on production CRM administration
-    is a genuine gap.**
+  - **CRM systems.** Salesforce and Gainsight as a power user at work. **Salesforce
+    Certified Platform Administrator, passed October 20, 2026.** Confirmed August 2026: no
+    admin rights in an employer Salesforce instance; changes went through an admin team.
+    Admin-level work exists in his own HubSpot instance. A posting that asks for Salesforce
+    Admin certification, or Salesforce admin knowledge, is MET. **A role requiring years of
+    hands-on production CRM administration is still a partial gap: the cert proves the
+    knowledge, not time in a live org.**
 - LexisNexis - Account Manager, Corporate Legal (Jun 2016 - Dec 2021), Dayton OH. $2M ARR
   portfolio, full customer journey. Ran a defined renewal process opening fixed-term
   renewals 3+ months ahead with a business review and converting qualifying auto-renewals
@@ -84,7 +86,8 @@ he does not have is a role he wastes a week on.
   the CV because the subject matter reads as candidate-mode.
 
 ## Skills (for Skills Match, 20%)
-Salesforce (power user; Admin cert in progress, no production admin rights), HubSpot
+Salesforce (Certified Platform Administrator, Oct 2026; power user at work, no
+production admin rights), HubSpot Revenue Operations certification (2025), HubSpot
 (including his own instance, admin-level), Gainsight, Zapier, Clay, Python, Revenue
 Operations, GTM strategy, funnel and capacity modeling, CAC / NRR / retention analytics,
 QBR systems, CRM data architecture, lead scoring and routing, SQL (basic), Excel

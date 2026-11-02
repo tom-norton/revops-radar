@@ -342,6 +342,7 @@ def summary_lines(text, spec):
     heads = {" ".join((s.get("heading") or "").split()).upper()
              for s in (spec.get("sections") or [])}
     heads.add("SKILLS")
+    heads.add("SKILLS & CERTIFICATIONS")
     try:
         start = next(i for i, l in enumerate(lines) if l.upper() == title) + 1
     except StopIteration:
@@ -442,6 +443,9 @@ def assemble_spec(base, track, title, summary, bullets_by_entry, skills):
         "summary": clean_copy(summary),
         "sections": sections,
         "skills": clean_copy(skills or standing_skills(base, track)),
+        # Track-independent and never tailored: a passed certification is a fact, not a
+        # pick, so it rides on every CV from the base file rather than the model's output.
+        "certifications": clean_copy(base.get("certifications") or ""),
     }
 
 
