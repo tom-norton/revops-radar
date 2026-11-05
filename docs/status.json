@@ -1,33 +1,32 @@
 {
- "last_run": "2026-11-05T01:12:57.664655+00:00",
- "new_this_run": 8,
+ "last_run": "2026-11-05T13:13:22.921405+00:00",
+ "new_this_run": 10,
  "sources": {
-  "Adzuna (NL+UK+CA+US)": "ok (raw 1396 -> kept 28) | nl=raw 174, kept 8; gb=raw 502, kept 6; ca=raw 360, kept 14; us=raw 360, kept 0",
+  "Adzuna (NL+UK+CA+US)": "ok (raw 1416 -> kept 31) | nl=raw 180, kept 8; gb=raw 516, kept 10; ca=raw 360, kept 13; us=raw 360, kept 0",
   "Reed (UK)": "ok (raw 100 -> kept 5)",
-  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 345 -> kept 9) | nl=raw 37, kept 1; be=raw 40, kept 1; ie=raw 88, kept 2; ca=raw 100, kept 4; us=raw 80, kept 1",
-  "Company ATS (43 watched)": "ok (raw 6802 -> kept 59)",
-  "hiring.cafe (Apify)": "ok (raw 11 -> kept 8) | revops=charged 1 (new 1, updated 0); cs-eu-ca=charged 6 (new 5, updated 1); cs-nl=charged 0 (new 0, updated 0); us-revops=charged 2 (new 2, updated 0); us-cs=charged 2 (new 2, updated 0)",
+  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 350 -> kept 13) | nl=raw 41, kept 1; be=raw 43, kept 1; ie=raw 86, kept 3; ca=raw 100, kept 7; us=raw 80, kept 1",
+  "Company ATS (43 watched)": "ok (raw 6816 -> kept 60)",
+  "hiring.cafe (Apify)": "ok (raw 6 -> kept 5) | revops=charged 1 (new 1, updated 0); cs-eu-ca=charged 2 (new 1, updated 1); cs-nl=charged 2 (new 2, updated 0); us-revops=charged 1 (new 0, updated 1); us-cs=charged 0 (new 0, updated 0)",
   "LinkedIn": "ok (raw 180 -> kept 47)",
-  "revopsroles.com": "ok (raw 15 -> kept 10) | email1=kept 0; email2=kept 1; email3=kept 2; email4=kept 7; emails=4 emails, 11 row(s) with a salary",
-  "age filter": "dropped 33 older than 7d; 4 had no usable date (kept)",
-  "dedupe": "58 duplicates collapsed (dashboard + this run's fetches)",
-  "remembered kills": "0 re-listing(s) of roles already killed dropped without a screen; 192 kills remembered from the last 14 days",
-  "re-posts": "0 re-post(s) of roles already applied to or hidden dropped; 578 remembered from the last 120 days",
-  "UK sponsor register": "ok - 143071 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-11-04.csv",
+  "revopsroles.com": "ok (raw 21 -> kept 16) | email1=kept 0; email2=kept 1; email3=kept 2; email4=kept 7; email5=kept 6; emails=5 emails, 11 row(s) with a salary",
+  "age filter": "dropped 37 older than 7d; 4 had no usable date (kept)",
+  "dedupe": "66 duplicates collapsed (dashboard + this run's fetches)",
+  "remembered kills": "1 re-listing(s) of roles already killed dropped without a screen; 200 kills remembered from the last 14 days",
+  "re-posts": "2 re-post(s) of roles already applied to or hidden dropped; 578 remembered from the last 120 days",
+  "UK sponsor register": "ok - 143076 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-11-05.csv",
   "NL sponsor register": "ok - 12836 names (IND + override)",
-  "board lookup": "78 rows with no known board, 12 resolved; 1 companies newly cached, 419 known",
-  "apply links": "aggregator only 622, auto-fillable 132, company ATS 225",
-  "screening": "stage1 kept 8 (0 kill(s) overruled), killed 8; stage2 scored 8",
-  "set aside": "1 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
-  "jd rescue": "1 stub row(s) looked for their real posting, 0 recovered",
+  "board lookup": "80 rows with no known board, 12 resolved; 1 companies newly cached, 422 known",
+  "apply links": "aggregator only 621, auto-fillable 133, company ATS 223",
+  "screening": "stage1 kept 14 (0 kill(s) overruled), killed 4; stage2 scored 10",
+  "set aside": "3 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
+  "jd rescue": "4 stub row(s) looked for their real posting, 1 recovered",
   "queue": "empty; every screened role was scored this run",
-  "tokens": "in 61008, out 6988, cache read 67770, written 22590; 7 scored by batch at half price",
-  "dropped": "age 33, dedupe 58, prefilter:location 242, prefilter:title 8432, stage1-kill 8"
+  "tokens": "in 72987, out 11942, cache read 135540, written 22590; 13 scored by batch at half price",
+  "dropped": "age 37, below-visa-floor 1, dedupe 66, eu-remote 3, kill-repeat 1, language-required 1, prefilter:location 248, prefilter:title 8450, repost 2, stage1-kill 4"
  },
  "warnings": [],
  "raw_history": {
   "adzuna:nl": [
-   196,
    12,
    196,
    218,
@@ -56,10 +55,10 @@
    180,
    188,
    191,
-   174
+   174,
+   180
   ],
   "adzuna:gb": [
-   516,
    180,
    514,
    512,
@@ -88,10 +87,10 @@
    501,
    509,
    512,
-   502
+   502,
+   516
   ],
   "adzuna:ca": [
-   360,
    360,
    360,
    360,
@@ -107,6 +106,7 @@
    360,
    360,
    300,
+   360,
    360,
    360,
    360,
@@ -128,7 +128,6 @@
    360,
    360,
    360,
-   360,
    270,
    360,
    360,
@@ -139,6 +138,7 @@
    360,
    360,
    330,
+   360,
    360,
    360,
    360,
@@ -168,8 +168,8 @@
    100,
    100,
    100,
-   100,
    0,
+   100,
    100,
    100,
    100,
@@ -187,7 +187,6 @@
    100
   ],
   "linkedin": [
-   180,
    153,
    150,
    160,
@@ -216,10 +215,10 @@
    202,
    180,
    180,
+   180,
    180
   ],
   "ats": [
-   6744,
    6736,
    6740,
    6736,
@@ -248,10 +247,10 @@
    6778,
    6800,
    6811,
-   6802
+   6802,
+   6816
   ],
   "indeed:nl": [
-   42,
    40,
    39,
    40,
@@ -280,10 +279,10 @@
    45,
    45,
    41,
-   37
+   37,
+   41
   ],
   "indeed:be": [
-   22,
    22,
    22,
    23,
@@ -312,13 +311,13 @@
    41,
    42,
    43,
-   40
+   40,
+   43
   ],
   "indeed:ie": [
    91,
    91,
    91,
-   91,
    90,
    91,
    91,
@@ -344,7 +343,8 @@
    89,
    89,
    89,
-   88
+   88,
+   86
   ],
   "indeed:ca": [
    100,
