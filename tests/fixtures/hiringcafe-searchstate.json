@@ -400,7 +400,7 @@
   "roleTypes": [
    "Individual Contributor"
   ],
-  "maxCompensationLowEnd": "125000",
+  "maxCompensationLowEnd": "100000",
   "seniorityLevel": [
    "Mid Level",
    "Senior Level"
@@ -474,7 +474,7 @@
    0,
    2
   ],
-  "maxCompensationLowEnd": "130000",
+  "maxCompensationLowEnd": "120000",
   "seniorityLevel": [
    "Senior Level"
   ],
@@ -485,5 +485,49 @@
   ],
   "sortBy": "date",
   "jobTitleQuery": "\"Customer success\""
+ },
+ "am-nl": {
+  "locations": [
+   {
+    "id": "1BY1yZQBoEtHp_8UEq3V",
+    "types": [
+     "country"
+    ],
+    "address_components": [
+     {
+      "long_name": "The Netherlands",
+      "short_name": "NL",
+      "types": [
+       "country"
+      ]
+     }
+    ],
+    "formatted_address": "The Netherlands",
+    "population": 17231017,
+    "workplace_types": [
+     "Hybrid",
+     "Onsite",
+     "Field"
+    ],
+    "options": {
+     "flexible_regions": []
+    }
+   }
+  ],
+  "commitmentTypes": [
+   "Full Time"
+  ],
+  "dateFetchedPastNDays": 21,
+  "seniorityLevel": [
+   "Mid Level",
+   "Senior Level"
+  ],
+  "excludedLanguageRequirements": [
+   "dutch",
+   "german",
+   "french"
+  ],
+  "sortBy": "date",
+  "jobTitleQuery": "\"account manager\" OR \"client manager\" OR \"customer manager\""
  }
 }

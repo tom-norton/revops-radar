@@ -16,7 +16,7 @@ more years; an employer letter stating an offer contingent on proving citizenshi
 can expedite it, which is a lighter lift than sponsorship but is discretionary and carries
 no service-level guarantee.
 
-## Experience (for Experience Alignment, 25%)
+## Experience (for Experience Alignment, 30%)
 
 Everything below is scoped to what he can defend in an interview. Where a boundary was
 established in a gap interview it is stated as a boundary, because a role scored on scope
@@ -85,7 +85,7 @@ he does not have is a role he wastes a week on.
   Actions, and Clay waterfall-enrichment lead lists. Evidence of build fluency, kept off
   the CV because the subject matter reads as candidate-mode.
 
-## Skills (for Skills Match, 20%)
+## Skills (for Skills Match, 22%)
 Salesforce (Certified Platform Administrator, Oct 2026; power user at work, no
 production admin rights), HubSpot Revenue Operations certification (2025), HubSpot
 (including his own instance, admin-level), Gainsight, Zapier, Clay, Python, Revenue
@@ -98,7 +98,7 @@ NL/UK/IE and a drilling risk in interviews), Tableau (no artifact exists), dbt, 
 Marketo, CPQ, quote-to-cash tooling. A posting whose hard requirements sit in those is a
 skills miss, not a stretch.
 
-## Seniority fit (15%)
+## Seniority fit (18%)
 Target band: Manager or senior IC (Senior/Lead/Principal). Senior/Principal CSM at
 established companies scores as a primary target, not a fallback.
 
@@ -114,14 +114,17 @@ Director+ / Head of is a stretch for a candidate without dedicated RevOps tenure
 score lower on this dimension, but it is not disqualifying — at a smaller company "Head of
 RevOps" is often a hands-on Manager role with a title attached.
 
-## Domain / industry fit (15%)
+## Domain / industry fit (10%)
 Strongest in B2B SaaS post-sale operations: retention levers, customer health, CS-to-sales
 handoffs, renewal forecasting. His differentiator vs analytics- or sales-background RevOps
 candidates is deep post-sale experience. RevOps / GTM Strategy / Sales Ops / CS Ops are core
 targets. Marketing Ops, Deal Desk, quote-to-cash, billing, pure lifecycle-marketing admin are
-off-target. Prior domain: GRC / compliance software.
+off-target. In the Netherlands only, account management that owns an existing book
+(renewals, retention, expansion) is a legitimate target: it is the work he did for 7.5
+years at LexisNexis. New-logo hunting is off-target everywhere. Prior domain: GRC /
+compliance software.
 
-## Location & visa (15%)
+## Location & visa (12%)
 This dimension is a PREFERENCE ordering over places to live, not a measure of how easy a
 market is to hire into. The two come apart hardest on the US: there is no visa problem
 there at all and Tom still does not want to live there. Never score a market up for being
@@ -143,20 +146,21 @@ these are the facts behind them.
 - Belgium: anywhere in the country. A backup that keeps them in the EU. EU Blue Card salary
   floor (2026) varies by region: ~EUR 56,976 Brussels, ~EUR 63,586 Flanders, ~EUR 68,815
   Wallonia. Score 6.
-- Canada: anywhere in the country, remote or on-site. No sponsorship needed (citizen), but
-  the certificate is unproven and the expedite is discretionary, so this sits below all of
-  Europe. Score 4-5.
 - United States: REMOTE ONLY, anywhere in the country, core RevOps or SENIOR customer
-  success only, and the posting must state a salary. This is a financial-runway backstop
-  and not a destination — Tom and his family do not want to live here — so a US role is
-  only worth taking at pay that is confirmed rather than hoped for, and a US row carrying
-  no published salary is dropped before it is scored. The pay floor depends on the track:
-  USD 125,000 base for a core RevOps title (CS operations included) and USD 130,000 base
-  for a senior customer success title, read against the TOP of the stated band (see Salary
-  handling). Score 2-3, or 4-5 when the employer
-  also posts roles in the Netherlands, Ireland, the UK or Canada, because an internal
-  transfer later is a route abroad without changing employer and sponsorship is a lighter
-  ask once they know you.
+  success only, and the posting must state a salary. Not a destination — Tom and his
+  family would rather live in Europe — but since November 2026 it is a real target rather
+  than a distant backstop: he can start immediately and the family needs income in early
+  2027. A US row carrying no published salary is dropped before it is scored. The pay
+  floor depends on the track: USD 100,000 base for a core RevOps title (CS operations
+  included) and USD 120,000 base for a senior customer success title, read against the
+  TOP of the stated band (see Salary handling). Score 4-5, or 5-6 when the employer also
+  hires in the Netherlands, Ireland or London, because an internal transfer later is a
+  route to Europe without changing employer and sponsorship is a lighter ask once they
+  know you.
+- Canada: anywhere in the country, remote or on-site. No sponsorship needed (citizen), but
+  the certificate is unproven and the expedite is discretionary, and Tom no longer expects
+  that route to work in time. Below the US now. Score 3-4, and only a genuinely strong fit
+  is worth his time.
 
 Reject entirely: Germany, Spain, other UK cities, on-site or hybrid US roles,
 remote-from-anywhere, and remote-EMEA roles.
@@ -183,12 +187,12 @@ that floor is a visa threshold and a role below it is one Tom cannot legally tak
 it is his own floor, because a US role is only worth taking if it pays enough to make
 staying somewhere he does not want to live comfortable for his family, and it depends on
 the track:
-- RevOps track — USD 125,000 base. Any core RevOps title, for example revenue, sales, CS or
+- RevOps track — USD 100,000 base. Any core RevOps title, for example revenue, sales, CS or
   customer success operations, revenue or sales strategy, revenue or sales enablement,
   commercial operations, GTM strategy or operations, sales compensation, territory
   planning. A title that is both customer success and operations ("Customer Success
   Operations Manager") is RevOps.
-- Customer success track — USD 130,000 base. Senior, principal, lead, enterprise or
+- Customer success track — USD 120,000 base. Senior, principal, lead, enterprise or
   strategic customer success, and customer success management roles, when the title is not
   also a RevOps title.
 The floor is checked against the TOP of the stated band, not the bottom or the midpoint: a
@@ -207,15 +211,20 @@ from what you report, not from your own judgment call on whether it's close enou
 salary is NOT stated, do not reject; estimate comp risk from seniority and company and add
 a visible "comp not listed, verify vs floor" flag.
 
-## Career trajectory (10%)
+## Career trajectory (8%)
 Deliberate pivot from post-sale CS/AM into RevOps/GTM strategy, backed by the MBA and the GTM
 projects above. Reward roles that build the RevOps/GTM narrative. A RevOps/GTM/Sales Ops role
-scores higher than a pure lateral CS move, all else equal, EXCEPT that a strong Senior/Principal
-CSM role in the Netherlands is a primary target and should not be penalized as "lateral."
+scores higher than a pure lateral CS move, all else equal, EXCEPT in the Netherlands: a
+Customer Success Manager role at any seniority, or an Account Manager role that owns renewals
+and expansion of an existing book, is a primary target there and is not penalized as
+"lateral." Getting into the country is the goal; the pivot can continue from inside it.
 
 ## CSM track weighting (important)
-- Netherlands: Senior/Principal CSM at an established company = primary target, score on par
-  with RevOps roles.
+- Netherlands: CSM at an established company = primary target, score on par with RevOps
+  roles. Account management that owns an existing book (renewals, retention, expansion)
+  is also in scope here and only here; new-logo hunting is not. Many Dutch AM roles pay
+  much of their compensation as commission, so a stated base under the HSM floor drops
+  the role even when total pay would clear it.
 - UK (London), Ireland, Belgium and Canada: a CSM role only scores highly if the company
   is a genuine standout (tier-1 SaaS, strong brand, clear sponsor) or the fit is unusually
   strong. Otherwise keep CSM in these markets modest, because the pivot and relocation bar

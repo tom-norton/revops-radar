@@ -343,8 +343,9 @@ fact is missing rather than flattening both into one sentence.
     scorer scores properly. A wrong keep costs one cheap call; a wrong kill loses a role Tom
     never sees.
 15. **Stage 2 — Claude Opus** scores the keepers on the weighted rubric from
-    `profile.md` (Experience 25% / Skills 20% / Seniority 15% / Domain 15% / Location+Visa 15% /
-    Trajectory 10%) and reports the facts it can only get by reading the posting: stated
+    `profile.md` (Experience 30% / Skills 22% / Seniority 18% / Domain 10% / Location+Visa 12% /
+    Trajectory 8%, since Nov 2026; it was 25/20/15/15/15/10, and the shift moves the blend
+    from 60% fit / 40% preference to 70/30) and reports the facts it can only get by reading the posting: stated
     salary, whether another language is a hard requirement, whether the function is on
     target, whether the employer is a standout. The model is Opus 5.5 at `medium` effort,
     and the head of the queue goes out as one Message Batch at half price (after one live
@@ -368,16 +369,16 @@ fact is missing rather than flattening both into one sentence.
     happens inside it. A band is disqualifying only when **all** of it is below the floor —
     then no amount of negotiating reaches it, and that is the fact worth acting on. A band
     that straddles the floor is kept and **flagged** on the card (`band 110000-130000 USD
-    starts below your 125000 USD RevOps floor`), so Tom sees the risk instead of never
+    starts below your 100000 USD RevOps floor`), so Tom sees the risk instead of never
     seeing the role. Opus now reports `salary_max_base` alongside `salary_min_base` for
     this; a row scored before that field existed falls back to its bottom figure, which
     reproduces the old answer exactly rather than reading a missing top as zero and
     disqualifying the whole stored corpus in one pass.
     **The US floor depends on the track** (`COMP_FLOORS`, resolved from the title by
-    `floor_for()`): USD 125,000 for a RevOps title (anything `REVOPS_CORE` matches, CS
-    operations included) and USD 130,000 for senior customer success. Both are read against
-    the top of the band; 125K there keeps the midpoints of the bands it admits near the
-    ~115K realistic RevOps target.
+    `floor_for()`): USD 100,000 for a RevOps title (anything `REVOPS_CORE` matches, CS
+    operations included) and USD 120,000 for senior customer success. Both are read against
+    the top of the band. They were 125K and 130K until Nov 2026, lowered because runway is
+    getting short and a well-fitting US role is worth seeing at lower pay.
 17. **The score itself is computed in Python**, not by the model, for every role that
     survives to be scored — `weighted_total()` does the arithmetic, so the number is
     reproducible from the six dimension scores instead of being whatever total the model

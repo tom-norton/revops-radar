@@ -58,7 +58,7 @@ def test_weighted_total():
     assert sum(w for _, _, w, _ in scan.RUBRIC) == 100
     # a single dimension contributes exactly its weight
     assert scan.weighted_total(dims(experience=10, skills=0, seniority=0, domain=0,
-                                    location_visa=0, trajectory=0)) == 2.5
+                                    location_visa=0, trajectory=0)) == 3.0
     # missing keys are treated as 0 rather than blowing up
     assert scan.weighted_total({}) == 0.0
     # out-of-range input still clamps to the 0-10 scale
@@ -844,12 +844,11 @@ def test_only_the_wanted_markets_ring_the_phone():
     he reads when he chooses. A US role can score 8 on the strength of the role itself
     while still being somewhere he does not want to move, so it stays on the dashboard and
     does not ring."""
-    assert scan.NTFY_MAX_TIER == 2
-    ring = {scan.MARKET_ALIASES.get(m, m)
-            for m, t in scan.MARKET_TIER.items() if t <= scan.NTFY_MAX_TIER}
-    assert ring == {"NL", "IE", "UK-London"}
-    for market in ("CA", "US-Remote", "BE"):
-        assert scan.market_tier(market) > scan.NTFY_MAX_TIER, market
+    # Since Nov 2026 every market rings: with runway short, a strong US or Canadian fit
+    # is a role Tom needs to see the same day. The 7.5 threshold is the bar.
+    assert scan.NTFY_MAX_TIER == 4
+    for market in ("NL", "IE", "UK-London", "BE", "US-Remote", "CA"):
+        assert scan.market_tier(market) <= scan.NTFY_MAX_TIER, market
 
 
 def test_shot_and_want_split_the_same_six_numbers():
@@ -867,8 +866,8 @@ def test_shot_and_want_split_the_same_six_numbers():
                   trajectory=9)
     shot, want = scan.shot_want(stripe)
     assert shot < want, (shot, want)
-    assert shot == round((5 * 25 + 4 * 20 + 8 * 15) / 60, 1)
-    assert want == round((9 * 15 + 8 * 15 + 9 * 10) / 40, 1)
+    assert shot == round((5 * 30 + 4 * 22 + 8 * 18) / 70, 1)
+    assert want == round((9 * 10 + 8 * 12 + 9 * 8) / 30, 1)
     # a row with no dimensions was never scored; 0.0 would read as a judgement
     assert scan.shot_want({}) == (None, None)
     assert scan.shot_want(None) == (None, None)
@@ -1711,8 +1710,8 @@ def test_a_remote_role_scoped_to_another_region_is_not_a_us_remote_role():
 def test_market_tier_orders_the_six_markets_and_fails_safe():
     assert scan.market_tier("NL") == 1
     assert scan.market_tier("IE") == scan.market_tier("UK-London") == 2
-    assert scan.market_tier("BE") == scan.market_tier("CA") == 3
-    assert scan.market_tier("US-Remote") == 4
+    assert scan.market_tier("BE") == scan.market_tier("US-Remote") == 3
+    assert scan.market_tier("CA") == 4
     # a market the table forgot sorts last, never first
     assert scan.market_tier("XX") == scan.market_tier("") == scan.TIER_UNKNOWN
     assert scan.TIER_UNKNOWN > max(scan.MARKET_TIER.values())
@@ -1790,7 +1789,7 @@ def test_us_comp_floor_drops_a_role_only_on_a_figure_stated_in_the_ad():
     visa floors: a real, market-matched, stated figure."""
     cs = {"market": "US-Remote", "title": "Senior Customer Success Manager"}
     stage, reason = scan.deep_score_disqualifier(cs, _obs(True, 110000, "USD"))
-    assert stage == "below-comp-floor" and "130000 USD CS floor" in reason, reason
+    assert stage == "below-comp-floor" and "120000 USD CS floor" in reason, reason
     for o in [_obs(True, 130000, "USD"), _obs(True, 145000, "USD")]:
         assert scan.deep_score_disqualifier(cs, o) == (None, None)
     # A US row that states nothing is unconfirmed pay, and that is a drop rather than a
@@ -1827,8 +1826,8 @@ def test_a_straddling_band_is_kept_but_flagged():
     """Kept is not the same as silent. The bottom being under the floor is a real risk and
     Tom is the one who decides on it, so it has to be on the card."""
     flags = scan.score_flags({"market": "US-Remote", "title": "Revenue Operations Manager"},
-                             _obs(True, 120000, "USD", 150000))
-    assert any("starts below your" in f and "125000 USD RevOps floor" in f
+                             _obs(True, 90000, "USD", 120000))
+    assert any("starts below your" in f and "100000 USD RevOps floor" in f
                for f in flags), flags
     # A band clearing the floor outright says nothing.
     clear = scan.score_flags({"market": "US-Remote", "title": "Revenue Operations Manager"},
@@ -1889,30 +1888,30 @@ def test_floor_for_reports_which_kind_of_floor_a_market_has():
     # a visa floor has no tracks, so the title changes nothing
     assert scan.floor_for("NL", "Revenue Operations Manager") == (71304, "EUR", "visa", "")
     assert scan.floor_for("US-Remote", "Revenue Operations Manager") == \
-        (125000, "USD", "comp", "RevOps")
+        (100000, "USD", "comp", "RevOps")
     assert scan.floor_for("US-Remote", "Senior Customer Success Manager") == \
-        (130000, "USD", "comp", "CS")
+        (120000, "USD", "comp", "CS")
     assert scan.floor_for("") == (0, "", "", "")
     # the two tables must not both claim a market, or the drop would be mislabelled
     assert not (set(scan.VISA_FLOORS) & set(scan.COMP_FLOORS))
 
 
 def test_floor_for_resolves_each_us_track_from_the_title():
-    """RevOps 125K, senior CS 130K, both read against the top of the band."""
+    """RevOps 100K, senior CS 120K, both read against the top of the band."""
     for title in ["Revenue Operations Manager", "Senior Sales Operations Manager",
                   "GTM Strategy Lead", "Sales Enablement Manager"]:
-        assert scan.floor_for("US-Remote", title)[:2] == (125000, "USD"), title
+        assert scan.floor_for("US-Remote", title)[:2] == (100000, "USD"), title
         assert scan.comp_track(title) == "revops", title
     for title in ["Senior Customer Success Manager", "Principal Customer Success Manager",
                   "Enterprise Customer Success Lead"]:
-        assert scan.floor_for("US-Remote", title)[:2] == (130000, "USD"), title
+        assert scan.floor_for("US-Remote", title)[:2] == (120000, "USD"), title
         assert scan.comp_track(title) == "cs", title
     # A title matching neither gate never reaches the floor in practice (prefilter drops
     # it), but if one does it gets the stricter CS floor, not the lenient one.
     assert not scan.REVOPS_CORE.search("Account Executive")
     assert not scan.SENIOR_CS.search("Account Executive")
-    assert scan.floor_for("US-Remote", "Account Executive")[:2] == (130000, "USD")
-    assert scan.floor_for("US-Remote")[:2] == (130000, "USD")
+    assert scan.floor_for("US-Remote", "Account Executive")[:2] == (120000, "USD")
+    assert scan.floor_for("US-Remote")[:2] == (120000, "USD")
 
 
 def test_customer_success_operations_is_held_to_the_revops_floor():
@@ -1920,51 +1919,51 @@ def test_customer_success_operations_is_held_to_the_revops_floor():
     first -- so it is RevOps, not held to the higher CS floor."""
     title = "Customer Success Operations Manager"
     assert scan.REVOPS_CORE.search(title)
-    assert scan.floor_for("US-Remote", title) == (125000, "USD", "comp", "RevOps")
-    # 110000-127000 would be dropped against the CS floor; against RevOps it is kept.
+    assert scan.floor_for("US-Remote", title) == (100000, "USD", "comp", "RevOps")
+    # 95000-115000 would be dropped against the CS floor; against RevOps it is kept.
     job = {"market": "US-Remote", "title": title}
-    assert scan.deep_score_disqualifier(job, _obs(True, 110000, "USD", 127000)) == (None, None)
+    assert scan.deep_score_disqualifier(job, _obs(True, 95000, "USD", 115000)) == (None, None)
     # A title matching BOTH gates takes the RevOps floor, because REVOPS_CORE goes first.
     both = "Senior Customer Success Operations Manager"
     assert scan.REVOPS_CORE.search(both) and scan.SENIOR_CS.search(both)
-    assert scan.floor_for("US-Remote", both)[:2] == (125000, "USD")
+    assert scan.floor_for("US-Remote", both)[:2] == (100000, "USD")
 
 
-def test_a_revops_band_straddling_125000_is_kept_and_flagged():
+def test_a_revops_band_straddling_100000_is_kept_and_flagged():
     job = {"market": "US-Remote", "title": "Revenue Operations Manager"}
-    obs = _obs(True, 110000, "USD", 130000)
+    obs = _obs(True, 90000, "USD", 110000)
     assert scan.deep_score_disqualifier(job, obs) == (None, None)
     flags = scan.score_flags(job, obs)
-    assert ("band 110000-130000 USD starts below your 125000 USD RevOps floor -- only the "
+    assert ("band 90000-110000 USD starts below your 100000 USD RevOps floor -- only the "
             "top half clears it") in flags, flags
 
 
-def test_a_revops_band_entirely_below_125000_is_dropped():
+def test_a_revops_band_entirely_below_100000_is_dropped():
     job = {"market": "US-Remote", "title": "Revenue Operations Manager"}
-    stage, reason = scan.deep_score_disqualifier(job, _obs(True, 100000, "USD", 120000))
+    stage, reason = scan.deep_score_disqualifier(job, _obs(True, 80000, "USD", 95000))
     assert stage == "below-comp-floor", stage
-    assert reason == ("stated salary 100000-120000 USD entirely below the 125000 USD RevOps "
+    assert reason == ("stated salary 80000-95000 USD entirely below the 100000 USD RevOps "
                       "floor for taking a US-Remote role at all"), reason
 
 
-def test_a_senior_cs_band_topping_out_below_130000_is_dropped():
-    """128K clears the RevOps floor but not the CS one, so the track decides."""
+def test_a_senior_cs_band_topping_out_below_120000_is_dropped():
+    """118K clears the RevOps floor but not the CS one, so the track decides."""
     job = {"market": "US-Remote", "title": "Senior Customer Success Manager"}
-    stage, reason = scan.deep_score_disqualifier(job, _obs(True, 110000, "USD", 128000))
+    stage, reason = scan.deep_score_disqualifier(job, _obs(True, 100000, "USD", 118000))
     assert stage == "below-comp-floor", stage
-    assert "130000 USD CS floor" in reason, reason
+    assert "120000 USD CS floor" in reason, reason
 
 
 def test_an_unstated_us_salary_names_the_track_floor():
     ad = "No pay here."
-    assert "125000 USD RevOps floor" in scan.us_comp_unstated(
+    assert "100000 USD RevOps floor" in scan.us_comp_unstated(
         {"market": "US-Remote", "title": "Revenue Operations Manager", "description": ad})
-    assert "130000 USD CS floor" in scan.us_comp_unstated(
+    assert "120000 USD CS floor" in scan.us_comp_unstated(
         {"market": "US-Remote", "title": "Senior Customer Success Manager",
          "description": ad})
     _stage, reason = scan.deep_score_disqualifier(
         {"market": "US-Remote", "title": "Revenue Operations Manager"}, _obs(False, 0, ""))
-    assert "125000 USD RevOps floor" in reason, reason
+    assert "100000 USD RevOps floor" in reason, reason
 
 
 def test_every_drop_stage_the_floor_check_emits_has_a_retention_budget():
@@ -2046,8 +2045,8 @@ def test_the_queue_spends_the_budget_in_market_order():
     order = _order(jobs)
     assert order[0] == "nl"
     assert set(order[1:3]) == {"ie", "uk-london"}
-    assert set(order[3:5]) == {"be", "ca"}
-    assert order[5] == "us-remote"
+    assert set(order[3:5]) == {"be", "us-remote"}
+    assert order[5] == "ca"
 
 
 def test_a_repeatedly_deferred_role_escalates_past_fresh_arrivals():
@@ -3694,3 +3693,23 @@ def test_the_unkill_queue_lists_only_real_stage1_kill_ids():
 
 if __name__ == "__main__":
     sys.exit(_run())
+
+
+def test_nl_admits_account_management_that_owns_a_book():
+    """Nov 2026: in the Netherlands only, an Account Manager title is a target, because
+    getting into the country is the goal and Tom ran exactly this book at LexisNexis."""
+    for t in ["Account Manager", "Senior Account Manager, Enterprise",
+              "Strategic Account Manager", "Client Manager", "Customer Manager"]:
+        assert scan.prefilter(t, "Amsterdam", "nl") is None, t
+        # ...and nowhere else
+        assert scan.prefilter(t, "London", "gb") is not None, t
+        assert scan.prefilter(t, "Dublin", "ie") is not None, t
+
+
+def test_nl_account_management_never_admits_hunter_or_technical_titles():
+    for t in ["New Business Account Manager", "Account Manager - New Business",
+              "Technical Account Manager", "Account Manager - Sales",
+              "Inside Sales Account Manager", "Business Development Account Manager"]:
+        assert scan.prefilter(t, "Amsterdam", "nl") is not None, t
+    # a CS title is never caught by the hunter rule
+    assert scan.prefilter("Customer Success Manager", "Amsterdam", "nl") is None

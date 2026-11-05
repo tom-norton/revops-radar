@@ -203,6 +203,23 @@ INCLUDE_TITLE = re.compile(
 # asymmetry into the deep score, and score_flags() notes it on the row.
 CSM_ANY = re.compile(r"customer success", re.I)
 
+# Account management that owns an existing book -- renewals, retention, expansion -- is a
+# target in the Netherlands only (Nov 2026). Getting into the country is the goal, and Tom's
+# 7.5 years as a LexisNexis Account Manager ran exactly this book. Like CSM_ANY it is
+# market-conditional in prefilter(), so INCLUDE_TITLE still drops "Strategic Account
+# Manager" everywhere else.
+NL_ACCOUNT_MGMT = re.compile(
+    r"\baccount manag(?:er|ement)\b|\bclient manag(?:er|ement)\b"
+    r"|\bcustomer (?:account )?manager\b", re.I)
+# New-logo hunting is the work Tom left account management to get away from, and a
+# technical account manager is a support-engineering role. Both stay out even in the NL.
+# The model screen and the deep scorer still read the posting for hunter duties hidden
+# under a neutral title; this only catches the titles that say so.
+NL_AM_HUNTER = re.compile(
+    r"new business|business development|hunter|new logo|acquisition|\binside sales\b"
+    r"|\bfield sales\b|\bsales account manager\b|account manager[ ,-]+sales\b"
+    r"|technical account|\bTAM\b", re.I)
+
 # Customer success WITH a seniority qualifier. These are the same clauses INCLUDE_TITLE
 # already carries; named separately so the US gate can admit senior CS without admitting
 # the plain title, and so the two cannot silently diverge -- a test asserts everything
@@ -472,11 +489,11 @@ CLAUDE_ATTEMPTS = 3           # per call, with exponential backoff on 429/5xx/ti
 
 NTFY_TOPIC = "tom-revops-radar-c16aabb2"   # push notifications for strong matches (ntfy.sh)
 NTFY_SCORE_THRESHOLD = 7.5
-# Only the markets Tom actually wants buzz his phone. A US role can score 8 on the strength
-# of the role itself while still being a place he does not want to move to, and a push
-# notification is a claim on his attention right now rather than an entry on a list he
-# reads when he chooses. Canada and the US stay on the dashboard; they just do not ring.
-NTFY_MAX_TIER = 2
+# Every market rings now (Nov 2026). It used to be NL, IE and London only, on the grounds
+# that a US role could score 8 while still being somewhere Tom does not want to move. With
+# runway short, a strong US fit is exactly the role he needs to see the same day, and the
+# 7.5 threshold is already the bar.
+NTFY_MAX_TIER = 4
 KEEP_DAYS = 45
 # How far back a row is worth a board lookup. It used to match MAX_POST_AGE_DAYS exactly,
 # on the reasoning that a row he cannot see is a row whose board nobody is waiting to
@@ -547,17 +564,18 @@ VISA_FLOORS = {
 # Canada has no entry, deliberately: no visa floor applies (citizen) and he has set no comp
 # floor for it.
 #
-# The US floor depends on the track, because the two US tracks pay differently. A realistic
-# RevOps target is around 115K base, and since the floor is read against the TOP of the band
-# (salary_floor_flag), a 125K floor keeps the band midpoints it admits near 115K. Senior CS
-# stays at 130K. The track comes from the title -- see comp_track().
+# The US floor depends on the track, because the two US tracks pay differently. Lowered in
+# Nov 2026 from 125K/130K to 100K/120K, at Tom's direction: runway is getting short, and a
+# well-fitting US role is now worth seeing at pay he would previously have skipped. Both
+# are still read against the TOP of the band (salary_floor_flag). The track comes from the
+# title -- see comp_track().
 COMP_FLOORS = {
     "US-Remote": {
-        "revops": (125000, "USD"),
-        "cs": (130000, "USD"),
+        "revops": (100000, "USD"),
+        "cs": (120000, "USD"),
     },
 }
-# How a track's floor is named in a drop reason or a flag: "your 125000 USD RevOps floor".
+# How a track's floor is named in a drop reason or a flag: "your 100000 USD RevOps floor".
 TRACK_LABELS = {"revops": "RevOps", "cs": "CS"}
 
 
@@ -599,7 +617,7 @@ def floor_for(market, title=""):
 
 
 def floor_text(floor, cur, label):
-    """"125000 USD RevOps floor" for a track floor, "71304 EUR floor" for one without."""
+    """"100000 USD RevOps floor" for a track floor, "71304 EUR floor" for one without."""
     return f"{floor} {cur} {label} floor" if label else f"{floor} {cur} floor"
 
 # ---------------------------------------------------------------- hard disqualifiers
@@ -815,13 +833,13 @@ def load_profile():
 # skill's "Evaluate" guidance, passed to the model so each dimension is judged on the same
 # criteria the skill uses rather than on the label alone.
 RUBRIC = [
-    ("experience", "Experience Alignment", 25,
+    ("experience", "Experience Alignment", 30,
      "11 years B2B SaaS (CSM + AM) vs the requirements. Distinguish hard prerequisite gaps "
      "from soft gaps that the adjacent experience plus the MBA cover."),
-    ("skills", "Skills Match", 20,
+    ("skills", "Skills Match", 22,
      "Judge required tools/certs (Salesforce, SQL, BI) and functional skills (territory "
      "planning, quota modelling, pipeline analysis) separately."),
-    ("seniority", "Seniority Fit", 15,
+    ("seniority", "Seniority Fit", 18,
      "Manager is the target zone for this pivot (MBA + 11 yrs adjacent SaaS). Too senior "
      "(Director/Head of, or 10+ years of dedicated RevOps required) penalises hard. Senior "
      "Manager fits only with a referral or when the posting explicitly welcomes adjacent "
@@ -837,11 +855,11 @@ RUBRIC = [
      "never inferred from the title noun. Penalise the level further only when the posting "
      "itself reads junior: 0-3 years wanted, execution-only or admin duties, or reporting into "
      "a Manager with no ownership."),
-    ("domain", "Domain / Industry Fit", 15,
+    ("domain", "Domain / Industry Fit", 10,
      "B2B SaaS or tech is strong (8-10). GRC/compliance/legal/regulatory adds a familiarity "
      "bonus but is not required for a high score. Non-tech, non-SaaS (manufacturing, retail, "
      "government) is weaker (4-6)."),
-    ("location_visa", "Location & Visa", 15,
+    ("location_visa", "Location & Visa", 12,
      "This dimension is Tom's PREFERENCE ordering over places to live, not a measure of how "
      "easy a market is to get hired in. Those two come apart hardest on the US, where he has "
      "no visa problem at all and still does not want to live there. Do not score a market up "
@@ -857,22 +875,25 @@ RUBRIC = [
      "  * UK-London: 7-8. More expensive than Ireland and they would rather live in Ireland, "
      "but London comp is strong enough to make it worth more in practice.\n"
      "  * Belgium: 6. A backup that keeps them in the EU.\n"
-     "  * Canada: 4-5. Tom is a Canadian citizen by descent but holds no certificate yet, so "
-     "the employer lift is a letter rather than visa sponsorship -- genuinely lighter than "
-     "Europe -- against an unproven timeline and a discretionary expedite with no fallback "
-     "if it is refused. Use 5 when the employer is large enough to absorb a delayed start or "
-     "the posting signals a flexible start date; 4 when it signals urgency (immediate start, "
-     "backfill, ASAP).\n"
-     "  * US: 2-3. A financial-runway backstop, not a destination. Scoring it higher for "
-     "being frictionless is exactly the error to avoid.\n"
-     "  * US where the job details show a Transfer field naming NL, IE, UK or CA: 4-5. An "
-     "internal move later is a route abroad without changing employer, and sponsorship is a "
-     "lighter ask once they know you. Still hard, but strictly better than a US-only "
-     "employer."),
-    ("trajectory", "Career Trajectory", 10,
+     "  * US: 4-5. Not where Tom wants to live, but he can start immediately and the family "
+     "needs income in early 2027, so a well-fitting US role now outranks Canada. Use 5 when "
+     "the stated band clears his floor comfortably, 4 when it straddles it.\n"
+     "  * US where the job details show a Transfer field naming NL, IE, UK or CA, or the "
+     "employer visibly hires in the Netherlands, Ireland or London: 5-6. An internal move "
+     "later is a route to Europe without changing employer, and sponsorship is a lighter "
+     "ask once they know you.\n"
+     "  * Canada: 3-4. Tom is a Canadian citizen by descent but holds no certificate yet, so "
+     "the employer lift is a letter against an unproven timeline and a discretionary "
+     "expedite with no fallback if it is refused. He no longer expects that route to work "
+     "in time. Use 4 when the employer is large enough to absorb a delayed start or the "
+     "posting signals a flexible start date; 3 when it signals urgency (immediate start, "
+     "backfill, ASAP)."),
+    ("trajectory", "Career Trajectory", 8,
      "Does the role advance the RevOps/GTM pivot? Pure CS maintenance is a penalty -- except "
-     "that a strong Senior/Principal CSM role in the Netherlands is a primary target and is "
-     "not penalised as lateral."),
+     "in the Netherlands, where a Customer Success Manager role at any seniority, or an "
+     "Account Manager role that owns renewals and expansion of an existing book (never "
+     "new-logo hunting), is a primary target and is not penalised as lateral: getting into "
+     "the country is the goal, and the pivot can continue from inside it."),
 ]
 RUBRIC_KEYS = [k for k, _, _, _ in RUBRIC]
 
@@ -928,8 +949,12 @@ def weighted_total(dims):
 # call is made -- the weights are the rubric's own, renormalised within each half -- which
 # is why every row already scored gets a Shot and a Want the moment this ships.
 #
-#   Shot  = can I get the interview   (experience 25, skills 20, seniority 15)
-#   Want  = do I want this role       (domain 15, location 15, trajectory 10)
+#   Shot  = can I get the interview   (experience 30, skills 22, seniority 18)
+#   Want  = do I want this role       (domain 10, location 12, trajectory 8)
+#
+# Shot carries 70% of the blend and Want 30% (it was 60/40 until Nov 2026). Seven months
+# of applying produced four interviews, and the pipeline now needs volume where Tom is
+# likely to clear the screen more than it needs to rank roles by how much he wants them.
 SHOT_DIMS = ("experience", "skills", "seniority")
 WANT_DIMS = ("domain", "location_visa", "trajectory")
 
@@ -1307,6 +1332,7 @@ IN SCOPE - never kill these on function. A title filter in code has already deci
 - Revenue analytics, sales/incentive compensation, quota and territory design
 - Renewals and renewal management, sales enablement, revenue enablement
 - Senior / Principal / Enterprise / Strategic Customer Success, and Customer Success Manager at a B2B company, technical or not
+- In the Netherlands only: Account Manager, Client Manager or Customer Manager roles that own an existing customer book (renewals, retention, upsell and expansion). Kill one only when the posting is plainly new-logo hunting (prospecting, cold outreach, new business targets) -- that is quota-carrying sales.
 
 Renewals is NOT quota-carrying sales for this purpose. Enablement is NOT marketing-ops admin. Systems ownership is NOT engineering. Kill one of these only when the work itself is plainly not commercial operations -- a supermarket's "Sales Operations Manager" running store rotas, for instance. The employer being outside B2B tech is not enough on its own; the work is what decides.
 
@@ -1337,7 +1363,7 @@ Thin evidence: some rows arrive with no retrievable posting text at all, and tho
 A title band (analyst / specialist / director_plus / normal) is given to you in the job details. It is a signal to read the posting carefully, not a verdict. Do not mark a role down merely because its title contains "Analyst", "Specialist", "Associate" or "Coordinator" -- score what the posting actually describes.
 
 Alongside the dimensions, report these observations from the posting:
-- function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
+- function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those, including a Netherlands account management role that owns renewals and expansion of an existing book. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
 - salary_stated / salary_min_base / salary_max_base / salary_currency: the annual base salary the posting states, as the BOTTOM and the TOP of its range, with the ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. A single figure rather than a range goes in both. If no salary is stated, set salary_stated false, both numbers 0, salary_currency "". Report only figures the POSTING states; never carry over an estimate from a job board. Reporting both halves matters: a band is only disqualifying when ALL of it is below the market's floor, so a top-of-band you leave at 0 throws away a role that pays fine at the top -- see above.
@@ -2249,7 +2275,9 @@ def market_of(country, location):
 # is a financial-runway backstop Tom does not want to move to, so it sits alone at the
 # bottom. Tiers decide dashboard order and who gets first claim on the deep-scoring budget;
 # the fit score itself is untouched by them.
-MARKET_TIER = {"NL": 1, "IE": 2, "UK-London": 2, "BE": 3, "CA": 3, "US-Remote": 4,
+# US above Canada since Nov 2026: Tom can start a US role immediately, and the Canadian
+# citizenship route is no longer expected to land in time.
+MARKET_TIER = {"NL": 1, "IE": 2, "UK-London": 2, "BE": 3, "US-Remote": 3, "CA": 4,
                # An alias, not a seventh market. Ireland was Dublin-only until it widened
                # to the whole country, and 62 rows scored before that still say
                # "IE-Dublin". They are Irish rows and belong in tier 2 with the rest.
@@ -2423,8 +2451,12 @@ def prefilter(title, location, country=""):
         # renewals, generic business operations, plain CSM -- stays out.
         if not (REVOPS_CORE.search(t) or SENIOR_CS.search(t)):
             return "title: not core RevOps or senior CS (US uses the narrow gates)"
-    elif not (INCLUDE_TITLE.search(t) or (market == "NL" and CSM_ANY.search(t))):
+    elif not (INCLUDE_TITLE.search(t)
+              or (market == "NL" and (CSM_ANY.search(t) or NL_ACCOUNT_MGMT.search(t)))):
         return "title: no target-function keyword"
+    if (market == "NL" and NL_ACCOUNT_MGMT.search(t) and not INCLUDE_TITLE.search(t)
+            and not CSM_ANY.search(t) and NL_AM_HUNTER.search(t)):
+        return "title: new-business or technical account management"
     m = EXCLUDE_TITLE.search(t)
     if m:
         return f"title: excluded term '{m.group(0).strip()}'"
@@ -3709,10 +3741,21 @@ APIFY_HIRINGCAFE_SEARCHES = {
         "sortBy": "date",
         "jobTitleQuery": '"Customer success"',
     },
+    # Account management, Netherlands only (Nov 2026). Renewal and expansion books; the
+    # hunter titles die in prefilter() and hunter postings at the screen.
+    "am-nl": {
+        "locations": [_hc_nl(("Hybrid", "Onsite", "Field"))],
+        "commitmentTypes": ["Full Time"],
+        "dateFetchedPastNDays": 21,
+        "seniorityLevel": ["Mid Level", "Senior Level"],
+        "excludedLanguageRequirements": ["dutch", "german", "french"],
+        "sortBy": "date",
+        "jobTitleQuery": '"account manager" OR "client manager" OR "customer manager"',
+    },
     # US RevOps: remote, transparent salaries only, and a compensation bound.
     #
     # maxCompensationLowEnd is Tom's own setting, kept at his explicit direction, and its
-    # value now mirrors the track floors: 125000 here for RevOps, 130000 on us-cs below.
+    # value now mirrors the track floors: 100000 here for RevOps, 120000 on us-cs below.
     # It is INERT, whichever way hiring.cafe reads it: the US rows this search returns
     # arrive with bottom-of-band figures from 95k to 200k, so it is bounding nothing. What
     # actually holds the US floor is code -- COMP_FLOORS, judged against the TOP of the
@@ -3724,7 +3767,7 @@ APIFY_HIRINGCAFE_SEARCHES = {
         "dateFetchedPastNDays": 14,
         "restrictJobsToTransparentSalaries": True,
         "roleTypes": ["Individual Contributor"],
-        "maxCompensationLowEnd": "125000",
+        "maxCompensationLowEnd": "100000",
         "seniorityLevel": ["Mid Level", "Senior Level"],
         "excludedLanguageRequirements": ["dutch", "german", "spanish", "french"],
         "sortBy": "date",
@@ -3738,7 +3781,7 @@ APIFY_HIRINGCAFE_SEARCHES = {
         "dateFetchedPastNDays": 21,
         "restrictJobsToTransparentSalaries": True,
         "managementYoeRange": [0, 2],
-        "maxCompensationLowEnd": "130000",
+        "maxCompensationLowEnd": "120000",
         "seniorityLevel": ["Senior Level"],
         "excludedLanguageRequirements": ["dutch", "german", "french"],
         "sortBy": "date",
