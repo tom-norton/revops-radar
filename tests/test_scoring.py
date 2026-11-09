@@ -3613,6 +3613,8 @@ def test_the_screen_only_kills_deal_desk_when_the_title_says_so():
     p = scan.SCREEN_SYSTEM
     assert "A deal desk kill needs the title to say deal desk" in p
     assert 'NOT "technical" customer success' in p
+    assert "NOT a retention target" in p
+    assert 'NOT "function unclear"' in p
 
 
 def test_code_overrules_the_kills_the_screen_prompt_forbids():
@@ -3626,6 +3628,10 @@ def test_code_overrules_the_kills_the_screen_prompt_forbids():
                                          "targets Manager+ seniority."),
         ("Sales Strategy & Operations Manager", "Quota-carrying sales experience required as "
                                                 "primary gate."),
+        # Review of 9 Nov 2026.
+        ("Senior Customer Success Manager", "quota-carrying sales: drives net revenue "
+                                            "retention through upsell"),
+        ("Senior Revenue Operations Analyst", "function unclear: advertising services"),
     ]
     for title, reason in overruled:
         assert scan.overrule_kill(title, reason), title
@@ -3638,6 +3644,11 @@ def test_code_overrules_the_kills_the_screen_prompt_forbids():
         ("Head of GTM", "Quota-carrying sales role (close deals yourself)"),
         ("Bilingual Renewal Coordinator", "Role is contract/order management"),
         ("Staff Software Engineer, Revenue Systems", "Engineering role."),
+        # A sales seat with a retention line, and an unclear kill on a non-target title.
+        ("Account Executive", "Quota-carrying sales; owns renewals and new business"),
+        ("Operations Manager", "Function unclear: likely warehouse operations"),
+        # A CSM killed on something other than a sales reading is the screen's call.
+        ("Customer Success Manager", "Support desk ticket handling, not retention"),
     ]
     for title, reason in stands:
         assert not scan.overrule_kill(title, reason), title

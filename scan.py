@@ -1320,6 +1320,8 @@ Nothing else is grounds for a kill. Specifically, and these are all real kills y
 - NOT the pay, or that no pay is stated.
 - NOT a skills, tooling or technical gap. A Sales Operations role that asks for AI/ML, SQL, a CRM certification or a technical background is still Sales Operations: whether the candidate has the skill is the deep scorer's Skills Match question, never a function kill. Decide the function from what the role DOES, and when a title names a target function ("Sales Operations", "Revenue Strategy", "GTM", "Monetization Strategy & Operations") and the posting is ambiguous about the rest, KEEP.
 - NOT deal desk, quote-to-cash, billing or order management duties inside a role whose TITLE names a target function. A deal desk kill needs the title to say deal desk (or quote-to-cash, billing, order management). "Revenue Operations Specialist", "Revenue Operations Analyst", "Head of Revenue Operations" and "Sales Operations Manager" are KEEPS even when the posting lists quoting, CPQ, contracts, order forms or billing among the duties: plenty of RevOps teams own the deal desk, and that is part of the job, not a different job. You killed Diligent's Revenue Operations Specialist six times, Cpl's Revenue Operations Analyst and Oliver Wyman's Regional Head of Revenue Operations this way.
+- NOT a retention target. Net revenue retention (NRR), gross retention, renewal rates, churn and expansion targets are how customer success and RevOps are measured; they are not a sales quota. A Customer Success Manager who "drives NRR through upsell" or owns renewals and expansion is a KEEP, not quota-carrying sales. A quota kill needs the posting to put the candidate on a new-business or bookings number of their own, in a role whose title is a sales seat. You killed Trulioo's Senior Customer Success Manager as "quota-carrying sales: drives net revenue retention through upsell" the same week Tom applied to Trulioo's Strategic CSM.
+- NOT "function unclear". When the TITLE says Sales Operations, Revenue Operations, RevOps or Revenue Strategy, the title has settled the function: a kill needs the posting to show plainly that the work is something else, and a reason like "function unclear", "ambiguous", or a reading of the employer's business ("advertising services") is a KEEP. You killed Epsilon's Senior Revenue Operations Analyst as "function unclear: advertising services" and LSEG's Sales Operations Lead as a "data engineering role", both on titles that name core RevOps.
 - NOT "technical" customer success. A Customer Success Manager at a B2B software or hardware-plus-software company is in scope even when the posting calls the role technical, mentions APIs, integrations, IoT or onboarding engineers, or asks for a technical background. That is a Skills Match question for the deep scorer. Kill a customer success role only when it is really support-desk ticket handling or field engineering under a CS name.
 
 NEVER KILL ON SENIORITY. This is the single most important rule here, and getting it wrong is expensive. Analyst, Senior Analyst, Specialist, Coordinator, Associate, Senior Associate, Business Partner, Lead, Manager, Senior Manager, Principal, Director and Head of are ALL keeps. Do not kill something for being "too junior", "entry level", "below Manager", "Director+ exceeds target", or any variant of that reasoning. A title is not a seniority: an "Analyst" or "Associate" at a strong employer routinely carries manager-level scope and pay well above a junior band, and a "Head of" at a 40-person startup is often a hands-on Manager role. The deep scorer reads the full posting - the scope, the reporting line, the years-of-experience band, the stated salary - and weighs seniority properly there. You cannot see enough to make that call. The ONLY seniority-shaped exception: genuine internships, working-student roles, apprenticeships and graduate schemes may be killed.
@@ -4331,6 +4333,13 @@ _KILL_DEAL_DESK = re.compile(r"deal[- ]desk|quote[- ]to[- ]cash|order management
 _KILL_SENIORITY = re.compile(r"graduate|entry[- ]level|\bjunior\b|\bintern(?:ship)?\b"
                              r"|seniority|too senior|(?:manager|director)\s*\+", re.I)
 _KILL_QUOTA = re.compile(r"quota", re.I)
+# Review of 9 Nov 2026: Trulioo's Senior CSM killed as "quota-carrying sales: drives net
+# revenue retention through upsell", and Epsilon's Senior Revenue Operations Analyst as
+# "function unclear: advertising services".
+_KILL_RETENTION = re.compile(r"\bn?nrr\b|net (?:revenue|dollar) retention|\bretention\b"
+                             r"|\brenewals?\b|\bchurn\b", re.I)
+_KILL_SALES = re.compile(r"quota|\bsales\b|upsell|bookings|commission", re.I)
+_KILL_UNCLEAR = re.compile(r"unclear|ambiguous|not clear|uncertain|vague", re.I)
 # The only seniority kill the prompt allows.
 _EARLY_CAREER_TITLE = re.compile(r"\bintern(?:ship)?\b|graduate|apprentice|working student"
                                  r"|werkstudent|\bco-?op\b|trainee|placement", re.I)
@@ -4338,13 +4347,18 @@ _EARLY_CAREER_TITLE = re.compile(r"\bintern(?:ship)?\b|graduate|apprentice|worki
 def overrule_kill(title, reason):
     """Why a stage-1 kill breaks one of the screen's own rules, or "" if it stands.
 
-    Any other function kill is left alone; only the three rules above are enforced, and
+    Any other function kill is left alone; only the rules above are enforced, and
     each lets the kill stand when the title itself bears it out. An overruled
     kill costs one deep-score call, which reads the whole posting and scores function and
     seniority properly. A wrong kill costs a role Tom never sees."""
     title, reason = title or "", reason or ""
     if _KILL_SENIORITY.search(reason) and not _EARLY_CAREER_TITLE.search(title):
         return "seniority kill, but the title is not an internship or graduate scheme"
+    # A retention or NRR target is not a sales quota. Binds on CS titles as well as core
+    # ones, since that is where the misread lands; a sales-seat title is left to the screen.
+    if ((is_csm_title(title) or revops_core_title(title))
+            and _KILL_RETENTION.search(reason) and _KILL_SALES.search(reason)):
+        return "sales kill on a retention target, but retention and NRR are not a quota"
     # The function rules only bind where the title names a core target function, which is
     # how the prompt words them. "Head of GTM" or "Renewals Representative" killed as a
     # quota-carrying seat is a function call the screen is allowed to make.
@@ -4354,6 +4368,8 @@ def overrule_kill(title, reason):
         return "deal desk kill, but the title names a target function and not deal desk"
     if _KILL_QUOTA.search(reason):
         return "quota kill, but the title names a target function"
+    if _KILL_UNCLEAR.search(reason):
+        return "function-unclear kill, but the title names a target function"
     return ""
 
 def parse_score_result(job, data):
