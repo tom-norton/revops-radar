@@ -16,6 +16,15 @@ by hand again, in a Claude project, because the automation was not earning what 
 Opus calls. Everything below about the apply queue still describes working code; it just
 does not run on its own any more. The scan and the scoring are untouched.
 
+**A subscription-scoring trial is running side by side** (Nov 2026). With `SHADOW_QUEUE=1`
+(set in `scan.yml`) each scan also writes the roles it is about to screen to
+`shadow/queue.json`. A scheduled Claude Code session follows `shadow/ROUTINE.md`: it screens
+and scores those same roles on Tom's Claude subscription, using `shadow.py` and scan.py's own
+prompts and parsers, and writes the comparison to `shadow/compare.md` on the
+`claude/shadow-results` branch, never on main. The scan's own scoring is untouched. To stop
+the trial, delete the scheduled task and the `SHADOW_QUEUE` line. Tom's side of it is in
+`MIGRATION-CHECKLIST.md`.
+
 **Markets, in preference order:** Netherlands (anywhere) · Ireland (anywhere) · UK (London
 area only) · Belgium (anywhere) · Canada (anywhere, remote or on-site) · US (**remote only**,
 anywhere, core RevOps or **senior** CS titles only, and **the posting must state a salary**).

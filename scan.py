@@ -4464,6 +4464,52 @@ def load_json(path, default):
     except Exception:
         return default
 
+# ---------------------------------------------------------------- subscription trial queue
+# A side-by-side trial: the same roles this scan screens and scores through the API are
+# also scored by a scheduled Claude Code session running on Tom's subscription (shadow.py,
+# shadow/ROUTINE.md), and the two sets of results are compared. The scan's only part in it
+# is to write down, here, exactly what it was about to show the screen -- the fields
+# job_message() reads, with the description already cut to what job_message() sends, so
+# the trial's prompt is byte-identical to this one.
+#
+# Off unless SHADOW_QUEUE=1, and nothing here can fail a scan: a queue that cannot be
+# written costs the trial some rows, never the radar its run.
+SHADOW_QUEUE_FILE = "shadow/queue.json"
+SHADOW_KEEP_DAYS = 10
+SHADOW_FIELDS = ("id", "title", "company", "location", "market", "salary", "sponsor",
+                 "transfer_markets", "source", "url")
+
+def shadow_enabled():
+    return os.environ.get("SHADOW_QUEUE") == "1"
+
+def shadow_row(job, now=None):
+    row = {k: job[k] for k in SHADOW_FIELDS if job.get(k) not in (None, "")}
+    row["description"] = sample_desc(job.get("description"))
+    row["captured_at"] = (now or datetime.now(timezone.utc)).isoformat()
+    return row
+
+def shadow_merge(queue, rows, now=None):
+    """The queue with `rows` added (first capture wins) and anything older than
+    SHADOW_KEEP_DAYS pruned."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=SHADOW_KEEP_DAYS)).isoformat()
+    out = {k: v for k, v in (queue or {}).items() if v.get("captured_at", "") >= cutoff}
+    for r in rows:
+        out.setdefault(str(r["id"]), r)
+    return out
+
+def shadow_flush(rows, path=SHADOW_QUEUE_FILE, now=None):
+    if not rows:
+        return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        queue = shadow_merge(load_json(path, {}), rows, now)
+        json.dump(queue, open(path, "w"), indent=0, sort_keys=True)
+        print(f"  shadow queued {len(rows)} role(s) for the subscription trial "
+              f"({len(queue)} in queue)")
+    except Exception as e:
+        print(f"  shadow queue not written ({str(e)[:120]})")
+
 def cmd_selftest():
     """Replay the stored dimension scores through the current engine and report every row
     whose score moves. No network, no API key.
@@ -5263,6 +5309,7 @@ def main():
     # deferred import is cheaper than that failure.
     import findform
     board_cache = findform.load_cache()
+    shadow_rows = []   # what this run screened, for the subscription trial (shadow.py)
 
     for j in new_jobs[:MAX_SCREENED_PER_RUN]:
         # Get the real posting text before anything reads it -- only for survivors of the
@@ -5369,6 +5416,12 @@ def main():
             set_aside.append(j); seen.add(j["id"])
             continue
 
+        if shadow_enabled():
+            try:
+                shadow_rows.append(shadow_row(j))
+            except Exception:
+                pass
+
         if dry or not api_key:
             j.update({"score": 0, "score_raw": 0, "caps_applied": [], "dimensions": {},
                       "tier": j.get("market") or "", "flags": [], "verdict": "(not scored)"})
@@ -5397,6 +5450,9 @@ def main():
         kept += 1
         j["_watched"] = (j.get("company") or "").strip().lower() in watched_names
         survivors.append(j)
+
+    if shadow_enabled():
+        shadow_flush(shadow_rows)
 
     # PASS B: deep score, best first, until the budget runs out.
     survivors.sort(key=lambda j: priority(j, deferrals), reverse=True)
