@@ -27,9 +27,22 @@ On your phone (GitHub app) or PC (github.com):
 - created the scheduled tasks: **8:30am and 8:30pm on weekdays, 9:30am on weekends**
   (Eastern). The 8:30am run picks up the 8am scan. The evening scan sometimes isn't finished
   by 8:30pm; when that happens, its roles are scored the next morning. Nothing is missed.
-- run a test right away to check the plumbing. The first real scoring run, at 8:30am on
-  10 Nov, shows whether your Pro plan can use the Opus model for scoring. If it can't, the
-  trial stops and says so rather than quietly using a different model.
+- run two tests to check the plumbing. They found one problem, which step 2b fixes. The
+  trial runs can read the repo but aren't allowed to save their results to it.
+
+### ☐ 2b. Attach the repo to the two trial tasks (about 1 minute)
+Claude can't do this part for you. Until it's done, the weekday task is **paused**, so it
+doesn't use your Pro allowance on results it can't save.
+
+On claude.ai/code (phone browser or PC). The labels may differ slightly:
+1. Open **Scheduled tasks** (it may be called **Routines**).
+2. Open **RevOps Radar trial (weekdays)** and tap **Edit**.
+3. Under **Repository**, choose **tom-norton/revops-radar**, then tap **Save**.
+4. Do the same for **RevOps Radar trial (weekends)**.
+5. Go back to the Claude Code session where this was built and say **"attached"**. Claude
+   then checks it worked, switches the weekday task back on, and runs it once to confirm.
+   That first run also shows whether your Pro plan can use the Opus model for scoring. If it
+   can't, the trial stops and says so rather than quietly using a different model.
 
 ### ☐ 3. Check the first run worked
 Claude will tell you, but if you want to see it yourself:
