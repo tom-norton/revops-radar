@@ -44,8 +44,12 @@ On claude.ai/code (phone browser or PC). The labels may differ slightly:
    That first run also shows whether your Pro plan can use the Opus model for scoring. If it
    can't, the trial stops and says so rather than quietly using a different model.
 
-### ☐ 3. Check the first run worked
-Claude will tell you, but if you want to see it yourself:
+### ☑ 3. Check the first run worked
+✅ 10 Nov, 8:30am run: it screened and deep-scored 15 roles in about 4 minutes, with Opus
+available on Pro, no usage limit hit, and nothing left waiting. On the 9 roles both sides
+scored, the trial was within half a point of the API every time.
+
+To look at a run yourself:
 - In the Claude app, open **Code**. The trial runs show up as sessions. Open the newest one
   and scroll to the bottom for its three-line summary.
 
