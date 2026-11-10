@@ -30,9 +30,9 @@ On your phone (GitHub app) or PC (github.com):
 - run two tests to check the plumbing. They found one problem, which step 2b fixes. The
   trial runs can read the repo but aren't allowed to save their results to it.
 
-### ☐ 2b. Attach the repo to the two trial tasks (about 1 minute)
-Claude can't do this part for you. Until it's done, the weekday task is **paused**, so it
-doesn't use your Pro allowance on results it can't save.
+### ☑ 2b. Attach the repo to the two trial tasks (about 1 minute)
+✅ Done 10 Nov. A test run then saved its results to GitHub, and the weekday task is back on.
+The first real scoring run is 8:30am on 10 Nov.
 
 On claude.ai/code (phone browser or PC). The labels may differ slightly:
 1. Open **Scheduled tasks** (it may be called **Routines**).
