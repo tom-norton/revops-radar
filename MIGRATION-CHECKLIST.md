@@ -12,7 +12,7 @@ plus your own notes on how much of your weekly Pro limit it used. Then you decid
 
 ## Before the trial (about 5 minutes)
 
-### ☐ 1. Merge the pull request
+### ☑ 1. Merge the pull request
 This turns on one small addition: each scan now also saves the roles it's about to score,
 for the trial to pick up. Nothing else about the radar changes.
 
@@ -22,14 +22,14 @@ On your phone (GitHub app) or PC (github.com):
 3. Scroll to the bottom and tap **Merge pull request**, then **Confirm merge**.
 4. If it asks you to delete the branch, tap **Delete branch**. That's safe.
 
-### ☐ 2. Tell Claude it's merged
-Go back to the Claude Code session where this was built and say **"merged"**. Claude will:
-- create the scheduled task, twice a day at about 9:47am and 9:17pm Eastern
-- run it once straight away to check everything works, including whether your Pro plan can
-  use the Opus model for scoring (if it can't, Claude stops and tells you rather than
-  quietly using a different model)
-
-If the app asks you to **approve** creating a scheduled task, tap **Allow**.
+### ☑ 2. Tell Claude it's merged
+✅ Done 10 Nov. (You told Claude "merged".) Claude has:
+- created the scheduled tasks: **8:30am and 8:30pm on weekdays, 9:30am on weekends**
+  (Eastern). The 8:30am run picks up the 8am scan. The evening scan sometimes isn't finished
+  by 8:30pm; when that happens, its roles are scored the next morning. Nothing is missed.
+- run a test right away to check the plumbing. The first real scoring run, at 8:30am on
+  10 Nov, shows whether your Pro plan can use the Opus model for scoring. If it can't, the
+  trial stops and says so rather than quietly using a different model.
 
 ### ☐ 3. Check the first run worked
 Claude will tell you, but if you want to see it yourself:
