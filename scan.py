@@ -3765,16 +3765,18 @@ APIFY_HIRINGCAFE_SEARCHES = {
         "sortBy": "date",
         "jobTitleQuery": HC_REVOPS_TITLES,
     },
-    # US senior CS. Wanted only because this search confirms remote and the salary band,
-    # which is why the code requires a stated salary on every US row (see prefilter and
-    # us_comp_unstated).
+    # US CS. Wanted only because this search confirms remote and the salary band, which is
+    # why the code requires a stated salary on every US row (see prefilter and
+    # us_comp_unstated). Mid Level joined Senior Level in Nov 2026, at Tom's direction,
+    # alongside the US title gate admitting CS at any seniority: plain CSM roles are mostly
+    # labelled Mid Level here, so without it the widened gate would see almost none.
     "us-cs": {
         "locations": [_hc_grand_rapids()],
         "dateFetchedPastNDays": 21,
         "restrictJobsToTransparentSalaries": True,
         "managementYoeRange": [0, 2],
         "maxCompensationLowEnd": "105000",
-        "seniorityLevel": ["Senior Level"],
+        "seniorityLevel": ["Mid Level", "Senior Level"],
         "excludedLanguageRequirements": ["dutch", "german", "french"],
         "sortBy": "date",
         "jobTitleQuery": '"Customer success"',
