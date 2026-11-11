@@ -3768,8 +3768,9 @@ APIFY_HIRINGCAFE_SEARCHES = {
     # US CS. Wanted only because this search confirms remote and the salary band, which is
     # why the code requires a stated salary on every US row (see prefilter and
     # us_comp_unstated). Mid Level joined Senior Level in Nov 2026, at Tom's direction,
-    # alongside the US title gate admitting CS at any seniority: plain CSM roles are mostly
-    # labelled Mid Level here, so without it the widened gate would see almost none.
+    # alongside the US title gate admitting CS at any seniority. Senior Level alone supplied
+    # 52 of the 54 US CS rows then on the dashboard, so without this the widened gate would
+    # see few plain CSM roles. Not yet measured: how many Mid Level adds.
     "us-cs": {
         "locations": [_hc_grand_rapids()],
         "dateFetchedPastNDays": 21,
