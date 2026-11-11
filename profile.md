@@ -152,7 +152,7 @@ these are the facts behind them.
   than a distant backstop: he can start immediately and the family needs income in early
   2027. A US row carrying no published salary is dropped before it is scored. The pay
   floor depends on the track: USD 100,000 base for a core RevOps title (CS operations
-  included) and USD 120,000 base for a senior customer success title, read against the
+  included) and USD 105,000 base for a senior customer success title, read against the
   TOP of the stated band (see Salary handling). Score 4-5, or 5-6 when the employer also
   hires in the Netherlands, Ireland or London, because an internal transfer later is a
   route to Europe without changing employer and sponsorship is a lighter ask once they
@@ -192,7 +192,7 @@ the track:
   commercial operations, GTM strategy or operations, sales compensation, territory
   planning. A title that is both customer success and operations ("Customer Success
   Operations Manager") is RevOps.
-- Customer success track — USD 120,000 base. Senior, principal, lead, enterprise or
+- Customer success track — USD 105,000 base. Senior, principal, lead, enterprise or
   strategic customer success, and customer success management roles, when the title is not
   also a RevOps title.
 The floor is checked against the TOP of the stated band, not the bottom or the midpoint: a
