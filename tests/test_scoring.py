@@ -1721,18 +1721,19 @@ def test_market_tier_orders_the_six_markets_and_fails_safe():
 
 
 def test_us_titles_go_through_the_two_narrow_gates_not_the_broad_one():
-    """The US is a runway backstop, so it is only worth attention for the pivot proper or
-    for senior customer success, which Tom now wants because his US searches confirm remote
-    and the salary band. Renewals, generic business operations and marketing ops are all
-    legitimate European targets and all still out in the US."""
+    """The US is only worth attention for the pivot proper or for customer success, at any
+    seniority since Nov 2026, because every US row has to state pay that clears the CS
+    floor. Renewals, generic business operations and marketing ops are all legitimate
+    European targets and all still out in the US."""
     for title in ["Revenue Operations Manager", "Senior RevOps Analyst",
                   "GTM Strategy Manager", "Manager, Sales Strategy & Operations",
                   "Sales Compensation Manager",
                   # these two were in the search but missing from the regex
                   "Sales Enablement Manager", "Commercial Operations Lead",
-                  # senior CS, admitted now
+                  # CS at any seniority, admitted now
                   "Senior Customer Success Manager", "Principal Customer Success Manager",
-                  "Customer Success Manager, Enterprise", "Manager, Customer Success"]:
+                  "Customer Success Manager, Enterprise", "Manager, Customer Success",
+                  "Customer Success Manager", "Customer Success Manager II"]:
         assert scan.prefilter(title, "Remote (US)") is None, title
     for title in ["Renewals Manager", "Business Operations Manager",
                   "Head of Marketing Operations", "GTM Recruiter, AMER"]:
@@ -1744,33 +1745,19 @@ def test_us_titles_go_through_the_two_narrow_gates_not_the_broad_one():
         assert scan.prefilter(title, "London") is None, title
 
 
-def test_senior_cs_is_a_subset_of_the_broad_title_gate():
-    """SENIOR_CS names the same clauses INCLUDE_TITLE already carries. Kept separate so the
-    US gate can admit senior CS without admitting the plain title; this is the guard that
-    the two do not diverge."""
-    for title in ["Senior Customer Success Manager", "Principal Customer Success Manager",
-                  "Lead Customer Success Manager", "Enterprise Customer Success Manager",
-                  "Strategic Customer Success Manager",
-                  "Customer Success Manager, Enterprise",
-                  "Customer Success Lead - Carriers", "Manager, Customer Success",
-                  "Head of Customer Success"]:
-        assert scan.SENIOR_CS.search(title), title
-        assert scan.INCLUDE_TITLE.search(title), title
-    # the qualifier is the whole point: a bare title must not match
-    assert not scan.SENIOR_CS.search("Customer Success Manager")
-    assert not scan.SENIOR_CS.search("Customer Success Associate")
-
-
 def test_a_core_revops_us_role_that_is_not_remote_is_dropped_on_location():
     reason = scan.prefilter("Revenue Operations Manager", "Austin, TX")
     assert reason and reason.startswith("location:")
 
 
-def test_plain_csm_is_still_netherlands_only():
-    """Widening the map must not quietly widen the CSM_ANY exception."""
+def test_plain_csm_is_admitted_in_the_netherlands_and_the_us_only():
+    """Widening the map must not quietly widen the CSM_ANY exception past these two."""
     assert scan.prefilter("Customer Success Manager", "Amsterdam") is None
-    for loc in ["Toronto, ON", "London", "Cork, Ireland", "Brussels", "Remote (US)"]:
+    assert scan.prefilter("Customer Success Manager", "Remote (US)") is None
+    for loc in ["Toronto, ON", "London", "Cork, Ireland", "Brussels"]:
         assert scan.prefilter("Customer Success Manager", loc) is not None, loc
+    # a plain US CSM is held to the CS floor, like a senior one
+    assert scan.floor_for("US-Remote", "Customer Success Manager")[:2] == (105000, "USD")
 
 
 # ---- salary floors
@@ -1909,7 +1896,7 @@ def test_floor_for_resolves_each_us_track_from_the_title():
     # A title matching neither gate never reaches the floor in practice (prefilter drops
     # it), but if one does it gets the stricter CS floor, not the lenient one.
     assert not scan.REVOPS_CORE.search("Account Executive")
-    assert not scan.SENIOR_CS.search("Account Executive")
+    assert not scan.CSM_ANY.search("Account Executive")
     assert scan.floor_for("US-Remote", "Account Executive")[:2] == (105000, "USD")
     assert scan.floor_for("US-Remote")[:2] == (105000, "USD")
 
@@ -1925,7 +1912,7 @@ def test_customer_success_operations_is_held_to_the_revops_floor():
     assert scan.deep_score_disqualifier(job, _obs(True, 95000, "USD", 103000)) == (None, None)
     # A title matching BOTH gates takes the RevOps floor, because REVOPS_CORE goes first.
     both = "Senior Customer Success Operations Manager"
-    assert scan.REVOPS_CORE.search(both) and scan.SENIOR_CS.search(both)
+    assert scan.REVOPS_CORE.search(both) and scan.CSM_ANY.search(both)
     assert scan.floor_for("US-Remote", both)[:2] == (100000, "USD")
 
 

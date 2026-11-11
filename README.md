@@ -385,7 +385,7 @@ fact is missing rather than flattening both into one sentence.
     disqualifying the whole stored corpus in one pass.
     **The US floor depends on the track** (`COMP_FLOORS`, resolved from the title by
     `floor_for()`): USD 100,000 for a RevOps title (anything `REVOPS_CORE` matches, CS
-    operations included) and USD 105,000 for senior customer success. Both are read against
+    operations included) and USD 105,000 for customer success. Both are read against
     the top of the band. They were 125K and 130K until Nov 2026, lowered because runway is
     getting short and a well-fitting US role is worth seeing at lower pay (CS went to 120K
     first, then 105K later that month).
@@ -1331,7 +1331,7 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   touching `market_of()`, `VISA_FLOORS`, and `MARKETS_SENTENCE` — they sit together.
 - **Which titles get through:** `INCLUDE_TITLE` / `EXCLUDE_TITLE`. This gate is **market-aware,
   not purely textual** — a plain "Customer Success Manager" is admitted in the Netherlands and
-  nowhere else (`CSM_ANY`, applied in `prefilter()`), mirroring the CSM track weighting in
+  the US and nowhere else (`CSM_ANY`, applied in `prefilter()`), mirroring the CSM track weighting in
   `profile.md`. Widening it is now cheap: anything wrong gets screened, capped, and shown in
   the excluded section rather than sitting on the dashboard, so prefer erring wide. Re-run the
   live audit before and after a change — a widened alternative can silently break an existing
