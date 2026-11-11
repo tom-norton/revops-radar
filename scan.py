@@ -197,10 +197,13 @@ INCLUDE_TITLE = re.compile(
     r"|(manager|head of),?\s+(of\s+)?customer success", re.I)
 
 # A plain "Customer Success Manager" with no seniority wording is a target in the Netherlands
-# only -- profile.md's CSM track weighting makes NL Senior/Principal CSM a primary target and
-# keeps the same role modest elsewhere. Admitting it everywhere would put ~25 extra rows per
-# run on the dashboard; restricting it to NL admitted one. profile.md carries the same
-# asymmetry into the deep score, and score_flags() notes it on the row.
+# and the US only -- profile.md's CSM track weighting makes NL Senior/Principal CSM a primary
+# target and keeps the same role modest elsewhere. Admitting it in every market would put ~25
+# extra rows per run on the dashboard; restricting it to NL admitted one. The US joined in
+# Nov 2026, at Tom's direction: plenty of plain US CSM roles clear the CS floor, and every US
+# row must state its pay, so the floor does the filtering the title qualifier used to.
+# profile.md carries the same asymmetry into the deep score, and score_flags() notes it on
+# the row.
 CSM_ANY = re.compile(r"customer success", re.I)
 
 # Account management that owns an existing book -- renewals, retention, expansion -- is a
@@ -220,29 +223,16 @@ NL_AM_HUNTER = re.compile(
     r"|\bfield sales\b|\bsales account manager\b|account manager[ ,-]+sales\b"
     r"|technical account|\bTAM\b", re.I)
 
-# Customer success WITH a seniority qualifier. These are the same clauses INCLUDE_TITLE
-# already carries; named separately so the US gate can admit senior CS without admitting
-# the plain title, and so the two cannot silently diverge -- a test asserts everything
-# SENIOR_CS matches is also matched by INCLUDE_TITLE.
-#
-# The qualifier requirement is what keeps a bare "Customer Success Manager" out. That title
-# is a primary target in the Netherlands and nowhere else (CSM_ANY, above), and widening it
-# by accident is the exact failure this guards.
-SENIOR_CS = re.compile(
-    r"(senior|principal|lead|enterprise|strategic).{0,20}customer success"
-    r"|customer success.{0,30}(senior|principal|lead|enterprise|strategic)"
-    r"|(manager|head of),?\s+(of\s+)?customer success", re.I)
-
-# The narrow gate for US roles, one of two (see SENIOR_CS below). The US is a
+# The narrow gate for US roles, one of two (the other is CSM_ANY, above). The US is a
 # financial-runway backstop rather than a place Tom wants to move to, so it is only worth
 # the radar's attention for the pivot proper -- RevOps, not the adjacent-and-arguable end
 # of INCLUDE_TITLE. What it still drops outright is renewals and generic "business
 # operations", both legitimate European targets.
 #
-# It used to drop customer success in every band too. That changed: US senior CS is wanted
-# now, on the grounds that the US searches confirm remote and the salary band, so
-# prefilter() admits SENIOR_CS alongside this. Plain "Customer Success Manager" is still
-# Netherlands-only, which falls out of SENIOR_CS requiring a seniority qualifier.
+# It used to drop customer success in every band too. That changed twice: US senior CS was
+# admitted first, on the grounds that the US searches confirm remote and the salary band,
+# and since Nov 2026 customer success at any seniority is, so prefilter() admits CSM_ANY
+# alongside this.
 #
 # This regex does most of the cost control for the whole US expansion. The US is a far
 # bigger market than the four European ones combined, and this runs before any model call,
@@ -566,13 +556,14 @@ VISA_FLOORS = {
 #
 # The US floor depends on the track, because the two US tracks pay differently. Lowered in
 # Nov 2026 from 125K/130K to 100K/120K, at Tom's direction: runway is getting short, and a
-# well-fitting US role is now worth seeing at pay he would previously have skipped. Both
-# are still read against the TOP of the band (salary_floor_flag). The track comes from the
+# well-fitting US role is now worth seeing at pay he would previously have skipped. CS was
+# lowered again later that month, to 105K, also at Tom's direction. Both are still read
+# against the TOP of the band (salary_floor_flag). The track comes from the
 # title -- see comp_track().
 COMP_FLOORS = {
     "US-Remote": {
         "revops": (100000, "USD"),
-        "cs": (120000, "USD"),
+        "cs": (105000, "USD"),
     },
 }
 # How a track's floor is named in a drop reason or a flag: "your 100000 USD RevOps floor".
@@ -583,9 +574,8 @@ def comp_track(title):
     """"revops" or "cs": which of the US comp floors a title is held to.
 
     REVOPS_CORE is checked first, so a customer success operations title is RevOps, which
-    is what it is (CS operations is in REVOPS_CORE on purpose) -- including one that also
-    matches SENIOR_CS, like "Senior Customer Success Operations Manager". SENIOR_CS is
-    second.
+    is what it is (CS operations is in REVOPS_CORE on purpose), even though it also names
+    customer success. Every other customer success title is CS.
 
     A title matching neither should never get here: prefilter() drops a US title that
     clears neither gate before anything reads its salary. If one does anyway -- a test
@@ -1301,7 +1291,7 @@ SCORE_SCHEMA = {
 MARKETS_SENTENCE = ("Netherlands (anywhere), Belgium (anywhere), UK London area and commuter "
                     "belt only, Ireland (anywhere in the country, not just Dublin), Canada "
                     "(anywhere, remote or on-site), and the US (REMOTE ONLY, anywhere in "
-                    "the country, core RevOps or senior customer success only, and the "
+                    "the country, core RevOps or customer success only, and the "
                     "posting must state a salary)")
 SCREEN_SYSTEM = f"""You are a fast pre-screen for a job-search pipeline. Decide if a role is worth a full evaluation for this candidate:
 
@@ -2441,18 +2431,18 @@ def prefilter(title, location, country=""):
     """None if the row passes the free filters; otherwise a short reason for the drop log.
 
     The title half of this gate is market-aware, not purely textual, in both directions: a
-    plain "Customer Success Manager" is admitted in the Netherlands and nowhere else (see
-    CSM_ANY), and a US role has to clear the much narrower REVOPS_CORE instead of
+    plain "Customer Success Manager" is admitted in the Netherlands and the US and nowhere
+    else (see CSM_ANY), and a US role has to clear the much narrower REVOPS_CORE instead of
     INCLUDE_TITLE. The market is resolved once here and reused for the location check
     below."""
     t = title or ""
     market = market_of(country, location)
     if market == "US-Remote":
         # The US gets the two narrow gates, not the broad one: core RevOps, or customer
-        # success with a seniority qualifier. Everything else INCLUDE_TITLE would admit --
-        # renewals, generic business operations, plain CSM -- stays out.
-        if not (REVOPS_CORE.search(t) or SENIOR_CS.search(t)):
-            return "title: not core RevOps or senior CS (US uses the narrow gates)"
+        # success at any seniority. Everything else INCLUDE_TITLE would admit -- renewals,
+        # generic business operations -- stays out.
+        if not (REVOPS_CORE.search(t) or CSM_ANY.search(t)):
+            return "title: not core RevOps or customer success (US uses the narrow gates)"
     elif not (INCLUDE_TITLE.search(t)
               or (market == "NL" and (CSM_ANY.search(t) or NL_ACCOUNT_MGMT.search(t)))):
         return "title: no target-function keyword"
@@ -3757,7 +3747,7 @@ APIFY_HIRINGCAFE_SEARCHES = {
     # US RevOps: remote, transparent salaries only, and a compensation bound.
     #
     # maxCompensationLowEnd is Tom's own setting, kept at his explicit direction, and its
-    # value now mirrors the track floors: 100000 here for RevOps, 120000 on us-cs below.
+    # value now mirrors the track floors: 100000 here for RevOps, 105000 on us-cs below.
     # It is INERT, whichever way hiring.cafe reads it: the US rows this search returns
     # arrive with bottom-of-band figures from 95k to 200k, so it is bounding nothing. What
     # actually holds the US floor is code -- COMP_FLOORS, judged against the TOP of the
@@ -3775,16 +3765,19 @@ APIFY_HIRINGCAFE_SEARCHES = {
         "sortBy": "date",
         "jobTitleQuery": HC_REVOPS_TITLES,
     },
-    # US senior CS. Wanted only because this search confirms remote and the salary band,
-    # which is why the code requires a stated salary on every US row (see prefilter and
-    # us_comp_unstated).
+    # US CS. Wanted only because this search confirms remote and the salary band, which is
+    # why the code requires a stated salary on every US row (see prefilter and
+    # us_comp_unstated). Mid Level joined Senior Level in Nov 2026, at Tom's direction,
+    # alongside the US title gate admitting CS at any seniority. Senior Level alone supplied
+    # 52 of the 54 US CS rows then on the dashboard, so without this the widened gate would
+    # see few plain CSM roles. Not yet measured: how many Mid Level adds.
     "us-cs": {
         "locations": [_hc_grand_rapids()],
         "dateFetchedPastNDays": 21,
         "restrictJobsToTransparentSalaries": True,
         "managementYoeRange": [0, 2],
-        "maxCompensationLowEnd": "120000",
-        "seniorityLevel": ["Senior Level"],
+        "maxCompensationLowEnd": "105000",
+        "seniorityLevel": ["Mid Level", "Senior Level"],
         "excludedLanguageRequirements": ["dutch", "german", "french"],
         "sortBy": "date",
         "jobTitleQuery": '"Customer success"',
