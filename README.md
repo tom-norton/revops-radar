@@ -385,9 +385,10 @@ fact is missing rather than flattening both into one sentence.
     disqualifying the whole stored corpus in one pass.
     **The US floor depends on the track** (`COMP_FLOORS`, resolved from the title by
     `floor_for()`): USD 100,000 for a RevOps title (anything `REVOPS_CORE` matches, CS
-    operations included) and USD 120,000 for senior customer success. Both are read against
+    operations included) and USD 105,000 for senior customer success. Both are read against
     the top of the band. They were 125K and 130K until Nov 2026, lowered because runway is
-    getting short and a well-fitting US role is worth seeing at lower pay.
+    getting short and a well-fitting US role is worth seeing at lower pay (CS went to 120K
+    first, then 105K later that month).
 17. **The score itself is computed in Python**, not by the model, for every role that
     survives to be scored — `weighted_total()` does the arithmetic, so the number is
     reproducible from the six dimension scores instead of being whatever total the model

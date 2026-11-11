@@ -566,13 +566,14 @@ VISA_FLOORS = {
 #
 # The US floor depends on the track, because the two US tracks pay differently. Lowered in
 # Nov 2026 from 125K/130K to 100K/120K, at Tom's direction: runway is getting short, and a
-# well-fitting US role is now worth seeing at pay he would previously have skipped. Both
-# are still read against the TOP of the band (salary_floor_flag). The track comes from the
+# well-fitting US role is now worth seeing at pay he would previously have skipped. CS was
+# lowered again later that month, to 105K, also at Tom's direction. Both are still read
+# against the TOP of the band (salary_floor_flag). The track comes from the
 # title -- see comp_track().
 COMP_FLOORS = {
     "US-Remote": {
         "revops": (100000, "USD"),
-        "cs": (120000, "USD"),
+        "cs": (105000, "USD"),
     },
 }
 # How a track's floor is named in a drop reason or a flag: "your 100000 USD RevOps floor".
@@ -3757,7 +3758,7 @@ APIFY_HIRINGCAFE_SEARCHES = {
     # US RevOps: remote, transparent salaries only, and a compensation bound.
     #
     # maxCompensationLowEnd is Tom's own setting, kept at his explicit direction, and its
-    # value now mirrors the track floors: 100000 here for RevOps, 120000 on us-cs below.
+    # value now mirrors the track floors: 100000 here for RevOps, 105000 on us-cs below.
     # It is INERT, whichever way hiring.cafe reads it: the US rows this search returns
     # arrive with bottom-of-band figures from 95k to 200k, so it is bounding nothing. What
     # actually holds the US floor is code -- COMP_FLOORS, judged against the TOP of the
@@ -3783,7 +3784,7 @@ APIFY_HIRINGCAFE_SEARCHES = {
         "dateFetchedPastNDays": 21,
         "restrictJobsToTransparentSalaries": True,
         "managementYoeRange": [0, 2],
-        "maxCompensationLowEnd": "120000",
+        "maxCompensationLowEnd": "105000",
         "seniorityLevel": ["Senior Level"],
         "excludedLanguageRequirements": ["dutch", "german", "french"],
         "sortBy": "date",

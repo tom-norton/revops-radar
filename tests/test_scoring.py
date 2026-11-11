@@ -1788,8 +1788,8 @@ def test_us_comp_floor_drops_a_role_only_on_a_figure_stated_in_the_ad():
     """The US floor is Tom's own, not a legal one, and it fires on the same terms as the
     visa floors: a real, market-matched, stated figure."""
     cs = {"market": "US-Remote", "title": "Senior Customer Success Manager"}
-    stage, reason = scan.deep_score_disqualifier(cs, _obs(True, 110000, "USD"))
-    assert stage == "below-comp-floor" and "120000 USD CS floor" in reason, reason
+    stage, reason = scan.deep_score_disqualifier(cs, _obs(True, 100000, "USD"))
+    assert stage == "below-comp-floor" and "105000 USD CS floor" in reason, reason
     for o in [_obs(True, 130000, "USD"), _obs(True, 145000, "USD")]:
         assert scan.deep_score_disqualifier(cs, o) == (None, None)
     # A US row that states nothing is unconfirmed pay, and that is a drop rather than a
@@ -1814,11 +1814,11 @@ def test_a_band_is_only_disqualifying_when_all_of_it_is_below_the_floor():
     assert scan.deep_score_disqualifier(cs, straddles) == (None, None)
     assert scan.salary_floor_flag("US-Remote", cs_title, straddles) == ""
     # Entirely below the floor is still a drop -- no amount of negotiating reaches it.
-    stage, reason = scan.deep_score_disqualifier(cs, _obs(True, 90000, "USD", 110000))
+    stage, reason = scan.deep_score_disqualifier(cs, _obs(True, 90000, "USD", 104000))
     assert stage == "below-comp-floor", stage
-    assert "90000-110000" in reason and "entirely below" in reason, reason
+    assert "90000-104000" in reason and "entirely below" in reason, reason
     # A single stated figure behaves exactly as it did before.
-    assert scan.salary_floor_flag("US-Remote", cs_title, _obs(True, 110000, "USD")) != ""
+    assert scan.salary_floor_flag("US-Remote", cs_title, _obs(True, 100000, "USD")) != ""
     assert scan.salary_floor_flag("US-Remote", cs_title, _obs(True, 140000, "USD")) == ""
 
 
@@ -1838,9 +1838,9 @@ def test_a_straddling_band_is_kept_but_flagged():
 def test_a_row_scored_before_the_band_existed_keeps_its_old_answer():
     """salary_max_base is new. A stored row has only a bottom, and reading a missing top as
     zero would disqualify the whole historical corpus in one pass."""
-    old_row = {"salary_stated": True, "salary_min_base": 110000, "salary_currency": "USD",
+    old_row = {"salary_stated": True, "salary_min_base": 100000, "salary_currency": "USD",
                "language_hard_requirement": False}
-    assert scan.salary_band(old_row) == (110000.0, 110000.0)
+    assert scan.salary_band(old_row) == (100000.0, 100000.0)
     assert scan.deep_score_disqualifier({"market": "US-Remote"}, old_row)[0] == "below-comp-floor"
 
 
@@ -1890,28 +1890,28 @@ def test_floor_for_reports_which_kind_of_floor_a_market_has():
     assert scan.floor_for("US-Remote", "Revenue Operations Manager") == \
         (100000, "USD", "comp", "RevOps")
     assert scan.floor_for("US-Remote", "Senior Customer Success Manager") == \
-        (120000, "USD", "comp", "CS")
+        (105000, "USD", "comp", "CS")
     assert scan.floor_for("") == (0, "", "", "")
     # the two tables must not both claim a market, or the drop would be mislabelled
     assert not (set(scan.VISA_FLOORS) & set(scan.COMP_FLOORS))
 
 
 def test_floor_for_resolves_each_us_track_from_the_title():
-    """RevOps 100K, senior CS 120K, both read against the top of the band."""
+    """RevOps 100K, senior CS 105K, both read against the top of the band."""
     for title in ["Revenue Operations Manager", "Senior Sales Operations Manager",
                   "GTM Strategy Lead", "Sales Enablement Manager"]:
         assert scan.floor_for("US-Remote", title)[:2] == (100000, "USD"), title
         assert scan.comp_track(title) == "revops", title
     for title in ["Senior Customer Success Manager", "Principal Customer Success Manager",
                   "Enterprise Customer Success Lead"]:
-        assert scan.floor_for("US-Remote", title)[:2] == (120000, "USD"), title
+        assert scan.floor_for("US-Remote", title)[:2] == (105000, "USD"), title
         assert scan.comp_track(title) == "cs", title
     # A title matching neither gate never reaches the floor in practice (prefilter drops
     # it), but if one does it gets the stricter CS floor, not the lenient one.
     assert not scan.REVOPS_CORE.search("Account Executive")
     assert not scan.SENIOR_CS.search("Account Executive")
-    assert scan.floor_for("US-Remote", "Account Executive")[:2] == (120000, "USD")
-    assert scan.floor_for("US-Remote")[:2] == (120000, "USD")
+    assert scan.floor_for("US-Remote", "Account Executive")[:2] == (105000, "USD")
+    assert scan.floor_for("US-Remote")[:2] == (105000, "USD")
 
 
 def test_customer_success_operations_is_held_to_the_revops_floor():
@@ -1920,9 +1920,9 @@ def test_customer_success_operations_is_held_to_the_revops_floor():
     title = "Customer Success Operations Manager"
     assert scan.REVOPS_CORE.search(title)
     assert scan.floor_for("US-Remote", title) == (100000, "USD", "comp", "RevOps")
-    # 95000-115000 would be dropped against the CS floor; against RevOps it is kept.
+    # 95000-103000 would be dropped against the CS floor; against RevOps it is kept.
     job = {"market": "US-Remote", "title": title}
-    assert scan.deep_score_disqualifier(job, _obs(True, 95000, "USD", 115000)) == (None, None)
+    assert scan.deep_score_disqualifier(job, _obs(True, 95000, "USD", 103000)) == (None, None)
     # A title matching BOTH gates takes the RevOps floor, because REVOPS_CORE goes first.
     both = "Senior Customer Success Operations Manager"
     assert scan.REVOPS_CORE.search(both) and scan.SENIOR_CS.search(both)
@@ -1946,19 +1946,19 @@ def test_a_revops_band_entirely_below_100000_is_dropped():
                       "floor for taking a US-Remote role at all"), reason
 
 
-def test_a_senior_cs_band_topping_out_below_120000_is_dropped():
-    """118K clears the RevOps floor but not the CS one, so the track decides."""
+def test_a_senior_cs_band_topping_out_below_105000_is_dropped():
+    """104K clears the RevOps floor but not the CS one, so the track decides."""
     job = {"market": "US-Remote", "title": "Senior Customer Success Manager"}
-    stage, reason = scan.deep_score_disqualifier(job, _obs(True, 100000, "USD", 118000))
+    stage, reason = scan.deep_score_disqualifier(job, _obs(True, 95000, "USD", 104000))
     assert stage == "below-comp-floor", stage
-    assert "120000 USD CS floor" in reason, reason
+    assert "105000 USD CS floor" in reason, reason
 
 
 def test_an_unstated_us_salary_names_the_track_floor():
     ad = "No pay here."
     assert "100000 USD RevOps floor" in scan.us_comp_unstated(
         {"market": "US-Remote", "title": "Revenue Operations Manager", "description": ad})
-    assert "120000 USD CS floor" in scan.us_comp_unstated(
+    assert "105000 USD CS floor" in scan.us_comp_unstated(
         {"market": "US-Remote", "title": "Senior Customer Success Manager",
          "description": ad})
     _stage, reason = scan.deep_score_disqualifier(
