@@ -341,6 +341,36 @@
   "verdict": "Brand and pay are excellent, but a Director-level operating-rhythm role is too far above his RevOps evidence to clear screening.",
   "want": 6.9
  },
+ "hc-eightfold___microsoft___1970393557056061": {
+  "at": "2026-11-11T01:47:56.165518+00:00",
+  "captured_at": "2026-11-10T17:41:19.035015+00:00",
+  "company": "Microsoft",
+  "dimensions": {
+   "domain": 9.0,
+   "experience": 5.0,
+   "location_visa": 6.0,
+   "seniority": 6.0,
+   "skills": 6.0,
+   "trajectory": 9.0
+  },
+  "flags": [
+   "band 97600-188400 USD starts below your 100000 USD RevOps floor -- only the top half clears it",
+   "Core duty is leading executive and field business-review programs; Tom contributed to such forums but never ran one.",
+   "Senior Manager title at Microsoft scale against no dedicated sales ops tenure invites screening by stronger internal candidates.",
+   "Posting does not confirm remote; verify Microsoft does not expect regular office attendance for this US role."
+  ],
+  "id": "hc-eightfold___microsoft___1970393557056061",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 6.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales Strategy & Operations title names a target function; keep for deep scoring",
+  "shot": 5.6,
+  "title": "Senior Manager, Sales Strategy & Operations",
+  "verdict": "Strong brand and core sales-ops function, but program-leadership scope outruns his evidence; worth applying as a stretch for the runway.",
+  "want": 7.8
+ },
  "hc-eightfold___ukg___893398474447": {
   "at": "2026-11-10T13:37:55.801099+00:00",
   "captured_at": "2026-11-10T13:26:50.761308+00:00",
@@ -401,6 +431,96 @@
   "verdict": "Agency media account management with no RevOps or SaaS overlap; Amsterdam location is the only real draw. Skip.",
   "want": 4.6
  },
+ "hc-isolvedhire___jeeter___1902973": {
+  "at": "2026-11-11T01:47:56.165722+00:00",
+  "captured_at": "2026-11-11T01:21:03.749998+00:00",
+  "company": "Dreamfields Brands Inc (Jeeter)",
+  "dimensions": {
+   "domain": 2.0,
+   "experience": 3.0,
+   "location_visa": 3.0,
+   "seniority": 3.0,
+   "skills": 4.0,
+   "trajectory": 2.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "pay not confirmed in the ad; 99360-113160 CAD came from the feed",
+   "Role assists a PMO Program Manager on cannabis product launches; execution-level coordination, not revenue operations.",
+   "Schedule may require extended hours, weekends and holidays per posting."
+  ],
+  "id": "hc-isolvedhire___jeeter___1902973",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 3.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Commercial operations project management role; title names target function",
+  "shot": 3.3,
+  "title": "Project Manager, Commercial Operations (Creative)",
+  "verdict": "Junior PMO coordinator for cannabis CPG product launches; not RevOps, not CS, and does nothing for the pivot.",
+  "want": 2.4
+ },
+ "hc-oraclecloud___iaziqy.fa.ocs___304669": {
+  "at": "2026-11-11T01:47:56.165853+00:00",
+  "captured_at": "2026-11-10T17:41:04.930511+00:00",
+  "company": "Uber",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 4.0,
+   "location_visa": 7.0,
+   "seniority": 6.0,
+   "skills": 3.0,
+   "trajectory": 8.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role owns semi-annual quota setting and territory rules; his only quota or territory evidence is an MBA case.",
+   "Heavy SQL-automation and dashboard-building remit sits far above his basic SQL and lack of BI tooling."
+  ],
+  "id": "hc-oraclecloud___iaziqy.fa.ocs___304669",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 5.1,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales Operations title; planning, dashboards, territory and incentive work are c",
+  "shot": 4.2,
+  "title": "Senior Sales Operations Associate - Uber Advertising UK & France",
+  "verdict": "Great brand and core Sales Ops pivot, but advanced SQL, Tableau and 5 years Sales Ops will stop a screener cold.",
+  "want": 7.3
+ },
+ "hc-rippling___cloudclevr___eacaeeeb-0c33-4db1-b3cb-0dc662be1d3d": {
+  "at": "2026-11-11T01:47:56.166167+00:00",
+  "captured_at": "2026-11-11T01:20:51.841918+00:00",
+  "company": "CloudClevr Ltd",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 6.0,
+   "location_visa": 6.0,
+   "seniority": 3.0,
+   "skills": 6.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "title band: specialist -- check the JD for actual scope and comp",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Specialist admin-support role at a small UK MSP is unlikely to pay near the GBP 70,000 Skilled Worker floor.",
+   "Much of the work is quoting, order forms and billing-system updates, close to deal desk rather than RevOps strategy.",
+   "Team explicitly does not own accounts or commercial negotiations, so scope reads execution-only."
+  ],
+  "id": "hc-rippling___cloudclevr___eacaeeeb-0c33-4db1-b3cb-0dc662be1d3d",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 5.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Commercial operations: renewals, sales support and CRM governance; in scope.",
+  "shot": 5.2,
+  "title": "Commercial Operations Specialist",
+  "verdict": "Renewals-admin specialist role at a small MSP; junior scope and likely sub-floor pay make it a pass.",
+  "want": 5.1
+ },
  "hc-workable___versa_networks___635b287c-a37a-451b-81a8-c9217575": {
   "at": "2026-11-10T13:37:55.801365+00:00",
   "captured_at": "2026-11-10T13:26:55.944523+00:00",
@@ -430,6 +550,122 @@
   "title": "Enterprise Customer Success Manager",
   "verdict": "Well-paid senior-scope CSM, but federal project-coordination work in networking does nothing for the RevOps pivot; runway only.",
   "want": 4.8
+ },
+ "hc-workday___outsystems-wd503-outsystems___lead-customer-succes": {
+  "at": "2026-11-11T01:47:56.166272+00:00",
+  "captured_at": "2026-11-10T17:41:02.403433+00:00",
+  "company": "OutSystems",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 7.0,
+   "location_visa": 7.0,
+   "seniority": 8.0,
+   "skills": 7.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "OutSystems sells a developer platform to IT buyers; Tom's book was compliance and legal buyers, not technical teams.",
+   "Role carries a renewal quota alongside adoption and expansion, so a commercial number will likely be expected."
+  ],
+  "id": "hc-workday___outsystems-wd503-outsystems___lead-customer-succes",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 6.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Senior Customer Success Manager at B2B software vendor; in scope.",
+  "shot": 7.3,
+  "title": "Lead Customer Success Manager",
+  "verdict": "Solid senior CSM fit at a strong brand, but lateral to the RevOps pivot and light on technical-buyer experience.",
+  "want": 6.2
+ },
+ "hc-workday___thomsonreuters-wd5-external_career_site___senior-c": {
+  "at": "2026-11-11T01:47:56.166427+00:00",
+  "captured_at": "2026-11-11T01:21:02.191719+00:00",
+  "company": "Thomson Reuters",
+  "dimensions": {
+   "domain": 9.0,
+   "experience": 7.0,
+   "location_visa": 5.0,
+   "seniority": 8.0,
+   "skills": 7.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "Requires 25% travel, which cuts against the remote baseline for a US role.",
+   "Stated range is target total cash including sales incentive, so actual base sits lower."
+  ],
+  "id": "hc-workday___thomsonreuters-wd5-external_career_site___senior-c",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 6.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Senior Customer Success role at B2B legal software; in scope.",
+  "shot": 7.3,
+  "title": "Senior Customer Success Manager, Legal AI",
+  "verdict": "Strong legal-tech fit from LexisNexis, but a lateral US CS move and large-law-firm experience is a screening gap.",
+  "want": 6.1
+ },
+ "js-https-ca-indeed-com-viewjob-jk-46aa9b3f7ccc18df": {
+  "at": "2026-11-11T01:47:56.166589+00:00",
+  "captured_at": "2026-11-11T01:21:11.120120+00:00",
+  "company": "Slalom Consulting",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 3.0,
+   "location_visa": 4.0,
+   "seniority": 3.0,
+   "skills": 4.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "Consulting partner-track role selling and delivering client strategy work, not internal RevOps or GTM operations.",
+   "Senior Principal at Slalom sits near Director level, well above his Manager target band."
+  ],
+  "id": "js-https-ca-indeed-com-viewjob-jk-46aa9b3f7ccc18df",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 3.4,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Business strategy role with GTM and sales pipeline duties; in-scope strategy fun",
+  "shot": 3.3,
+  "title": "Business Strategy, Senior Principal",
+  "verdict": "Senior consulting rainmaker role with a sales target; wrong function and too senior for this pivot, skip.",
+  "want": 3.7
+ },
+ "li-4469791052": {
+  "at": "2026-11-11T01:47:56.166739+00:00",
+  "captured_at": "2026-11-10T17:41:06.447219+00:00",
+  "company": "Frontify",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 5.0,
+   "location_visa": 7.0,
+   "seniority": 4.0,
+   "skills": 5.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "title band: specialist -- check the JD for actual scope and comp",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Mid-level IC reporting to a Principal; a London band for this scope may fall below the GBP 70k Skilled Worker floor.",
+   "Role is content-production heavy (decks, battlecards, playbooks), closer to PMM than revenue operations systems work."
+  ],
+  "id": "li-4469791052",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 5.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue enablement is an in-scope commercial function; keep for full scoring.",
+  "shot": 4.7,
+  "title": "Revenue Enablement & Content Specialist",
+  "verdict": "Content-heavy mid-level enablement IC under a Principal; weak RevOps pivot value and likely sub-floor London pay, apply only if pipeline is thin.",
+  "want": 6.5
  },
  "li-4477702649": {
   "at": "2026-11-10T13:37:55.801505+00:00",
