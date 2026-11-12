@@ -2,3 +2,4 @@
 - 2026-11-10 13:38 UTC: screened 15, deep-scored 15, finished (queue empty), pending 0
 - 2026-11-11 01:52 UTC: screened 34, deep-scored 34, finished (queue empty), pending 0
 - 2026-11-11 13:52 UTC: screened 32, deep-scored 31, finished (queue empty), pending 0
+- 2026-11-12 01:54 UTC: screened 45, deep-scored 43, finished (1 screen skipped: subagent launch denied by the session's permission classifier, retried next run), pending 1
