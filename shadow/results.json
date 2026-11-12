@@ -448,6 +448,244 @@
   "verdict": "Data engineering role wearing a sales-comp badge; Tom's basic SQL and CS background won't clear a Snowflake developer screen.",
   "want": 4.1
  },
+ "az-ca-5961950522": {
+  "at": "2026-11-12T01:50:23.892047+00:00",
+  "captured_at": "2026-11-11T17:55:59.868803+00:00",
+  "company": "Adecco Group",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 4.0,
+   "location_visa": 4.0,
+   "seniority": 3.0,
+   "skills": 4.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "title band: director_plus -- check the JD for actual scope and comp",
+   "Role is mostly presales solution design and RFP bid support for staffing services, not RevOps or post-sale operations.",
+   "Director-level executive advisor to VP Sales with no prior dedicated sales strategy tenure."
+  ],
+  "id": "az-ca-5961950522",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 3.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales strategy function: in-scope commercial strategy and solution design role",
+  "shot": 3.7,
+  "title": "Director of Sales Strategy and Solution Design - Adecco Canada",
+  "verdict": "Director-level staffing presales and strategy role at Adecco; off his SaaS post-sale strengths and a management screen he fails.",
+  "want": 4.3
+ },
+ "az-ca-5961951681": {
+  "at": "2026-11-12T01:50:23.892197+00:00",
+  "captured_at": "2026-11-11T17:56:09.211036+00:00",
+  "company": "Export Packers Company Limited",
+  "dimensions": {
+   "domain": 2.0,
+   "experience": 3.0,
+   "location_visa": 3.0,
+   "seniority": 5.0,
+   "skills": 3.0,
+   "trajectory": 2.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "title band: analyst -- check the JD for actual scope and comp",
+   "Role is commercial finance and supply-chain inventory analysis at a food manufacturer, not RevOps or SaaS GTM work.",
+   "Hybrid with only one remote day weekly, implying Brampton-area office attendance four days a week."
+  ],
+  "id": "az-ca-5961951681",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 3.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Business operations title; commercial pricing, margin and sales partnering work.",
+  "shot": 3.5,
+  "title": "Business Operations Analyst",
+  "verdict": "Food-industry pricing, finance and inventory analyst role in Canada; off-target function and weak market, skip.",
+  "want": 2.4
+ },
+ "az-ca-5961951994": {
+  "at": "2026-11-12T01:50:23.892303+00:00",
+  "captured_at": "2026-11-11T17:56:08.330982+00:00",
+  "company": "AppDirect, Inc",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 4.0,
+   "location_visa": 4.0,
+   "seniority": 7.0,
+   "skills": 5.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role centres on owning the martech stack, email nurture and campaign execution, which Tom has never done.",
+   "Lead scoring and routing evidence is a single MBA project, thin against an end-to-end lead lifecycle ownership role."
+  ],
+  "id": "az-ca-5961951994",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 4.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Commercial marketing operations: lead management, CRM and pipeline duties",
+  "shot": 5.1,
+  "title": "Marketing Operations Manager",
+  "verdict": "Marketing Ops role dressed in RevOps language; off-target function with only project-level lead-management evidence. Skip.",
+  "want": 4.0
+ },
+ "az-ca-5961952059": {
+  "at": "2026-11-12T01:50:23.892387+00:00",
+  "captured_at": "2026-11-11T17:56:07.572425+00:00",
+  "company": "Anker Innovations",
+  "dimensions": {
+   "domain": 3.0,
+   "experience": 3.0,
+   "location_visa": 3.0,
+   "seniority": 2.0,
+   "skills": 3.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Class-of-2027 graduate program; 11 years of experience reads as heavy overqualification for a new-grad intake.",
+   "Consumer electronics omnichannel retail GTM, not B2B SaaS post-sale operations; his differentiator does not apply.",
+   "Posting requires a valid work visa already held; his Canadian citizenship is still unproven without a certificate."
+  ],
+  "id": "az-ca-5961952059",
+  "market": "CA",
+  "outcome": "scored",
+  "overruled": "seniority kill, but the title is not an internship or graduate scheme",
+  "score": 2.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Graduate scheme: Class of 2027 campus intake, not a target role.",
+  "shot": 2.7,
+  "title": "GTM Product Manager - Canada",
+  "verdict": "New-grad consumer electronics omnichannel marketing program; wrong level, wrong domain, wrong function for the RevOps pivot. Skip.",
+  "want": 3.0
+ },
+ "az-ca-5961952744": {
+  "at": "2026-11-12T01:50:23.892450+00:00",
+  "captured_at": "2026-11-11T17:56:06.464283+00:00",
+  "company": "Conquest Planning Inc.",
+  "dimensions": {
+   "domain": 3.0,
+   "experience": 4.0,
+   "location_visa": 3.0,
+   "seniority": 6.0,
+   "skills": 3.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Core of the role is Pardot/MAP administration and email campaign execution, which Tom has never owned.",
+   "Lead routing and enrichment overlap with his Debic project, but that was a case study, not production work."
+  ],
+  "id": "az-ca-5961952744",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 3.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Marketing operations with lead routing and pipeline reporting; commercial ops ad",
+  "shot": 4.2,
+  "title": "Marketing Operations Manager",
+  "verdict": "Marketing Ops admin role built around Pardot, an off-target function with no MAP evidence; skip despite decent fintech SaaS employer.",
+  "want": 3.0
+ },
+ "az-ca-5961953085": {
+  "at": "2026-11-12T01:50:23.892573+00:00",
+  "captured_at": "2026-11-11T17:56:05.434805+00:00",
+  "company": "1Password LLC",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 5.0,
+   "location_visa": 4.0,
+   "seniority": 7.0,
+   "skills": 4.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "Role leans toward lifecycle marketing and campaign execution, closer to marketing ops than the RevOps pivot.",
+   "Mandatory in-person GTM onboarding in Toronto."
+  ],
+  "id": "az-ca-5961953085",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 5.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer success program role, commercial operations function; keep",
+  "shot": 5.2,
+  "title": "Senior Digital Customer Success Campaign Manager",
+  "verdict": "Strong brand, but a digital lifecycle campaign role that clashes with his book-of-business background and does little for the RevOps pivot.",
+  "want": 4.7
+ },
+ "az-ca-5961954482": {
+  "at": "2026-11-12T01:50:23.892633+00:00",
+  "captured_at": "2026-11-12T01:16:44.940647+00:00",
+  "company": "Titanium Platform Inc",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 6.0,
+   "location_visa": 3.0,
+   "seniority": 7.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role manages direct reports; Tom has no people-management experience to point to.",
+   "Renewal quoting, contract execution and order dispute work lean toward deal desk rather than strategic RevOps.",
+   "Hands-on Salesforce Flow automation expected; cert covers knowledge but not production build time."
+  ],
+  "id": "az-ca-5961954482",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 5.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales operations and renewals role: CRM governance, forecasting, renewal contrac",
+  "shot": 6.3,
+  "title": "Renewals Manager",
+  "verdict": "Credible renewals-ops fit with Salesforce and renewal depth, but a Canadian telecom niche role with people management is a weak bet.",
+  "want": 4.8
+ },
+ "az-ca-5961956024": {
+  "at": "2026-11-12T01:50:23.892711+00:00",
+  "captured_at": "2026-11-12T01:16:43.883179+00:00",
+  "company": "SPS Commerce, Inc.",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 4.0,
+   "location_visa": 4.0,
+   "seniority": 5.0,
+   "skills": 5.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "location conflict: the posting says Remote - Ontario, Canada or US (US-Remote), not CA",
+   "Execution-focused engineering role under senior engineers; outbound prospecting automation, not post-sale, so his CS differentiator barely applies.",
+   "Hands-on n8n, Snowflake, Outreach and Gong integration work; his build evidence is personal projects, not production systems."
+  ],
+  "id": "az-ca-5961956024",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 4.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM systems ownership and automation: in-scope revenue systems function",
+  "shot": 4.6,
+  "title": "GTM Engineer",
+  "verdict": "Technical outbound-automation build role in Canada; his personal projects touch it, but SQL/ETL depth and dedicated tenure fall short.",
+  "want": 5.2
+ },
  "az-gb-5960197999": {
   "at": "2026-11-10T13:37:55.800445+00:00",
   "captured_at": "2026-11-10T13:26:50.022137+00:00",
