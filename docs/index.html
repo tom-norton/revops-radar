@@ -130,6 +130,7 @@
   /* Someone at this company has already had a chat with Tom. Visibility only: nothing
      about it touches the score. */
   .tag.ref{background:var(--good); color:#fff; border-color:var(--good); font-weight:650}
+  .tag.domain{background:var(--teal); color:#fff; border-color:var(--teal); font-weight:650}
   .job.ref{border-color:var(--good); box-shadow:inset 3px 0 0 var(--good)}
   #ref-wrap .note{margin:-4px 0 12px}
   .subhead{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em;
@@ -295,7 +296,8 @@ function marketOf(j){ return j.tier || j.market || ""; }
 function passesFilters(j){
   if(filters.market !== "all" && marketOf(j) !== filters.market) return false;
   if(filters.track !== "all" && trackOf(j) !== filters.track) return false;
-  if(filters.shotOnly){ const sh = shotWant(j)[0]; if(sh != null && sh < GATE) return false; }
+  // A home-domain row is never filtered out by Shot: the lift is "whatever the score".
+  if(filters.shotOnly && !inDomain(j)){ const sh = shotWant(j)[0]; if(sh != null && sh < GATE) return false; }
   return true;
 }
 
@@ -475,6 +477,7 @@ function packetFor(j){
          "Market: " + (j.tier || j.market || "?"));
   const pRefs = referralOf(j);
   if(pRefs) L.push("Referral contact (already chatted): " + referralText(pRefs));
+  if(inDomain(j)) L.push("Home domain: yes (GRC / compliance / legal / KYC-AML / audit buyer)");
   const d = j.dimensions || {};
   const dimStr = DIMS.map(([k,l])=>`${l} ${d[k] ?? "?"}`).join(", ");
   // A set-aside row was never scored, and "0.0" would read as "the radar rated this
@@ -651,8 +654,13 @@ function scoreClass(s){ return s == null ? "s-none"
 // market added to the code before the dashboard has seen it cannot jump the queue.
 let MARKET_TIER = {}, TIER_UNKNOWN = 9;
 function tierOf(j){ return MARKET_TIER[j.tier || j.market || ""] ?? TIER_UNKNOWN; }
+// Home domain (GRC, compliance, legal tech, KYC/AML, audit), read off scan.py's in_domain.
+// The one signal that predicted a response in the Nov 2026 diagnosis, so it is a LIFT: these
+// rows sort first and sit in Apply whatever they scored. Nothing else moves.
+function inDomain(j){ return j.in_domain === true; }
 function byScore(a,b){
-  return ((b.score??0) - (a.score??0))
+  return (Number(inDomain(b)) - Number(inDomain(a)))
+      || ((b.score??0) - (a.score??0))
       || String(b.found_at||"").localeCompare(String(a.found_at||""));
 }
 
@@ -730,6 +738,12 @@ function card(j, reviewed){
     ? `<span class="tag ref" title="Contacts you have had a chat with: ${esc(referralText(refs))}"
        >&#9733; Referral: ${esc((names => names.length > 2 ? `${names[0]}, ${names[1]} +${names.length - 2}`
                                                : names.join(", "))(refs.map(r=>r.name || "contact")))}</span>`
+    : "";
+  // Next to the referral tag and for the same reason: it is about Tom's history with the
+  // buyer, not about the ad, and it is why a 5.8 can be sitting in Apply.
+  const domainTag = inDomain(j)
+    ? `<span class="tag domain" title="Sells to GRC, compliance, legal, KYC/AML or audit buyers: your home domain. Lifted into Apply whatever the score."
+       >&#9670; Home domain</span>`
     : "";
   // The market, marked by tier so the backups read as backups at a glance rather than
   // needing the reader to remember which of six names is which.
@@ -832,7 +846,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${refTag}${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${refTag}${domainTag}${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${spon}${rawNote}${caps}${flags}</div>
     ${watch}${deadEnd}
     ${dims}
     <div class="foot">
@@ -972,7 +986,7 @@ function renderAll(){
   // Only Apply and Borderline rows are counted. The chip is answering "how many roles
   // worth looking at are in Belgium", and a count padded with rows scored under the floor
   // (or never scored) says there is more there than there is.
-  const countable = j=>!isSetAside(j) && (j.score??0) >= FLOOR;
+  const countable = j=>!isSetAside(j) && (inDomain(j) || (j.score??0) >= FLOOR);
   const countBy = (rows, of, defs)=>{
     rows = rows.filter(countable);
     const c = {all: rows.length};
@@ -1029,9 +1043,10 @@ function renderAll(){
   const setAside = jobs.filter(isSetAside);
   jobs = jobs.filter(j=>!isSetAside(j));
 
-  const apply = jobs.filter(j=>(j.score??0) >= GATE);
-  const border = jobs.filter(j=>(j.score??0) >= FLOOR && (j.score??0) < GATE);
-  const lowScored = jobs.filter(j=>(j.score??0) < FLOOR);
+  // A home-domain row is in Apply at any score; the bands below only sort out the rest.
+  const apply = jobs.filter(j=>inDomain(j) || (j.score??0) >= GATE);
+  const border = jobs.filter(j=>!inDomain(j) && (j.score??0) >= FLOOR && (j.score??0) < GATE);
+  const lowScored = jobs.filter(j=>!inDomain(j) && (j.score??0) < FLOOR);
 
   const lr = allStatus.last_run ? new Date(allStatus.last_run).toLocaleString("en-GB",
       {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
@@ -1047,7 +1062,7 @@ function renderAll(){
 
   const a = document.getElementById("apply"); a.innerHTML = "";
   if(apply.length) apply.forEach(j=>a.appendChild(card(j, false)));
-  else a.innerHTML = `<div class="empty">No roles at ${GATE}+ yet. The next daily run may surface some.</div>`;
+  else a.innerHTML = `<div class="empty">No home-domain roles and none at ${GATE}+ yet. The next daily run may surface some.</div>`;
 
   const borderWrap = document.getElementById("border-wrap");
   const borderWasOpen = borderWrap.querySelector("details")?.open ?? false;
@@ -1224,7 +1239,7 @@ Promise.all([
   if(allStatus.shot_want && allStatus.shot_want.weights)
     SHOT_WANT = allStatus.shot_want;
   jobs.sort(byScore);
-  document.getElementById("apply-h").textContent = `Apply — ${GATE.toFixed(1)} and up`;
+  document.getElementById("apply-h").textContent = `Apply — home domain, then ${GATE.toFixed(1)} and up`;
   renderAll();
   refreshContacts();
 

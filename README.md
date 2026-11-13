@@ -1337,6 +1337,20 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
   live audit before and after a change — a widened alternative can silently break an existing
   one, which is what `test_widening_did_not_lose_anything_previously_kept` guards.
 - **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
+- **Home domain:** `home-domain.json`. The Nov 2026 conversion diagnosis found the employer's
+  domain (GRC, ethics and compliance, legal tech, KYC/AML/fincrime, audit) was the only thing
+  that separated responses from silence: 4 in 28 resolved inside it, 1 in 135 outside. An
+  in-domain role is **lifted, and nothing else is penalised**: it goes to the front of the
+  deep-scoring queue (`priority()`), sorts first and always sits in Apply on the dashboard
+  whatever its score, carries a "Home domain" tag, and triggers ntfy regardless of the 7.5
+  threshold. Out-of-domain rows keep the same scores, order and gates as before. There is
+  deliberately no cap on out-of-domain applications. Whether a role is in-domain comes from
+  the deep scorer's `home_domain` reading of the posting where one exists, and from the
+  employer list otherwise (unscored rows, rows scored before the field existed). The list
+  is also passed to the scorer as a hint, and it can still say no for a division outside the
+  domain. Names match on the whole normalised name, so add aliases rather than fragments.
+  `in_domain` is recomputed on every run, so a name added to the list lifts rows already on
+  the board.
 - **What counts as the same posting:** `same_role()`, and the four lists it reads —
   `COMPANY_SUFFIX` / `COMPANY_REGION` (noise on an employer name), `TITLE_ALIASES` (the
   abbreviations the market uses interchangeably), `DISTINGUISHING` (words that make two

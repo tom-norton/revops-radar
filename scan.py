@@ -846,9 +846,12 @@ RUBRIC = [
      "itself reads junior: 0-3 years wanted, execution-only or admin duties, or reporting into "
      "a Manager with no ownership."),
     ("domain", "Domain / Industry Fit", 10,
-     "B2B SaaS or tech is strong (8-10). GRC/compliance/legal/regulatory adds a familiarity "
-     "bonus but is not required for a high score. Non-tech, non-SaaS (manufacturing, retail, "
-     "government) is weaker (4-6)."),
+     "B2B SaaS or tech is strong (8-10). Tom's home domain -- an employer whose product is "
+     "sold to GRC, ethics and compliance, legal, KYC/AML/fincrime or audit buyers -- is 10: it "
+     "is where his book, his buyers and his references are, and it is the only thing in "
+     "seven months of applications that separated interviews from silence. Being outside it "
+     "costs nothing: score every other B2B SaaS or tech role exactly as you would anyway. "
+     "Non-tech, non-SaaS (manufacturing, retail, government) is weaker (4-6)."),
     ("location_visa", "Location & Visa", 12,
      "This dimension is Tom's PREFERENCE ordering over places to live, not a measure of how "
      "easy a market is to get hired in. Those two come apart hardest on the US, where he has "
@@ -973,6 +976,59 @@ def title_band(title):
 
 def is_csm_title(title):
     return bool(re.search(r"customer success", title or "", re.I))
+
+# ---------------------------------------------------------------- home domain
+# The November 2026 conversion diagnosis: 182 applications, 5 responses, and the one
+# pattern in the tracker that separated responses from silence was the employer's domain.
+# Inside GRC / compliance / legal tech / KYC-AML-fincrime / audit, 4 responses in 28
+# resolved; outside it, 1 in 135. The radar score did not predict response at all (8+
+# went 1 for 15).
+#
+# So an in-domain role is LIFTED, and nothing else changes: it jumps the deep-scoring
+# queue (priority()), it sorts first and always shows in the Apply section on the
+# dashboard whatever its score, and it rings the phone. Out-of-domain rows keep exactly
+# the score, order and gate they had -- Tom asked for a lift, not a penalty, and in-domain
+# postings are too rare to make a quota of them realistic.
+#
+# Two sources, and for a scored row the scorer's reading wins. The scorer reads the
+# posting and reports home_domain (see SCORE_SCHEMA); home-domain.json is a hand-kept list
+# of employers that covers rows not yet scored, rows scored before the field existed, and
+# set-aside rows with no posting text at all. A listed employer can still be scored out of
+# the domain -- Wolters Kluwer's health division is not the GRC buyer -- which is why the
+# list is a hint to the scorer rather than an override of it.
+HOME_DOMAIN_FILE = "home-domain.json"
+_HOME_DOMAIN = None
+
+
+def home_domain_companies():
+    """Normalised token sets of the employers in home-domain.json, loaded once."""
+    global _HOME_DOMAIN
+    if _HOME_DOMAIN is None:
+        here = os.path.dirname(os.path.abspath(__file__))
+        names = []
+        for p in (os.path.join(here, HOME_DOMAIN_FILE), HOME_DOMAIN_FILE):
+            if os.path.exists(p):
+                names = json.load(open(p, encoding="utf-8")).get("companies") or []
+                break
+        _HOME_DOMAIN = {company_tokens(n) for n in names if company_tokens(n)}
+    return _HOME_DOMAIN
+
+
+def home_domain_company(company):
+    """True when the employer is on the home-domain list. Whole-name equality on the
+    normalised tokens, never a subset: a one-word name like "Harvey" or "Clio" would
+    otherwise match "Harvey Nash" or any other employer that happens to contain it."""
+    toks = company_tokens(company)
+    return bool(toks) and toks in home_domain_companies()
+
+
+def in_home_domain(job):
+    """The one answer every consumer uses. The scorer's reading when the row has one
+    (`domain_scored`, written by parse_score_result()), the employer list otherwise."""
+    scored = job.get("domain_scored")
+    if scored is not None:
+        return bool(scored)
+    return home_domain_company(job.get("company"))
 
 def salary_floor_flag(market, title, obs):
     """A note when a salary is actually stated, in the market's own currency, and below that
@@ -1262,6 +1318,7 @@ SCORE_SCHEMA = {
         },
         "function_match": {"type": "string", "enum": ["core", "adjacent", "off_target"]},
         "company_standout": {"type": "boolean"},
+        "home_domain": {"type": "boolean"},
         "language_hard_requirement": {"type": "boolean"},
         "salary_stated": {"type": "boolean"},
         "salary_min_base": {"type": "number"},
@@ -1276,7 +1333,7 @@ SCORE_SCHEMA = {
         "flags": {"type": "array", "items": {"type": "string"}},
         "verdict": {"type": "string"},
     },
-    "required": ["dimensions", "function_match", "company_standout",
+    "required": ["dimensions", "function_match", "company_standout", "home_domain",
                  "language_hard_requirement", "salary_stated", "salary_min_base",
                  "salary_max_base", "salary_currency", "posting_location",
                  "work_arrangement", "employment_type", "hard_gaps",
@@ -1357,6 +1414,7 @@ A title band (analyst / specialist / director_plus / normal) is given to you in 
 Alongside the dimensions, report these observations from the posting:
 - function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those, including a Netherlands account management role that owns renewals and expansion of an existing book. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
+- home_domain: true when the EMPLOYER's product is sold to governance, risk and compliance (GRC), ethics and compliance, legal or legal tech, KYC / AML / financial crime / identity verification, or audit and assurance buyers -- the buyers Tom served at NAVEX and LexisNexis. Judge the business unit the role sits in, not the parent: a tax or health division of a legal-information company is false. False when compliance is only a requirement of the job, or the company is merely in a regulated industry (a bank, a payments company, a healthtech) and sells something else. A "Home domain list: yes" line in the job details means Tom has listed the employer; treat it as a strong hint, not a verdict. This lifts the role on the dashboard and never lowers anything, so report it honestly either way.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
 - salary_stated / salary_min_base / salary_max_base / salary_currency: the annual base salary the posting states, as the BOTTOM and the TOP of its range, with the ISO currency code. Report the base only -- exclude bonus, commission, equity, and holiday allowance. A single figure rather than a range goes in both. If no salary is stated, set salary_stated false, both numbers 0, salary_currency "". Report only figures the POSTING states; never carry over an estimate from a job board. Reporting both halves matters: a band is only disqualifying when ALL of it is below the market's floor, so a top-of-band you leave at 0 throws away a role that pays fine at the top -- see above.
 - hard_gaps: the posting's own stated must-haves that this candidate does not meet, each quoted or paraphrased from the posting in under 12 words ("5+ years in a dedicated Sales Ops role", "advanced SQL required"). This is the screening question, not the fit question: list what a recruiter reading the CV against this ad would find missing, however much you like the rest of the role. A preference, a "nice to have", or a requirement the candidate meets through adjacent experience is NOT a hard gap. [] when there is nothing a screener would stop on -- and [] is a real answer, so do not pad it. Say each gap once; do not repeat it in flags.
@@ -1547,13 +1605,16 @@ def note_usage(u):
 def notify_strong_matches(jobs):
     """Push a notification via ntfy.sh (free, no signup) for anything scoring high
     enough this run. Never lets a notification failure affect the scan itself."""
+    # A home-domain role rings whatever it scored -- the score has not predicted a response,
+    # the domain has -- and it is listed first. Everything else needs the threshold as before.
     strong = [j for j in jobs
-              if (j.get("score") or 0) >= NTFY_SCORE_THRESHOLD
+              if ((j.get("score") or 0) >= NTFY_SCORE_THRESHOLD or in_home_domain(j))
               and market_tier(j.get("market")) <= NTFY_MAX_TIER]
     if not strong:
         return
-    strong.sort(key=lambda j: j.get("score") or 0, reverse=True)
-    body = "\n".join(f"{j['score']} — {j['title']} @ {j.get('company') or j['source']}"
+    strong.sort(key=lambda j: (in_home_domain(j), j.get("score") or 0), reverse=True)
+    body = "\n".join(f"{'[domain] ' if in_home_domain(j) else ''}{j['score']} — "
+                     f"{j['title']} @ {j.get('company') or j['source']}"
                      for j in strong[:10])
     try:
         requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=body.encode("utf-8"), timeout=15,
@@ -2386,6 +2447,12 @@ def priority(job, deferrals=None):
     #    DEFER_ESCALATES_AFTER times jumps every fresh row; below that it is a tiebreak.
     escalated = 1 if waited >= DEFER_ESCALATES_AFTER else 0
 
+    # 1b. Home domain, ahead of everything that describes the role. It is the one signal
+    #     that has predicted a response, and in-domain postings are rare enough that one
+    #     losing its scoring slot to a better-titled generic role is the expensive mistake.
+    #     A lift only: every other row keeps the order it had relative to the rest.
+    domain = 1 if in_home_domain(job) else 0
+
     # 2. Tom's market ordering. Negated because lower tier means more wanted.
     tier = -market_tier(market)
 
@@ -2420,7 +2487,7 @@ def priority(job, deferrals=None):
     posted = parse_date_loose(job.get("posted_at"))
     fresh = posted.timestamp() if posted else 0.0
 
-    return (escalated, tier, core, band, sponsor, transfer, stated_salary, real_desc,
+    return (escalated, domain, tier, core, band, sponsor, transfer, stated_salary, real_desc,
             watched, waited, fresh)
 
 
@@ -4280,6 +4347,7 @@ def job_message(job):
             + (f"Title band (resolved in code): {title_band(job.get('title'))}\n")
             + (f"Salary: {job['salary']}\n" if job.get("salary") else "")
             + (f"Sponsor: {job['sponsor']}\n" if job.get("sponsor") else "")
+            + ("Home domain list: yes\n" if home_domain_company(job.get("company")) else "")
             # Which other target markets this employer posts roles in, derived free from the
             # ATS board the apply-link lookup already fetches. Only meaningful for a US row,
             # where an internal move later is the difference between a dead end and a route
@@ -4300,14 +4368,19 @@ def job_message(job):
             # rows with a real JD, with 22 of 59 clearing the gate. Absence of evidence was
             # reading as absence of problems -- which is why the answer ended up being not
             # to score them at all.
-            + ("EVIDENCE: THIN. No real posting text could be retrieved for this role -- "
+            # Parenthesised, and the parentheses are load-bearing: without them the
+            # conditional binds to the whole concatenation above, so every row WITH a real
+            # posting reached the scorer as "Description: ..." alone -- no title, company,
+            # market, sponsor or transfer line. Found Nov 2026; the tests only ever checked
+            # the header lines on thin rows, where the true branch carried them.
+            + (("EVIDENCE: THIN. No real posting text could be retrieved for this role -- "
                "what follows is all that is known, and it is a few words of metadata "
                "rather than a job description. Score conservatively and do NOT infer "
                "scope, seniority, comp or requirements that are not stated. The two hard "
                "disqualifier checks (sponsorship ruled out, another language required) "
                "could not run on text this short, so neither has been cleared.\n"
                + (f"What is known: {desc}" if desc else "Nothing beyond the fields above.")
-               ) if is_thin(desc) else f"Description: {desc}")
+               ) if is_thin(desc) else f"Description: {desc}"))
 
 def screen_job(api_key, job):
     text = _claude_call(api_key, CLAUDE_SCREEN_MODEL, SCREEN_SYSTEM, job_message(job), 120)
@@ -4408,6 +4481,10 @@ def parse_score_result(job, data):
         # The same six numbers, split into "can I get the interview" and "do I want it".
         # Derived, never reported by the model -- see shot_want().
         "shot": shot, "want": want,
+        # The scorer's own reading of the employer's domain. in_home_domain() prefers it to
+        # the employer list, so it is stored as its own key and never overwritten by the
+        # list-derived in_domain that main() recomputes for every row on every run.
+        "domain_scored": bool(data.get("home_domain")),
         # What a screener would stop on, quoted from the ad. The model already wrote these
         # into flags as prose; asking for them as a list is what makes them sortable,
         # countable, and something the CV can be audited against.
@@ -5541,6 +5618,13 @@ def main():
     # are the split Tom actually browses by.
     for j in merged:
         j["track"] = "cs" if is_csm_title(j.get("title")) else "revops"
+
+    # Home domain for every row, scored or not, from the scorer's reading where there is one
+    # and home-domain.json otherwise. Recomputed every run rather than stored once, so an
+    # employer added to the list lifts the rows already on the board on the next scan. The
+    # dashboard reads this one field; it never keeps its own copy of the list.
+    for j in merged:
+        j["in_domain"] = in_home_domain(j)
 
     # Shot and Want for every row, not just this run's. They are arithmetic over dimension
     # scores already stored, so the 495 rows scored before this existed get them here for

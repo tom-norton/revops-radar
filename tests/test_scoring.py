@@ -3689,6 +3689,118 @@ def test_the_unkill_queue_lists_only_real_stage1_kill_ids():
     assert len(ids) == len(set(ids))
 
 
+def test_a_real_posting_still_carries_the_header_lines():
+    """job_message() once sent a row with a real posting as "Description: ..." and nothing
+    else: the thin/real conditional bound to the whole concatenation, so the title,
+    company, market and sponsor lines only ever reached the scorer on thin rows."""
+    msg = scan.job_message({"title": "RevOps Manager", "company": "Acme",
+                            "location": "Amsterdam", "market": "NL", "sponsor": "sponsor",
+                            "transfer_markets": "IE",
+                            "description": "lorem ipsum " * 200})
+    for line in ("Title: RevOps Manager", "Company: Acme", "Location: Amsterdam",
+                 "Market (resolved in code, trust this): NL", "Title band (resolved in code)",
+                 "Sponsor: sponsor", "Transfer: this employer also posts roles in IE",
+                 "Description: lorem ipsum"):
+        assert line in msg, line
+    assert msg.startswith("Title: ")
+
+
+# ---- home domain: a lift for GRC / compliance / legal / KYC-AML / audit, never a penalty
+
+
+def _domain_data(home_domain, **dimkw):
+    return {"dimensions": dims(**dimkw), "function_match": "core", "company_standout": False,
+            "home_domain": home_domain, "language_hard_requirement": False,
+            "salary_stated": False, "salary_min_base": 0, "salary_max_base": 0,
+            "salary_currency": "", "posting_location": "", "work_arrangement": "hybrid",
+            "employment_type": "permanent", "hard_gaps": [], "flags": [], "verdict": "ok"}
+
+
+def test_home_domain_list_matches_whole_names_only():
+    assert scan.home_domain_company("Fourthline")
+    assert scan.home_domain_company("Fourthline B.V.")
+    assert scan.home_domain_company("DataSnipper")
+    assert scan.home_domain_company("Thomson Reuters")
+    # a one-word listed name must not catch an employer that merely contains it
+    assert scan.home_domain_company("Harvey")
+    assert not scan.home_domain_company("Harvey Nash")
+    assert not scan.home_domain_company("Acme")
+    assert not scan.home_domain_company("")
+    assert not scan.home_domain_company(None)
+
+
+def test_the_home_domain_file_is_clean():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", scan.HOME_DOMAIN_FILE)
+    names = json.load(open(path))["companies"]
+    keys = [scan.company_tokens(n) for n in names]
+    assert all(keys), "a name that normalises to nothing can never match"
+    assert len(keys) == len(set(keys)), "duplicate employer in home-domain.json"
+
+
+def test_the_scorer_reading_wins_over_the_list():
+    # listed employer, scorer says the division is not the GRC buyer
+    assert not scan.in_home_domain({"company": "Wolters Kluwer", "domain_scored": False})
+    # unlisted employer the scorer reads as in-domain
+    assert scan.in_home_domain({"company": "Some KYC Startup", "domain_scored": True})
+    # no scorer reading yet: the list decides
+    assert scan.in_home_domain({"company": "Clio"})
+    assert not scan.in_home_domain({"company": "Acme"})
+
+
+def test_home_domain_never_changes_a_score():
+    """The lift is in ordering and placement, never in the arithmetic. Same dimensions,
+    opposite home_domain readings, identical score -- so out-of-domain rows cannot have
+    been marked down by this."""
+    job = flag_job(company="Acme")
+    a = scan.parse_score_result(job, _domain_data(True))
+    b = scan.parse_score_result(job, _domain_data(False))
+    assert a["score"] == b["score"]
+    assert a["domain_scored"] is True and b["domain_scored"] is False
+
+
+def test_home_domain_is_in_the_schema_and_the_prompt():
+    assert "home_domain" in scan.SCORE_SCHEMA["required"]
+    assert "home_domain" in scan.score_system()
+    assert "Home domain list: yes" in scan.job_message(
+        {"title": "CSM", "company": "Fourthline", "description": "lorem ipsum " * 200})
+    assert "Home domain list" not in scan.job_message(
+        {"title": "CSM", "company": "Acme", "description": "lorem ipsum " * 200})
+
+
+def test_home_domain_jumps_the_scoring_queue_and_nothing_else_moves():
+    jobs = [_qjob("nl-generic", "NL", "Revenue Operations Manager"),
+            _qjob("us-domain", "US-Remote", "Customer Success Manager", company="Vanta"),
+            _qjob("ie-generic", "IE", "Revenue Operations Manager")]
+    order = _order(jobs)
+    assert order[0] == "us-domain"
+    # the out-of-domain rows keep their relative order
+    assert order[1:] == _order(jobs[:1] + jobs[2:])
+
+
+def test_home_domain_rings_whatever_it_scored(monkeypatch=None):
+    sent = []
+
+    class _R:
+        @staticmethod
+        def post(url, data=None, **kw):
+            sent.append(data.decode("utf-8"))
+
+    real = scan.requests
+    scan.requests = _R
+    try:
+        scan.notify_strong_matches([
+            {"score": 5.4, "title": "CSM", "company": "Clio", "market": "NL", "source": "x"},
+            {"score": 5.4, "title": "CSM", "company": "Acme", "market": "NL", "source": "x"},
+            {"score": 8.0, "title": "RevOps", "company": "Acme", "market": "NL", "source": "x"},
+        ])
+    finally:
+        scan.requests = real
+    assert len(sent) == 1
+    lines = sent[0].splitlines()
+    assert lines[0].startswith("[domain] 5.4") and "Clio" in lines[0]
+    assert len(lines) == 2   # the 5.4 out-of-domain row still needs the threshold
+
+
 if __name__ == "__main__":
     sys.exit(_run())
 
