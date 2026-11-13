@@ -1,12 +1,12 @@
 # Subscription trial: comparison with the API
 
-_Updated 2026-11-13 01:48 UTC_
+_Updated 2026-11-13 15:02 UTC_
 
 ## The short version
 
-- **96 roles scored by both.** On average the trial scored **-0.01** against the API, and was off by **0.22** either way.
-- 85 of 96 were within half a point; 96 of 96 within one point.
-- 7 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
+- **110 roles scored by both.** On average the trial scored **-0.03** against the API, and was off by **0.23** either way.
+- 97 of 110 were within half a point; 110 of 110 within one point.
+- 11 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
 - **0 role(s) still waiting** for the trial to reach them.
 - 2 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
 
@@ -14,10 +14,10 @@ _Updated 2026-11-13 01:48 UTC_
 
 | | Roles |
 |---|---|
-| both kept | 107 |
-| both killed | 3 |
+| both kept | 121 |
+| both killed | 4 |
 | API kept, trial killed | 0 |
-| API killed, trial kept | 57 |
+| API killed, trial kept | 63 |
 
 ## Biggest disagreements
 
@@ -26,13 +26,13 @@ _Updated 2026-11-13 01:48 UTC_
 | GTM Strategy & Ops EMEA (London) @ Clay (UK-London) | 5.6 | 6.4 | -0.8 |
 | GTM Analytics Manager @ Marqeta (CA) | 4.7 | 3.9 | +0.8 |
 | GTM Engineer @ Escalon Corp. (CA) | 5.6 | 4.8 | +0.8 |
+| Senior Manager, Customer Success @ Vera Whole Health (US-Remote) | 5.9 | 6.7 | -0.8 |
+| Revenue Operations Regional Director @ monday.com (UK-London) | 4.7 | 5.4 | -0.7 |
 | Customer Success Manager @ Two Six Technologies (US-Remote) | 4.3 | 5.0 | -0.7 |
 | Commercial Operations Specialist @ CloudClevr Ltd (UK-London) | 5.2 | 4.5 | +0.7 |
 | GTM Strategy Manager @ Databricks (US-Remote) | 5.2 | 4.6 | +0.6 |
 | Customer Success Manager @ Mighty Networks (US-Remote) | 5.8 | 6.4 | -0.6 |
 | Senior Revenue Operations Analyst @ Jobgether (CA) | 4.6 | 5.2 | -0.6 |
-| Senior Digital Customer Success Campaign Manager @ 1Password LLC (CA) | 5.0 | 5.6 | -0.6 |
-| Customer Success Manager - EcoPlant @ Ingersoll Rand (US-Remote) | 5.5 | 4.9 | +0.6 |
 
 ## Different side of the 6.5 apply line
 
@@ -42,9 +42,13 @@ _Updated 2026-11-13 01:48 UTC_
 | Customer Success Manager @ Keebler Health (US-Remote) | 6.4 | 6.5 | -0.1 |
 | Senior Manager, Sales Strategy & Operations @ Microsoft (US-Remote) | 6.2 | 6.5 | -0.3 |
 | Senior Program Manager, Revenue Operations @ AlphaSense (US-Remote) | 6.7 | 6.2 | +0.5 |
+| GTM Strategy & Program Manager @ Extend (US-Remote) | 6.0 | 6.5 | -0.5 |
+| Enterprise Customer Success Manager (EST/CST Remote) @ Suki (US-Remote) | 6.4 | 6.5 | -0.1 |
 | Enterprise Customer Success Manager @ IMPLAN Group LLC (US-Remote) | 6.5 | 6.4 | +0.1 |
+| Senior Manager, Customer Success @ Vera Whole Health (US-Remote) | 5.9 | 6.7 | -0.8 |
 | Sales Operations Manager @ ivee (UK-London) | 6.4 | 6.9 | -0.5 |
 | Sales Operations Manager @ Haystack (CA) | 6.3 | 6.7 | -0.4 |
+| Customer Success Operations Manager @ Jobgether (CA) | 6.4 | 6.6 | -0.2 |
 
 ## Different side of 7.5
 
@@ -57,4 +61,4 @@ None.
 | 2026-11-10 | 15 | 15 |
 | 2026-11-11 | 66 | 65 |
 | 2026-11-12 | 66 | 64 |
-| 2026-11-13 | 22 | 22 |
+| 2026-11-13 | 43 | 42 |
