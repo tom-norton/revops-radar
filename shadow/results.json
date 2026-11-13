@@ -1491,6 +1491,66 @@
   "verdict": "Strong brand in London, but this is partner and product-marketing leadership he has never done; screeners will stop him.",
   "want": 5.8
  },
+ "az-gb-5964317999": {
+  "at": "2026-11-13T15:02:07.106816+00:00",
+  "captured_at": "2026-11-13T13:25:00.592511+00:00",
+  "company": "Moss",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 7.0,
+   "seniority": 5.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "title band: specialist -- check the JD for actual scope and comp",
+   "pay not confirmed in the ad; 600-600 GBP came from the feed",
+   "Enablement serves xDR and AE pre-sale teams with MEDDIC coaching; his enablement record is post-sale CS, not sales coaching.",
+   "A 3-5 year band and a Specialist seat under a Lead risk an overqualification screen against 11 years plus an MBA."
+  ],
+  "id": "az-gb-5964317999",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 6.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue enablement is a named in-scope commercial function; keep for scoring.",
+  "shot": 5.7,
+  "title": "Revenue Enablement Specialist",
+  "verdict": "A credible RevOps-adjacent enablement build at a fintech unicorn, but it is pre-sale, junior-banded and only a modest fit.",
+  "want": 6.7
+ },
+ "az-gb-5964331135": {
+  "at": "2026-11-13T15:02:07.106917+00:00",
+  "captured_at": "2026-11-13T13:25:09.861378+00:00",
+  "company": "Amazon",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 3.0,
+   "location_visa": 7.0,
+   "seniority": 4.0,
+   "skills": 2.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is a technical GenAI sales specialist owning AI sales motions, not RevOps or GTM operations.",
+   "EMEA-wide ISV coverage at Principal level implies heavy travel and deep AI technical credibility he lacks."
+  ],
+  "id": "az-gb-5964331135",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 3.6,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM strategy and sales plays for ISVs, not a quota seat",
+  "shot": 2.9,
+  "title": "Principal Business Developer - ISV, GenAI GTM Specialists, EMEA",
+  "verdict": "Strong brand, wrong job: a Principal GenAI technical sales specialist role demanding AI product expertise Tom does not have.",
+  "want": 5.2
+ },
  "az-nl-5961926126": {
   "at": "2026-11-12T01:48:06.848308+00:00",
   "captured_at": "2026-11-11T17:55:53.234420+00:00",
@@ -2377,6 +2437,35 @@
   "verdict": "Strong CS-ops fit inside RevOps at a known AI brand with pay above floor; Gong gap and program-delivery framing are the risks.",
   "want": 6.9
  },
+ "hc-grnhse___extend___6260912004": {
+  "at": "2026-11-13T15:02:07.106994+00:00",
+  "captured_at": "2026-11-13T13:25:13.729189+00:00",
+  "company": "Extend",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 5.0,
+   "location_visa": 5.0,
+   "seniority": 7.0,
+   "skills": 6.0,
+   "trajectory": 8.0
+  },
+  "flags": [
+   "Posting never says remote and the company is San Francisco headquartered; confirm the role is not office-based.",
+   "Scope leans product and program management, owning feature build from requirements through launch, beyond his evidenced work.",
+   "Role feeds an insurance-like product; underwriting concepts such as loss ratio are unfamiliar territory for him."
+  ],
+  "id": "hc-grnhse___extend___6260912004",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 6.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM strategy and program management, a commercial operations function",
+  "shot": 5.8,
+  "title": "GTM Strategy & Program Manager",
+  "verdict": "Strong GTM pivot role with pay well above floor, but 5+ years dedicated GTM/BizOps will screen him hard.",
+  "want": 6.5
+ },
  "hc-grnhse___mightynetworks___8937199002": {
   "at": "2026-11-11T13:49:49.563181+00:00",
   "captured_at": "2026-11-11T13:36:42.648659+00:00",
@@ -2522,6 +2611,36 @@
   "title": "Senior Customer Success Manager (Mid-Market)",
   "verdict": "Solid US runway Senior CSM role clearing the CS floor, but lateral and commission-heavy; apply for income, not the pivot.",
   "want": 5.4
+ },
+ "hc-grnhse___suki___8202889003": {
+  "at": "2026-11-13T15:02:07.107118+00:00",
+  "captured_at": "2026-11-13T13:25:28.439306+00:00",
+  "company": "Suki",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 7.0,
+   "location_visa": 5.0,
+   "seniority": 8.0,
+   "skills": 6.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "CSM in US-Remote at a non-standout company",
+   "Stated range is labelled OTE, so true base is likely below 150K; confirm the split.",
+   "Clients are major health systems; no healthcare or clinical-workflow experience on the CV.",
+   "Requirements section is truncated in the posting text; hidden must-haves may exist."
+  ],
+  "id": "hc-grnhse___suki___8202889003",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 6.4,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Enterprise Customer Success Manager owning renewals and expansion; in scope.",
+  "shot": 6.9,
+  "title": "Enterprise Customer Success Manager (EST/CST Remote)",
+  "verdict": "Solid enterprise CSM fit with renewal and expansion ownership and strong pay, but a lateral US healthcare move off the pivot.",
+  "want": 5.1
  },
  "hc-grnhse___twosixtechnologies___6240007004": {
   "at": "2026-11-13T01:47:40.130212+00:00",
@@ -3167,6 +3286,35 @@
   "verdict": "Training-heavy sales enablement role in ad tech; pay clears the floor but Gong and MEDDIC gaps make it a weak fit.",
   "want": 5.3
  },
+ "hc-workday___thomsonreuters-wd5-external_career_site___customer": {
+  "at": "2026-11-13T15:02:07.107210+00:00",
+  "captured_at": "2026-11-13T13:25:29.115447+00:00",
+  "company": "Thomson Reuters",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 5.0,
+   "seniority": 6.0,
+   "skills": 6.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "band 93100-172900 USD starts below your 105000 USD CS floor -- only the top half clears it",
+   "Book is federal, state and local courts and government; no public-sector customer experience to point to.",
+   "Posting text is truncated; travel requirement and any office attendance expectation could not be read."
+  ],
+  "id": "hc-workday___thomsonreuters-wd5-external_career_site___customer",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 5.7,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success Manager at B2B software company; in-scope CS function.",
+  "shot": 6.0,
+  "title": "Customer Success Manager, Government - Legal",
+  "verdict": "Legal-info CS background fits well, but the government-courts focus is a real gap and a lateral CS move.",
+  "want": 5.1
+ },
  "hc-workday___thomsonreuters-wd5-external_career_site___legal-co": {
   "at": "2026-11-11T13:52:36.023368+00:00",
   "captured_at": "2026-11-11T13:36:46.048873+00:00",
@@ -3225,6 +3373,35 @@
   "verdict": "Strong legal-tech fit from LexisNexis, but a lateral US CS move and large-law-firm experience is a screening gap.",
   "want": 6.1
  },
+ "hc-workday___verawholehealth-wd1-caremore___senior-manager--cus": {
+  "at": "2026-11-13T15:02:07.107286+00:00",
+  "captured_at": "2026-11-13T13:25:29.841255+00:00",
+  "company": "Vera Whole Health",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 7.0,
+   "location_visa": 5.0,
+   "seniority": 6.0,
+   "skills": 6.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "CSM in US-Remote at a non-standout company",
+   "Healthcare provider context with clinical-team partnership; no SaaS or GRC overlap, so domain story needs translating.",
+   "Posting never confirms remote work; verify no office attendance is expected before applying."
+  ],
+  "id": "hc-workday___verawholehealth-wd1-caremore___senior-manager--cus",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 5.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer success lead owning client portfolio strategy; in-scope CS function.",
+  "shot": 6.4,
+  "title": "Senior Manager, Customer Success",
+  "verdict": "Solid senior CS lead role clearing the US floor, but healthcare-services domain and lateral CS move make it runway, not pivot.",
+  "want": 4.7
+ },
  "hc-workday___wk-wd3-external___customer-success-advisor_r006081": {
   "at": "2026-11-13T01:47:40.130609+00:00",
   "captured_at": "2026-11-12T17:47:30.908499+00:00",
@@ -3254,6 +3431,36 @@
   "title": "Customer Success Advisor",
   "verdict": "Strong GRC-adjacent CSM fit at a Dutch-owned employer, but the mid-level Advisor scope undersells him; apply and push for senior level.",
   "want": 8.1
+ },
+ "hc-workday___workiva-wd503-careers___lead-customer-success-mana": {
+  "at": "2026-11-13T15:02:07.107351+00:00",
+  "captured_at": "2026-11-13T13:25:08.585000+00:00",
+  "company": "Workiva",
+  "dimensions": {
+   "domain": 9.0,
+   "experience": 6.0,
+   "location_visa": 7.0,
+   "seniority": 8.0,
+   "skills": 7.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role builds a scaled digital CS model; Tom's track record is high-touch enterprise, not tech-touch design.",
+   "Workiva's GRC, finance and risk platform maps closely to his NAVEX compliance background, a strong interview angle.",
+   "Capacity modeling, routing rules and Gainsight automation scope supports the RevOps pivot story despite the CSM title."
+  ],
+  "id": "hc-workday___workiva-wd503-careers___lead-customer-success-mana",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 7.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success Manager at B2B SaaS; in scope, keep for deep scoring.",
+  "shot": 6.8,
+  "title": "Lead Customer Success Manager",
+  "verdict": "Strong domain and level fit at a solid GRC SaaS brand in London; the tech-touch design requirement is the real screening gap.",
+  "want": 7.4
  },
  "hc-workday___zillow-wd5-zillow_group_external___senior-sales-st": {
   "at": "2026-11-12T01:53:04.860680+00:00",
@@ -4344,6 +4551,94 @@
   "verdict": "Senior FMCG commercial leadership role requiring consumer goods P&L and team leadership he lacks; not worth applying.",
   "want": 5.1
  },
+ "li-4489529360": {
+  "at": "2026-11-13T15:02:07.107412+00:00",
+  "captured_at": "2026-11-13T13:24:59.258810+00:00",
+  "company": "Just Eat Takeaway.com",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 4.0,
+   "location_visa": 7.0,
+   "seniority": 7.0,
+   "skills": 4.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Consumer marketplace pricing role; his B2B SaaS post-sale background does not map to delivery, service or small-order fees.",
+   "Posting text is truncated mid-requirements, so further must-haves may be hidden."
+  ],
+  "id": "li-4489529360",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 5.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Commercial pricing and GTM strategy manager; not an excluded function.",
+  "shot": 4.8,
+  "title": "GTM Manager - Consumer Pricing",
+  "verdict": "Strong brand, wrong function: B2C pricing experimentation needs growth-strategy evidence Tom does not have; long shot despite the GTM title.",
+  "want": 5.5
+ },
+ "li-4489564138": {
+  "at": "2026-11-13T15:02:07.107462+00:00",
+  "captured_at": "2026-11-13T13:25:05.963025+00:00",
+  "company": "Morgan McKinley",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 5.0,
+   "location_visa": 8.0,
+   "seniority": 6.0,
+   "skills": 6.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Recruiter ad for an unnamed financial services or insurance client, so sponsor willingness and employer quality cannot be checked.",
+   "APA/QFA mention points to a regulated insurance or advice sales setting, far from his B2B SaaS post-sale background.",
+   "Reads as leading and motivating a sales team in insurance, closer to sales management than systems-level enablement or RevOps."
+  ],
+  "id": "li-4489564138",
+  "market": "IE",
+  "outcome": "scored",
+  "score": 5.7,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement is an in-scope commercial function; domain is a scoring questio",
+  "shot": 5.6,
+  "title": "Sales Enablement Manager",
+  "verdict": "Vague recruiter enablement role in insurance sales; weak domain fit and thin RevOps substance, borderline at best.",
+  "want": 5.9
+ },
+ "li-4489576251": {
+  "at": "2026-11-13T15:02:07.107570+00:00",
+  "captured_at": "2026-11-13T13:25:04.577963+00:00",
+  "company": "Fresha",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 4.0,
+   "location_visa": 7.0,
+   "seniority": 7.0,
+   "skills": 5.0,
+   "trajectory": 7.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is a hands-on CRM systems owner build job; his HubSpot admin work is personal-instance only, not production scale.",
+   "Posting is truncated mid-requirements; a stated years-of-experience bar may be hidden in the missing text."
+  ],
+  "id": "li-4489576251",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 5.7,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM systems and CRM tool-stack ownership: in-scope commercial operations.",
+  "shot": 5.1,
+  "title": "GTM Systems Manager (London)",
+  "verdict": "Right function and market, but a production HubSpot systems-owner role he has never held; screeners will likely stop him.",
+  "want": 7.0
+ },
  "li-4489603190": {
   "at": "2026-11-11T01:52:18.790224+00:00",
   "captured_at": "2026-11-10T17:41:18.209743+00:00",
@@ -4898,6 +5193,35 @@
   "verdict": "Clean screen-pass Senior CSM role at a small unnamed platform; lateral move, decent comp, worth applying only if pipeline is thin.",
   "want": 6.6
  },
+ "li-4490553844": {
+  "at": "2026-11-13T15:02:07.107636+00:00",
+  "captured_at": "2026-11-13T13:25:35.472182+00:00",
+  "company": "Jobgether",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 6.0,
+   "location_visa": 3.0,
+   "seniority": 7.0,
+   "skills": 7.0,
+   "trajectory": 8.0
+  },
+  "flags": [
+   "CSM in CA at a non-standout company",
+   "Listed via Jobgether intermediary; the actual hiring company is undisclosed and an AI screen filters first.",
+   "Role centres on owning operating cadences and renewal forecasting, which Tom contributed to but never ran."
+  ],
+  "id": "li-4490553844",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 6.4,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success operations, a target commercial-ops function.",
+  "shot": 6.6,
+  "title": "Customer Success Operations Manager",
+  "verdict": "Strong functional CS Ops fit with HubSpot fluency, but Canada ranks low and the dedicated-ops tenure ask is a screen risk.",
+  "want": 6.0
+ },
  "reed-57554986": {
   "at": "2026-11-11T01:52:18.790743+00:00",
   "captured_at": "2026-11-10T17:41:13.648585+00:00",
@@ -4984,5 +5308,35 @@
   "title": "Senior Business Analyst, GTM Systems",
   "verdict": "Systems BA role wanting requirements, UAT and release experience he lacks; RevOps-adjacent at a good SaaS, but a weak screen.",
   "want": 5.9
+ },
+ "rr-b3da6827-9be7-4a46-b664-72d3e8fe3003": {
+  "at": "2026-11-13T15:02:07.107694+00:00",
+  "captured_at": "2026-11-13T13:25:34.217958+00:00",
+  "company": "Float",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 5.0,
+   "location_visa": 4.0,
+   "seniority": 8.0,
+   "skills": 6.0,
+   "trajectory": 9.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is pre-sale acquisition ops (BDR/AE funnel, outbound cadences), away from his post-sale differentiator.",
+   "Owns forecasting, quota-setting and territory design; his only evidence there is one MBA case study.",
+   "Requirements section was truncated in the posting text, so stated must-haves could not be checked."
+  ],
+  "id": "rr-b3da6827-9be7-4a46-b664-72d3e8fe3003",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 6.1,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue Operations Manager title names core RevOps function; keep.",
+  "shot": 6.1,
+  "title": "Revenue Operations Manager, Acquisition",
+  "verdict": "Right title and level, but an acquisition-side build role in his least-preferred market; a stretch worth applying only if pipeline is thin.",
+  "want": 6.0
  }
 }
