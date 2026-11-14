@@ -1145,6 +1145,15 @@ radar's Score, today's date, Status `Applied`, and the posting link. Referral? a
 Interview Date stay blank. A small note at the bottom of the page says whether it went in.
 If it did not, the Applied mark still stands and the row just needs adding by hand.
 
+Since Nov 2026 it also writes the radar's reading at the moment of applying — **Shot, Want,
+Rank, Gaps** (the kinds of hard gap, with any years figure), **Domain** and **Sponsor** — into
+columns of those names, which the script creates at the right-hand end of the tab the first
+time and fills by header name after that, so the original columns never move. This needs
+the new `tools/tracker-append.gs` pasted into the sheet's Apps Script and **deployed as a new
+version** (Deploy → Manage deployments → edit → New version; the URL stays the same). Until
+then the old script ignores the extra fields and writes the row as before.
+`tests/test_tracker_gs.mjs` runs the script against an in-memory sheet.
+
 The sheet side is `tools/tracker-append.gs`, an Apps Script web app that lives on the sheet
 itself; the dashboard posts to it. It skips a link already in column G, so un-applying and
 re-applying, or marking the same role on two devices, leaves one row. **Restore** does not

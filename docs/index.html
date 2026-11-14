@@ -457,10 +457,18 @@ function logToTracker(j){
   if(!TRACKER_URL || !j) return;
   const token = trackerToken();
   if(!token) return;
+  // Shot, Want, rank, gap kinds, domain and sponsor go too, into columns of their own
+  // (tools/tracker-append.gs), so the ranking can be checked against outcomes later. A
+  // deployment still running the older script ignores them and writes the row as before.
+  const [tShot, tWant] = shotWant(j);
   const body = {token, company: j.company || "", title: j.title || "",
                 location: trackerCountry(j),
                 score: j.score == null ? "" : Number(j.score).toFixed(1),
-                link: j.url || ""};
+                link: j.url || "",
+                shot: tShot == null ? "" : tShot, want: tWant == null ? "" : tWant,
+                rank: rankOf(j) ?? "",
+                gaps: (j.gap_kinds || []).map(g=>g.years ? `${g.kind} ${g.years}y` : g.kind).join("; "),
+                domain: inDomain(j) ? "Y" : "", sponsor: j.sponsor || ""};
   fetch(TRACKER_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
                       body: JSON.stringify(body)})
     .then(r=>r.json())
