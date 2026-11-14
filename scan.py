@@ -145,6 +145,11 @@ REED_KEYWORDS = OR_KEYWORDS
 # JobSpy / Indeed for Ireland (anywhere in the country). Best-effort: never breaks the run.
 JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
                 "revenue strategy", "customer success operations"]
+# The Netherlands only (Nov 2026, Tom's call): customer success searched by name. No keyword
+# feed searched it anywhere, so Dutch CSM roles arrived only through hiring.cafe and the
+# watched boards, in the one market where a CSM role is a primary target. Not added to any
+# other market: CS search terms everywhere would swamp the ops track.
+NL_CS_TERMS = ["customer success manager"]
 # The US subset, kept as a filter over the list above so a term added there cannot be
 # silently missing here. "customer success operations" stays because it IS core RevOps
 # (REVOPS_CORE admits it in the US) and post-sale ops is the work Tom most wants; plain CSM
@@ -169,6 +174,14 @@ LINKEDIN_KEYWORDS = OR_KEYWORDS
 LINKEDIN_GEO_IDS = ["90009496", "100565514", "102890719", "103100785", "104738515",
                     "103644278", "101174742"]
 LINKEDIN_PAGES = 3       # 10 results/page per market
+# Extra (geoId, keywords) searches on top of OR_KEYWORDS in every geo: customer success in
+# the Netherlands only (see NL_CS_TERMS).
+LINKEDIN_NL_GEO = "102890719"
+LINKEDIN_EXTRA_QUERIES = [(LINKEDIN_NL_GEO, '"customer success manager"')]
+
+
+def linkedin_queries():
+    return [(g, LINKEDIN_KEYWORDS) for g in LINKEDIN_GEO_IDS] + list(LINKEDIN_EXTRA_QUERIES)
 
 INCLUDE_TITLE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
@@ -3127,7 +3140,7 @@ JOBSPY_TARGETS = [
     # all pointed at London. That asymmetry is most of why 57% of the board is London and
     # 19% is NL, and it is a source gap rather than a market that has no jobs in it.
     {"cc": "nl", "location": "Netherlands", "country_indeed": "Netherlands",
-     "sites": ["indeed", "google"], "currency": "EUR", "terms": None},
+     "sites": ["indeed", "google"], "currency": "EUR", "terms": JOBSPY_TERMS + NL_CS_TERMS},
     {"cc": "be", "location": "Belgium", "country_indeed": "Belgium",
      "sites": ["indeed", "google"], "currency": "EUR", "terms": None},
     {"cc": "ie", "location": "Ireland", "country_indeed": "Ireland",
@@ -3428,8 +3441,8 @@ def fetch_linkedin():
     s = requests.Session()
     s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
     ep = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
-    for geo_id in LINKEDIN_GEO_IDS:
-        params = {"keywords": LINKEDIN_KEYWORDS, "geoId": geo_id, "f_TPR": "r86400"}
+    for geo_id, keywords in linkedin_queries():
+        params = {"keywords": keywords, "geoId": geo_id, "f_TPR": "r86400"}
         s.get(ep, params={**params, "start": 0}, timeout=20)   # cold first call is unreliable
         for page in range(LINKEDIN_PAGES):
             cards = []

@@ -2470,6 +2470,18 @@ def test_marketing_and_growth_ops_are_out_of_the_title_gate():
     assert scan.prefilter("Marketing & Revenue Operations Lead", "Amsterdam") is None
 
 
+def test_customer_success_is_searched_by_name_in_the_netherlands_only():
+    nl = next(t for t in scan.JOBSPY_TARGETS if t["cc"] == "nl")
+    assert "customer success manager" in nl["terms"]
+    for t in scan.JOBSPY_TARGETS:
+        if t["cc"] != "nl":
+            assert not any("customer success manager" in x for x in (t["terms"] or scan.JOBSPY_TERMS)), t["cc"]
+    queries = scan.linkedin_queries()
+    cs = [g for g, k in queries if "customer success manager" in k]
+    assert cs == [scan.LINKEDIN_NL_GEO]
+    assert all((g, scan.LINKEDIN_KEYWORDS) in queries for g in scan.LINKEDIN_GEO_IDS)
+
+
 def test_the_north_american_source_subsets_are_filters_over_the_full_lists():
     """Each North American subset is derived from the European list rather than written
     out again, so a term added to the main list cannot be silently missing from the
