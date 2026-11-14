@@ -98,6 +98,26 @@ NL/UK/IE and a drilling risk in interviews), Tableau (no artifact exists), dbt, 
 Marketo, CPQ, quote-to-cash tooling. A posting whose hard requirements sit in those is a
 skills miss, not a stretch.
 
+## Requirements Tom cannot meet (list them as hard gaps)
+These recur in the ads that rejected him (tracker review, Nov 2026). When a posting makes
+one of them a must-have, put it in hard_gaps, quoting the posting's own words and any years
+figure ("5+ years in a dedicated Sales Ops role"), even if the rest of the role fits. Code
+costs each one by kind; a preference or a "nice to have" is not a hard gap.
+- An existing book of business or network in a European market, or Dutch, German or
+  another language beyond English as a working requirement.
+- Deep technical product knowledge: an engineering background, hands-on technical depth
+  in the product, a technical degree.
+- People management: direct reports, team leadership — common on "Manager, Customer
+  Success" titles, which are often team-lead roles rather than senior IC ones.
+- Years in a dedicated sales, sales ops or RevOps seat: he has 11 years adjacent (CS and
+  AM) and none in the seat itself, so "3+ years in RevOps" is a real gap and "8+" close to
+  a wall. Quote the number.
+- BI tooling as a must-have (SQL beyond basic, Tableau, Power BI, Looker, dbt).
+- Owning or administering a production CRM (Salesforce admin of record, CPQ). The admin
+  certification does not cover this; see Skills.
+- Building revenue systems from scratch as the core of the role is a stretch, not a
+  dealbreaker: list it as a gap when the posting requires a track record of it.
+
 ## Seniority fit (18%)
 Target band: Manager or senior IC (Senior/Lead/Principal). Senior/Principal CSM at
 established companies scores as a primary target, not a fallback.
