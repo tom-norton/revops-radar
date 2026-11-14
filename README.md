@@ -48,9 +48,11 @@ Cloudflare** below.
 ## How it works
 
 **Data layer (several sources so no single one can break the run):**
-1. **Adzuna API** — Netherlands, UK, Canada and the US. (No Ireland coverage, hence the
-   others.) North America gets a narrower phrase set: the US title gate would drop the rest
-   on arrival, and the free tier's nominal 1,000 calls/month is already well exceeded.
+1. **Adzuna API** — Netherlands, UK and Canada. (No Ireland coverage, hence the others.)
+   Canada gets a narrower phrase set, and the free tier's nominal 1,000 calls/month is already
+   well exceeded. The US is off (`ADZUNA_SKIP_COUNTRIES`): 12 calls a run kept zero rows on
+   every run back to 28 Oct 2026, because its results carry no work-mode field for the
+   remote-only US gate to read.
 2. **Reed API** — extra UK/London depth (free key).
 3. **JobSpy** — Indeed for the **Netherlands**, **Belgium** and Ireland, plus Indeed and
    **Google Jobs** for the Netherlands, Belgium, Canada and the US. Google Jobs is the
@@ -201,8 +203,11 @@ fact is missing rather than flattening both into one sentence.
     feed over an aggregator — and it carries the ids of the rows it absorbed, so a Hide or
     Mark applied recorded against a duplicate still holds. It lists the other sources that
     had the same posting as "also on" links.
-11. Every UK/NL company is matched against the **official sponsor registers** (gov.uk daily
-    CSV, IND monthly register) and badged: sponsor / sponsor (likely) / not on register / n/a.
+11. Every London and Dutch row is matched against the **official sponsor registers** (gov.uk
+    daily CSV, IND register), by legal name first — see "The sponsor check" below — and
+    badged sponsor / likely / possible / not on register / agency post. Rows not on their
+    register, and agency posts that do not name the employer, go to a collapsed "No sponsor
+    on register" lane and do not notify.
 
 **Reading the actual ad (everything downstream is only as good as this):**
 12. Job boards routinely hand back a career page's marketing copy instead of the posting, so
@@ -1316,13 +1321,34 @@ push`.
 
 ## The sponsor check: read this
 
-Registers list **legal** names ("Adyen N.V."); postings show **trading** names ("Adyen").
-- **"not on register"** means the name didn't match — usually true, sometimes a legal-vs-trading
-  mismatch. It's a caution flag, not a delete, and the deep score treats it as a small penalty.
-- **UK** is reliable (daily CSV, ~126k sponsors). **NL** is best-effort (IND monthly register);
-  add companies you care about to `nl_sponsors_extra.txt` (one per line) to firm it up.
-- **Ireland** has no sponsor register (it uses employment permits), so Irish roles show no
-  badge — verify sponsorship directly.
+Registers list **legal** names ("IVXS UK Limited"); postings show **trading** names
+("ComplyAdvantage"). Measured on the board in Nov 2026, 37 of 66 direct-employer London "not on
+register" rows, and 7 of 21 Dutch ones, were trading-name misses: the employer was on the
+register under another name. So the check (`sponsor_fields()` in `scan.py`, `resolve()` in
+`sponsors.py`) looks for the legal name first, and only then gives up:
+
+1. **Which register** comes from the row's **market** (UK-London → UK, NL → NL), not from the
+   location text. Ireland, Belgium, Canada and the US have no register check; Ireland runs
+   employment permits, so verify sponsorship there from the ad.
+2. **Legal names tried, best first:** `sponsor_aliases.json` (hand-kept, trading name → legal
+   name(s)); the scorer's `employer_legal_entity`; a legal name written in the ad; the
+   employer's own website (footer, privacy, terms, imprint), read once a quarter per company
+   and cached in `entities.json`. A name from any of these counts **only on an exact register
+   match**, so a wrong guess can fail to help but never invents a sponsor.
+3. **Then the trading name:** an exact match (suffixes, `.com`/`.io`, "t/a" trade names and
+   parentheticals handled) is a **sponsor**; the name plus corporate filler ("Pleo" → "Pleo
+   Technologies Limited") is **likely**; a loose word match against at most three entries is
+   **possible** and shows the entry it hit, so "Clay → Clay Oven Dagenham" can be judged at a
+   glance.
+4. **Agency posts** (the agency name, or "our client is…" in the ad, or the scorer's
+   `posted_by_agency`) are checked against the client the ad names; with no client named they
+   are "agency post, employer not named".
+
+**Not on register** and **agency, employer not named** rows leave Apply and Borderline for the
+collapsed **No sponsor on register** lane and never ring (Tom's call, Nov 2026). The badge
+says which legal name was checked. If you know a lane company sponsors, add its legal name to
+`sponsor_aliases.json` and the next scan moves it back. `nl_sponsors_extra.txt` still adds
+names to the Dutch register directly. Every row on the board is re-checked every run.
 
 ## Tuning
 

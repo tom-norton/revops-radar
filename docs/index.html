@@ -63,6 +63,7 @@
        color:var(--sub); white-space:normal; overflow-wrap:anywhere}
   .tag.spon{border-color:var(--good); color:var(--good)}
   .tag.nospon{border-color:var(--warn); color:var(--warn)}
+  .tag.maybespon{border-color:var(--mut); color:var(--mut); border-style:dashed}
   .tag.flag{border-color:var(--warn); color:var(--warn)}
   /* A hard gap is not a risk to weigh, it is a stated requirement you do not meet -- the
      thing a recruiter stops on. Its own colour so it does not read as one more caution. */
@@ -190,6 +191,7 @@
   </div>
 
   <div id="border-wrap"></div>
+  <div id="nospon-wrap"></div>
   <div id="aside-wrap"></div>
   <div id="excluded-wrap"></div>
   <div id="applied-wrap"></div>
@@ -500,7 +502,13 @@ function packetFor(j){
   if(j.verdict) L.push("Radar verdict: " + j.verdict);
   // UK and NL only. Ireland runs permits rather than a register, and neither North
   // American market needs sponsorship at all, so the field is noise there.
-  if(j.sponsor && /^(UK|NL)$/.test(j.sponsor_region||"")) L.push("Sponsor: " + j.sponsor);
+  if(j.sponsor && /^(UK|NL)$/.test(j.sponsor_region||"")){
+    // The register entry that matched, or the legal name looked up and not found, so the
+    // workflow can see which company the check was actually about.
+    const ent = j.sponsor_entity ? ` (register entry: ${j.sponsor_entity})`
+              : j.sponsor_checked ? ` (checked as ${j.sponsor_checked})` : "";
+    L.push("Sponsor: " + j.sponsor + ent);
+  }
   const c = j.comp || {};
   // Only a figure the posting itself states ever lands here -- scan.py discards board
   // estimates (salary_is_predicted) precisely so this line cannot be mistaken for one.
@@ -681,8 +689,15 @@ function card(j, reviewed){
         .join(" · ")}</div>` : "";
   let spon = "";
   if(j.sponsor){
-    const good = /sponsor/i.test(j.sponsor) && !/not on/i.test(j.sponsor);
-    spon = `<span class="tag ${good?'spon':'nospon'}">${j.sponsor}</span>`;
+    const good = /sponsor/i.test(j.sponsor) && !/not on/i.test(j.sponsor)
+              && !/possible/i.test(j.sponsor);
+    const cls = good ? "spon" : /possible/i.test(j.sponsor) ? "maybespon" : "nospon";
+    // Which register entry matched -- the legal name, when it differs from the trading
+    // name -- or which legal name was looked up and missed. A "possible" match is a loose
+    // word match and is only worth anything if this name is plainly the same company.
+    const ent = j.sponsor_entity && j.sponsor_entity.toLowerCase() !== String(j.company||"").toLowerCase()
+      ? ` · ${j.sponsor_entity}` : (!good && j.sponsor_checked ? ` · checked ${j.sponsor_checked}` : "");
+    spon = `<span class="tag ${cls}" title="${esc(j.sponsor_via ? "matched via " + j.sponsor_via : "")}">${esc(j.sponsor + ent)}</span>`;
   }
   // Two kinds of thing were sharing one row of pills. A handful are short facts -- a
   // title band, a CSM-outside-NL note, whether pay is confirmed -- and read fine as
@@ -986,7 +1001,7 @@ function renderAll(){
   // Only Apply and Borderline rows are counted. The chip is answering "how many roles
   // worth looking at are in Belgium", and a count padded with rows scored under the floor
   // (or never scored) says there is more there than there is.
-  const countable = j=>!isSetAside(j) && (inDomain(j) || (j.score??0) >= FLOOR);
+  const countable = j=>!isSetAside(j) && j.sponsor_lane !== true && (inDomain(j) || (j.score??0) >= FLOOR);
   const countBy = (rows, of, defs)=>{
     rows = rows.filter(countable);
     const c = {all: rows.length};
@@ -1043,6 +1058,13 @@ function renderAll(){
   const setAside = jobs.filter(isSetAside);
   jobs = jobs.filter(j=>!isSetAside(j));
 
+  // UK and Dutch rows whose employer is not on its sponsor register, after the legal-name
+  // lookup, and agency posts that do not name the employer. Out of Apply and Borderline,
+  // into a collapsed lane of their own, and they do not ring (Tom's call, Nov 2026).
+  // Rows under the floor stay in Excluded with everything else that scored low.
+  const noSpon = jobs.filter(j=>j.sponsor_lane === true && (inDomain(j) || (j.score??0) >= FLOOR));
+  jobs = jobs.filter(j=>!noSpon.includes(j));
+
   // A home-domain row is in Apply at any score; the bands below only sort out the rest.
   const apply = jobs.filter(j=>inDomain(j) || (j.score??0) >= GATE);
   const border = jobs.filter(j=>!inDomain(j) && (j.score??0) >= FLOOR && (j.score??0) < GATE);
@@ -1056,6 +1078,7 @@ function renderAll(){
       (newCount ? `${newCount} new since ${since}  ·  ` : "")
       + (refJobs.length ? `${refJobs.length} at referral companies  ·  ` : "")
       + `${apply.length} to apply, ${border.length} borderline`
+      + (noSpon.length ? `, ${noSpon.length} no sponsor` : "")
       + (setAside.length ? `, ${setAside.length} unscored` : "")
       + (staleCount ? `  ·  ${staleCount} older than ${MAX_AGE_DAYS}d hidden` : "")
       + `  ·  last run ${lr}`;
@@ -1073,6 +1096,24 @@ function renderAll(){
     const box = document.createElement("div"); box.style.marginTop = "10px";
     border.forEach(j=>box.appendChild(card(j, false)));
     d.appendChild(box); borderWrap.appendChild(d);
+  }
+
+  const nosponWrap = document.getElementById("nospon-wrap");
+  const nosponWasOpen = nosponWrap.querySelector("details")?.open ?? false;
+  nosponWrap.innerHTML = "";
+  if(noSpon.length){
+    const d = document.createElement("details"); d.className = "borderline"; d.open = nosponWasOpen;
+    d.innerHTML = `<summary>${noSpon.length} with no sponsor on the register — UK and Dutch `
+      + `roles whose employer is not on its register, and agency posts that do not name the employer</summary>`;
+    const box = document.createElement("div"); box.style.marginTop = "10px";
+    const note = document.createElement("div"); note.className = "note";
+    note.textContent = "The check looked up each employer's legal name first (alias list, "
+      + "the scorer's reading, the ad, the company's own website) before giving up, and the "
+      + "badge says which name it checked. A miss can still be a legal name nobody found: if "
+      + "you know the company sponsors, add it to sponsor_aliases.json.";
+    box.appendChild(note);
+    noSpon.forEach(j=>box.appendChild(card(j, false)));
+    d.appendChild(box); nosponWrap.appendChild(d);
   }
 
   // Between borderline and excluded on purpose: these are not rejects, and burying them
