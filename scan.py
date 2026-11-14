@@ -1190,6 +1190,7 @@ def rank_axes(job, balance=RANK_BALANCE):
     want = round(WANT_WEIGHTS["track"] * t_score + WANT_WEIGHTS["market"] * m_score
                  + WANT_WEIGHTS["pay"] * p_score, 1)
     return {"shot": shot, "want": want, "rank": rank_of(shot, want, balance),
+            "want_track": track,
             "shot_why": "; ".join(why), "want_why": f"{_TRACK_TEXT[track]} \u00b7 "
             f"{market or 'no market'} \u00b7 {pay}", "gap_kinds": kinds}
 

@@ -151,6 +151,12 @@
   .balance input{width:140px; accent-color:var(--teal)}
   .balance .bl{font-size:12px; color:var(--sub)}
   .balance .bv{font-size:12px; color:var(--sub); min-width:7em}
+  /* Collapsed by default: rank, title, the two reason lines and the tags are what a
+     decision turns on; the verdict, watch-outs and dimension strip are one tap away. */
+  details.more{margin-top:6px}
+  details.more > summary{cursor:pointer; font-size:12px; color:var(--sub); list-style:none}
+  details.more > summary::before{content:"\25B8  "}
+  details.more[open] > summary::before{content:"\25BE  "}
   .axes{font-size:13px; line-height:1.45; margin:6px 0 2px; color:var(--sub)}
   .axes b{color:var(--ink, inherit); font-weight:650}
   .chips .lbl{font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
@@ -316,11 +322,16 @@ function trackOf(j){
 }
 const MARKET_CHIPS = [["all","All"],["NL","NL"],["IE","IE"],["UK-London","London"],
                       ["BE","BE"],["CA","CA"],["US-Remote","US"]];
-const TRACK_CHIPS = [["all","All"],["revops","RevOps"],["cs","CS"]];
+const TRACK_CHIPS = [["all","All"],["revops","RevOps"],["postsale","Post-sale ops"],["cs","CS"]];
 function marketOf(j){ return j.tier || j.market || ""; }
+// "Post-sale ops" is a slice of the RevOps track (CS operations, renewals operations,
+// customer strategy & ops), read off scan.py's want_track, so the RevOps chip still shows it.
+function onTrack(j, t){
+  return t === "postsale" ? j.want_track === "post_sale_ops" : trackOf(j) === t;
+}
 function passesFilters(j){
   if(filters.market !== "all" && marketOf(j) !== filters.market) return false;
-  if(filters.track !== "all" && trackOf(j) !== filters.track) return false;
+  if(filters.track !== "all" && !onTrack(j, filters.track)) return false;
   // A home-domain row is never filtered out by Shot: the lift is "whatever the score".
   if(filters.shotOnly){ const sh = shotWant(j)[0]; if(sh != null && sh < GATE) return false; }
   return true;
@@ -892,10 +903,10 @@ function card(j, reviewed){
       </div>
     </div>
     ${axes}
-    ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
     <div class="tags">${refTag}${domainTag}${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${spon}${rawNote}${caps}${flags}</div>
-    ${watch}${deadEnd}
-    ${dims}
+    ${deadEnd}
+    ${(j.verdict || watch || dims) ? `<details class="more"><summary>Details</summary>
+      ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}${watch}${dims}</details>` : ""}
     <div class="foot">
       <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
       ${applyLink}
@@ -1057,10 +1068,12 @@ function renderAll(){
     rows.forEach(r=>{ const k = of(r); if(k in c) c[k]++; });
     return c;
   };
-  const byTrack = jobs.filter(j=>filters.track === "all" || trackOf(j) === filters.track);
+  const byTrack = jobs.filter(j=>filters.track === "all" || onTrack(j, filters.track));
   const byMarket = jobs.filter(j=>filters.market === "all" || marketOf(j) === filters.market);
   renderChips("marketchips", MARKET_CHIPS, "market", countBy(byTrack, marketOf, MARKET_CHIPS));
-  renderChips("trackchips", TRACK_CHIPS, "track", countBy(byMarket, trackOf, TRACK_CHIPS));
+  const trackCounts = countBy(byMarket, trackOf, TRACK_CHIPS);
+  trackCounts.postsale = byMarket.filter(countable).filter(j=>onTrack(j, "postsale")).length;
+  renderChips("trackchips", TRACK_CHIPS, "track", trackCounts);
   // Rebuilt with the track chips, since renderChips clears the row it owns.
   document.getElementById("trackchips").appendChild(shotChip());
 
@@ -1071,7 +1084,7 @@ function renderAll(){
   // referral is exactly what gets a CV past the screen.
   const refJobs = jobs.filter(j=>referralOf(j)
       && (filters.market === "all" || marketOf(j) === filters.market)
-      && (filters.track === "all" || trackOf(j) === filters.track)).sort(byScore);
+      && (filters.track === "all" || onTrack(j, filters.track))).sort(byScore);
   const refWrap = document.getElementById("ref-wrap");
   refWrap.innerHTML = "";
   if(refJobs.length){
@@ -1215,7 +1228,7 @@ function openWhy(cardEl, id){
   const prev = (job && hideNote(job)) || hideNotes[id] || {};
   const picked = new Set(prev.reasons || []);
   const box = document.createElement("div"); box.className = "why";
-  box.innerHTML = `<div class="wq">Hidden. What was wrong with it? Optional — this feeds the weekly review.</div>
+  box.innerHTML = `<div class="wq">Hidden. What was wrong with it? One tap saves — optional, it feeds the weekly review.</div>
     <div class="chips"></div>
     <input type="text" maxlength="280" placeholder="Anything else (optional)" value="${esc(prev.note||"")}">
     <div class="actions"><button data-save>Save</button><button data-skip>Skip</button></div>`;
@@ -1224,23 +1237,30 @@ function openWhy(cardEl, id){
     const b = document.createElement("button");
     b.className = "chip"; b.type = "button"; b.textContent = label;
     b.setAttribute("aria-pressed", String(picked.has(code)));
+    // One tap records the reason and closes the panel: 113 notes in two months says the
+    // reasons are worth having, and a second tap on Save was the step most often skipped.
+    // A typed note in the box goes with it.
     b.addEventListener("click", ev=>{
       ev.stopPropagation();
-      picked.has(code) ? picked.delete(code) : picked.add(code);
-      b.setAttribute("aria-pressed", String(picked.has(code)));
+      picked.add(code);
+      save();
     });
     chips.appendChild(b);
   });
-  box.querySelector("[data-save]").addEventListener("click", ev=>{
-    ev.stopPropagation();
+  // The snapshot carries the row's own Shot, Want, rank and gap kinds, so the weekly review
+  // can tell whether a "Skills I lack" hide was a gap the radar had already costed.
+  function save(){
     const note = box.querySelector("input").value.trim().slice(0, 280);
     if(picked.size || note){
       hideNotes[id] = {at: new Date().toISOString(), reasons: [...picked], note,
         title: job?.title || "", company: job?.company || "", score: job?.score ?? null,
-        market: job ? marketOf(job) : "", track: job ? trackOf(job) : ""};
+        market: job ? marketOf(job) : "", track: job ? trackOf(job) : "",
+        rank: job ? rankOf(job) : null, shot: job?.shot ?? null, want: job?.want ?? null,
+        gaps: (job?.gap_kinds || []).map(g=>g.kind)};
     } else delete hideNotes[id];
     saveMap("rr_hide_notes", hideNotes); pushState(); renderAll();
-  });
+  }
+  box.querySelector("[data-save]").addEventListener("click", ev=>{ ev.stopPropagation(); save(); });
   box.querySelector("[data-skip]").addEventListener("click", ev=>{ ev.stopPropagation(); renderAll(); });
   const actions = cardEl.querySelector(".actions");
   (actions || cardEl.lastElementChild).replaceWith(box);
