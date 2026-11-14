@@ -32,6 +32,20 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+
+def axes_of(j):
+    """Shot / Want / rank for a radar row, computed the way the scan computes them now
+    (scan.rank_axes), so a row stored before the two axes existed reads the same as one
+    stored after. {} when the row has no dimension scores."""
+    if not j or not j.get("dimensions"):
+        return {}
+    try:
+        import scan
+        return scan.rank_axes(j)
+    except Exception:
+        return {k: j.get(k) for k in ("shot", "want", "rank") if j.get(k) is not None}
 FIREBASE_STATE_URL = ("https://revops-radar-2822a-default-rtdb.europe-west1."
                       "firebasedatabase.app/revops-radar-state.json")
 STRONG = 7.5
@@ -133,6 +147,40 @@ def score_band(v):
     return "7.5+" if v >= STRONG else ("6.5-7.4" if v >= GATE else "under 6.5")
 
 
+# The two-axis rank's own lines (scan.py RANK_GATE / RANK_FLOOR / RANK_NOTIFY), read from
+# status.json where the scan publishes them; these are the defaults if it has not yet.
+RANK_LINES = {"notify": 7.5, "gate": 6.8, "floor": 6.4}
+
+
+def rank_lines(status):
+    r = (status or {}).get("rank") or {}
+    return {k: float(r.get(k, v)) for k, v in RANK_LINES.items()}
+
+
+def rank_band(v, lines=RANK_LINES):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "no rank"
+    if v >= lines["notify"]:
+        return f"{lines['notify']:g}+"
+    if v >= lines["gate"]:
+        return f"{lines['gate']:g}-{lines['notify'] - 0.1:g}"
+    if v >= lines["floor"]:
+        return f"{lines['floor']:g}-{lines['gate'] - 0.1:g}"
+    return f"under {lines['floor']:g}"
+
+
+def axis_band(v):
+    """Shot or Want, in whole-point bands: the question is whether the axis separates
+    screens from silence at all, which needs a few wide bands, not fine ones."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "none"
+    return "8+" if v >= 8 else "7-7.9" if v >= 7 else "6-6.9" if v >= 6 else "under 6"
+
+
 def outcome_table(apps, key):
     """{group: {applied, interview, rejected, no_response, pending, interview_rate}}.
     The rate is over DECIDED applications only (pending excluded), so a burst of fresh
@@ -196,7 +244,7 @@ def fetch_tracker(url, token, get=requests.get):
     return text
 
 
-def applications(source, jobs, now, start):
+def applications(source, jobs, now, start, lines=RANK_LINES):
     """The coaching block: outcomes from the tracker, joined to the radar's own reading of
     each role where the dashboard still has it. `source` is a CSV file's path, or a file
     object holding the CSV."""
@@ -234,6 +282,16 @@ def applications(source, jobs, now, start):
             a["radar"] = {"verdict": j.get("verdict"), "hard_gaps": j.get("hard_gaps"),
                           "dimensions": j.get("dimensions"), "flags": j.get("flags"),
                           "sponsor": j.get("sponsor")}
+        # Shot / Want / Rank as written into the tracker at the moment of applying (Nov
+        # 2026 on), else the radar's current reading of the row where it still has it.
+        ax = axes_of(j)
+        for k in ("shot", "want", "rank"):
+            v = (r.get(k.capitalize()) or "").strip()
+            a[k] = float(v) if re.fullmatch(r"-?\d+(?:\.\d+)?", v) else ax.get(k)
+        a["rank_from"] = ("tracker" if (r.get("Rank") or "").strip()
+                          else "radar row" if ax.get("rank") is not None else None)
+        a["gap_kinds"] = ([g.split()[0] for g in (r.get("Gaps") or "").split(";") if g.strip()]
+                          or [g.get("kind") for g in ax.get("gap_kinds") or []])
         apps.append(a)
     month = lambda a: (a["applied_on"] or "?")[:7]
     return {
@@ -248,6 +306,19 @@ def applications(source, jobs, now, start):
         "by_market": outcome_table(apps, lambda a: a["market"]),
         "by_track": outcome_table(apps, lambda a: a["track"]),
         "by_score_band": outcome_table(apps, lambda a: a["band"]),
+        # The calibration table: does the two-axis rank, or either axis on its own, separate
+        # screens from silence? Rows with no rank are applications from before the radar or
+        # before the rank existed whose row has aged off the board; tools/backtest.py ranks
+        # those from git history.
+        "calibration": {
+            "by_rank_band": outcome_table(apps, lambda a: rank_band(a.get("rank"), lines)),
+            "by_shot_band": outcome_table(apps, lambda a: axis_band(a.get("shot"))),
+            "by_want_band": outcome_table(apps, lambda a: axis_band(a.get("want"))),
+            "rank_from": dict(Counter(a.get("rank_from") or "none" for a in apps)),
+            "gap_kinds_on_rejected": Counter(
+                k for a in apps if a["outcome"] == "rejected"
+                for k in a.get("gap_kinds") or []).most_common(8),
+        },
         "by_referral": outcome_table(apps, lambda a: "referral" if a["referral"] else "cold"),
         "by_month": dict(sorted(outcome_table(apps, month).items())),
         # Hard gaps on the applications the radar still holds a reading for, rejected vs
@@ -257,6 +328,19 @@ def applications(source, jobs, now, start):
             for g in (a.get("radar") or {}).get("hard_gaps") or []).most_common(10),
         "rows_with_radar_detail": sum(1 for a in apps if a.get("radar")),
     }
+
+
+def skills_hides(notes, by_id, lines, start):
+    """"Skills I lack" hides on ops-track roles ranked at or above the Apply line."""
+    def top_ops(n):
+        j = by_id.get(n.get("id"), {})
+        rank = n.get("rank") if n.get("rank") is not None else axes_of(j).get("rank")
+        track = n.get("track") or j.get("track")
+        return track == "revops" and isinstance(rank, (int, float)) and rank >= lines["gate"]
+    hits = [n for n in notes if "skills" in (n.get("reasons") or []) and top_ops(n)]
+    return {"all_time": len(hits),
+            "this_window": sum(1 for n in hits if (n.get("at") or "") >= start),
+            "gap_kinds": dict(Counter(k for n in hits for k in n.get("gaps") or []))}
 
 
 def main():
@@ -273,6 +357,7 @@ def main():
     jobs = load("docs/jobs.json", [])
     excluded = load("docs/excluded.json", {}).get("rows", [])
     status = load("docs/status.json", {})
+    lines = rank_lines(status)
     st, st_err = state()
 
     week = [j for j in jobs if (j.get("found_at") or "") >= start]
@@ -370,6 +455,10 @@ def main():
             "hide_reasons_by_market": {r: dict(c) for r, c in reason_by_market.items()},
             "hide_reason_avg_score": {r: round(sum(v) / len(v), 2)
                                       for r, v in reason_scores.items()},
+            # The plan's target: fewer "Skills I lack" hides on ops roles the radar ranks for
+            # Apply. A note made since Nov 2026 carries its own rank; an older one is read
+            # against the row's current rank where the row is still on the board.
+            "skills_hides_on_top_ops": skills_hides(notes, by_id, lines, start),
         },
         "tom_error": st_err,
     }
@@ -391,7 +480,7 @@ def main():
     else:
         try:
             source = tracker or io.StringIO(fetch_tracker(tracker_url(), token))
-            out["applications"] = applications(source, jobs, now, start)
+            out["applications"] = applications(source, jobs, now, start, lines)
         except Exception as e:
             # Never the URL with its query string: that would print the token.
             out["applications_error"] = f"tracker unreadable: {str(e)[:160]}"
