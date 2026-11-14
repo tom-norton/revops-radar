@@ -4278,7 +4278,7 @@ def hiringcafe_url(search_state):
 # The cap is the bill if incremental mode silently stopped working: 150 rows x 3 scans a
 # day x 31 days x $1.25/1000 is $17.44, inside the $19 the plan includes. Pinned by
 # test_apify_worst_case_month_fits_the_plan. Raise it and that test says what it costs.
-APIFY_MAX_ITEMS = 150   # across all five searches combined
+APIFY_MAX_ITEMS = 150   # across all six searches combined
 APIFY_PRICE_PER_ROW = 1.25 / 1000
 APIFY_PLAN_USD = 19.0
 SCANS_PER_DAY = 3
@@ -4404,7 +4404,7 @@ def fetch_apify_hiringcafe(token, diag=None):
     budget, is the direct fix and also gives a count per search (diag) instead of one
     opaque total, so a search failing is visible in the status footer."""
     out = []
-    # Ids already returned by an earlier search in THIS run. The five searches overlap by
+    # Ids already returned by an earlier search in THIS run. The six searches overlap by
     # design -- cs-nl and revops-nl both match a Dutch CS Ops role -- and every other
     # fetcher scopes its ids to a single query, so this was the one source that could hand
     # the same posting to the pipeline twice. It cost two Opus calls and put two identical

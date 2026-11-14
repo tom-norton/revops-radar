@@ -83,10 +83,10 @@ Cloudflare** below.
    companies with no overlap with `companies.json`, including the two highest-scoring rows
    the radar has found. Its value is long-tail discovery of companies not on the watchlist,
    which is why a watchlist cannot replace it.
-   The **five** searches are **structured dicts** in `scan.py`, not the percent-encoded
+   The **six** searches are **structured dicts** in `scan.py`, not the percent-encoded
    `searchState` blobs they used to be: `revops` (NL/IE/BE/CA + London 50mi),
-   `cs-eu-ca`, `cs-nl`, `us-revops` and `us-cs`. `hiringcafe_url()` rebuilds the URLs, and
-   `tests/fixtures/hiringcafe-searchstate.json` is a capture of the five URLs Tom's own
+   `cs-eu-ca`, `cs-nl`, `am-nl`, `us-revops` and `us-cs`. `hiringcafe_url()` rebuilds the URLs, and
+   `tests/fixtures/hiringcafe-searchstate.json` is a capture of the five original URLs Tom's own
    browser produced — the round-trip test asserts the code asks for precisely what he
    asked for, because a silent change in targeting shows up as a source going thin rather
    than as an error.
