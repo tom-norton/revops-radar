@@ -1,0 +1,25 @@
+{
+  "_comment": "Employers in Tom's home domain: GRC, ethics and compliance, legal and legal tech, KYC / AML / fincrime / identity verification, audit and assurance. This is the domain he sold into at NAVEX and LexisNexis, and the November 2026 conversion diagnosis found it is the only pattern in the tracker that separated responses from silence (4 in 28 resolved inside it, 1 in 135 outside). A role here is LIFTED: it sorts to the top of the scoring queue and of the dashboard, and it shows in the Apply section whatever its score. Nothing outside the list is marked down. The deep scorer also decides home_domain itself from the posting, and for a scored row its reading wins -- so this list matters most for rows not yet scored and for employers with mixed divisions, where the scorer can say no. Matching is on the whole normalised name (legal form and region stripped), not a word inside it, so 'Harvey' matches Harvey and not Harvey Nash. Add an alias when a feed writes the name differently. Seed list, edit freely.",
+  "companies": [
+    "NAVEX", "LexisNexis", "LexisNexis Risk Solutions", "Nexis Solutions",
+
+    "Fourthline", "DataSnipper", "Clio",
+
+    "OneTrust", "Workiva", "Diligent", "Wolters Kluwer", "Thomson Reuters", "LSEG",
+    "London Stock Exchange Group",
+
+    "Vanta", "Drata", "Secureframe", "AuditBoard", "Hyperproof", "LogicGate", "MetricStream",
+    "Riskonnect", "SAI360", "EQS Group", "Ethisphere", "Mitratech", "Qualio",
+    "Smarsh", "Global Relay", "Behavox",
+
+    "ComplyAdvantage", "Onfido", "Sumsub", "Veriff", "Trulioo", "Signicat", "Unit21",
+    "Hummingbird", "Sardine", "Feedzai", "Featurespace", "Quantexa", "Napier AI",
+    "Chainalysis", "Elliptic", "Ripjar", "Fenergo", "Encompass Corporation",
+
+    "Harvey", "Legora", "Luminance", "Ironclad", "Juro", "Litera", "Relativity", "Everlaw",
+    "DISCO", "Filevine", "Intapp", "Exterro", "iManage", "NetDocuments", "Definely",
+    "Robin AI", "Smokeball", "LEAP Legal Software",
+
+    "CaseWare", "Inflo", "MindBridge", "Fieldguide"
+  ]
+}
