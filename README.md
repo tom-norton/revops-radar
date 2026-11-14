@@ -735,22 +735,45 @@ bot fill this form", and the bot is mothballed — applications are made by hand
 row (the apply-link state is derived from them, and the mothballed code reads them); they
 are simply not something worth reading on a card any more.
 
-**Shot and Want, under the score.** The six dimensions answer two different questions, and
-the weighted total blends them into one number that cannot tell them apart. Stripe's GTM
-S&O Analyst scored 6.8 and Qualio's Senior CSM 6.5 — opposite problems: the Stripe role is
-one Tom badly wants and would probably not be screened for (advanced SQL and BI required),
-the Qualio one he would likely be screened for and does not much want. Split by the
-rubric's own weights they read **5.6 / 8.6** and **7.4 / 5.1**.
+**Two axes and a rank (Nov 2026).** The 0–10 score blends two different questions. The
+dashboard now ranks by two numbers instead, both computed in code (`rank_axes()` in
+`scan.py`) from fields the scorer already returns, so every stored row gets them on the next
+scan without a rescore:
 
 ```
-Shot = (experience*25 + skills*20 + seniority*15) / 60     can I get the interview
-Want = (domain*15 + location*15 + trajectory*10) / 40      do I want the job
+Shot ("likely to screen") = experience/skills/seniority (rubric weights)
+                          + home domain 2.0 (0.5 at OneTrust, Workiva, Wolters Kluwer, Diligent)
+                          - each hard gap by kind: years in seat 0.3 (3 yrs) .. 2.0 (8+),
+                            language 2.0, existing book / people management / deep technical
+                            1.0, BI tooling / CRM ownership 0.5, other 0.3 (capped at 4)
+                          - UK/NL sponsor not confirmed: 1.5 (not on register, agency),
+                            0.5 (possible, register down)
+Want                      = 0.5 track + 0.3 market + 0.2 pay
+                            track: post-sale ops 10, RevOps / sales ops 10, other ops 7.5,
+                                   CS in NL 8, CS elsewhere 6
+                            market: NL 10, IE / London 8, BE / US 6.5, Canada 5
+                            pay: stated top vs the market floor (1.3x 10, 1.15x 8.5, 1x 7),
+                                 not stated 7
+rank                      = Shot^b * Want^(1-b), b = 0.5 (even) by default
 ```
 
-No extra model call: it is arithmetic over dimension scores already stored, so every row
-already scored has both (`shot_want()` in `scan.py`, written onto each row, with the weights
-also published in `status.json` so the page can derive them for a row stored before the
-split existed). Next to them, **hard gaps** — the posting's own stated must-haves the
+Each card shows **Likely to screen** and **Want** with a one-line reason each; the big number
+is the rank. A **Balance** slider (Likely to screen ↔ Want) re-sorts the list and re-draws
+the sections in the browser; it is remembered per browser only. Apply is rank 6.8+ and
+Borderline 6.4–6.7 (`RANK_GATE` / `RANK_FLOOR`, set so Apply kept its size on 14 Nov), and a
+role notifies at rank 7.5+ (`RANK_NOTIFY`, the same weekly volume as the old rule). The home
+domain is no longer first and in Apply whatever it scored: it adds to Shot. At even balance
+the top 12 untouched roles went from 7 CS / 5 ops to 5 CS / 7 ops.
+
+Every weight is a judgement, not a fit: four screens can disprove a weighting but not fit
+one. All of them are constants in `scan.py`, published in `status.json` under `rank`, and
+`tools/backtest.py` shows where past applications would have ranked under them. The labels
+in Copy for Claude stay `Shot` / `Want` (the skill parses them), followed by the reason and
+a `Rank` line; the score line is unchanged. A customer success title that names an
+operations, strategy or enablement job ("Customer Success Operations Manager") is the ops
+track now, not the CSM track.
+
+Next to them, **hard gaps** — the posting's own stated must-haves the
 profile does not meet, quoted in under 12 words, asked for as a list in `SCORE_SCHEMA`
 rather than left as prose in the flags. They render first in the tag row, travel in the
 Copy-for-Claude block, and are where the skill's bullet audit now starts.
@@ -1110,7 +1133,7 @@ it for you.
 | `score_flags()` and `parse_score_result()` in `scan.py` | Decide the flag wordings its Step 0 table matches on; an unmatched line makes it announce that the dashboard has changed |
 | `cvbuild.contact_for()` / `NA_MARKETS` | Decides which contact block a market takes (Barcelona for NL/IE/UK/BE, Grand Rapids and no nationality line for CA/US) |
 | `profile.md` and `RUBRIC` in `scan.py` | What `score-role` scores against; it fetches both at run time rather than remembering them |
-| `shot_want()` in `scan.py` | The split both skills report |
+| `rank_axes()` in `scan.py` | Shot, Want, rank and their reasons, which both skills report |
 | `bankwrite.py` | The bullet bank's writer, called by the application skill's Step 9d |
 
 ## Application tracker

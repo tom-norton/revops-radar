@@ -141,7 +141,7 @@ def board_on(snaps, day):
             and r.get("evidence") != "thin" and (r.get("found_at") or "")[:10] >= cutoff]
 
 
-# Orderings to compare, highest first. Step 4's two-axis rank goes here when it exists.
+# Orderings to compare, highest first.
 def _num(v):
     return v if isinstance(v, (int, float)) else 0.0
 
@@ -149,8 +149,11 @@ def _num(v):
 RANKINGS = {
     "radar score": lambda r: _num(r.get("score")),
     "domain first, then score": lambda r: (1 if scan.in_home_domain(r) else 0, _num(r.get("score"))),
-    "shot": lambda r: _num(r.get("shot")),
-    "want": lambda r: _num(r.get("want")),
+    # Recomputed from the stored row with today's rank_axes(), so old rows are ranked the
+    # way the dashboard ranks them now (Shot, Want and their even-balance rank).
+    "two-axis rank": lambda r: _num(scan.rank_axes(r).get("rank")),
+    "shot": lambda r: _num(scan.rank_axes(r).get("shot")),
+    "want": lambda r: _num(scan.rank_axes(r).get("want")),
 }
 
 

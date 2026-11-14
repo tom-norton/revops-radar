@@ -187,7 +187,7 @@ def test_several_flags_are_all_reported():
     below-floor salary are excluded from this scenario deliberately -- they disqualify the
     role via deep_score_disqualifier() before score_flags() would ever run on it.)"""
     obs = dict(NO_OBS, company_standout=False)
-    flags = scan.score_flags(flag_job(title="Senior Customer Success Analyst",
+    flags = scan.score_flags(flag_job(title="Senior Customer Success Specialist",
                                       market="UK-London"), obs)
     assert len(flags) == 2      # title band, CSM outside NL
 
@@ -4091,7 +4091,81 @@ def test_home_domain_jumps_the_scoring_queue_and_nothing_else_moves():
     assert order[1:] == _order(jobs[:1] + jobs[2:])
 
 
-def test_home_domain_rings_whatever_it_scored(monkeypatch=None):
+def _ranked(company="Acme", title="Revenue Operations Manager", market="NL", dims=6, **kw):
+    row = {"company": company, "title": title, "market": market,
+           "dimensions": {k: dims for k in scan.RUBRIC_KEYS}, **kw}
+    return scan.rank_axes(row)
+
+
+def test_shot_adds_the_home_domain_with_a_smaller_lift_for_large_vendors():
+    assert _ranked()["shot"] == 6.0
+    assert _ranked(company="Clio")["shot"] == 8.0
+    assert _ranked(company="Workiva")["shot"] == 6.5
+    assert "home domain +2" in _ranked(company="Clio")["shot_why"]
+
+
+def test_shot_costs_each_gap_by_kind_and_by_years():
+    assert scan.gap_kind("3+ years in a dedicated Sales Ops role")[::2] == ("years", 0.3)
+    assert scan.gap_kind("8+ years of RevOps experience")[::2] == ("years", 2.0)
+    assert scan.gap_kind("Fluent Dutch required")[0] == "language"
+    assert scan.gap_kind("Advanced SQL and Tableau")[0] == "bi"
+    assert scan.gap_kind("Salesforce admin certification")[0] == "crm_owner"
+    assert scan.gap_kind("Experience managing a team of CSMs")[0] == "people_mgmt"
+    assert scan.gap_kind("Existing book of business in DACH")[0] == "book"
+    assert scan.gap_kind("Something unusual")[::2] == ("other", 0.3)
+    r = _ranked(hard_gaps=["5+ years in Sales Ops", "Advanced SQL"])
+    assert r["shot"] == round(6.0 - 0.8 - 0.5, 1)
+    assert [g["kind"] for g in r["gap_kinds"]] == ["years", "bi"]
+    # capped, so a long list cannot drive it below what four real walls cost
+    many = _ranked(hard_gaps=["Fluent Dutch", "Fluent German", "Fluent French"])
+    assert many["shot"] == 6.0 - scan.GAP_COST_CAP
+
+
+def test_shot_costs_an_unconfirmed_uk_or_nl_sponsor_only():
+    assert _ranked(sponsor_region="UK", sponsor_raw="not_found")["shot"] == 4.5
+    assert _ranked(sponsor_region="NL", sponsor_raw="possible")["shot"] == 5.5
+    assert _ranked(sponsor_region="UK", sponsor_raw="on_register")["shot"] == 6.0
+    assert _ranked(market="IE", sponsor_region="", sponsor_raw="n/a")["shot"] == 6.0
+
+
+def test_want_puts_post_sale_ops_and_revops_first_and_cs_in_nl_ahead_of_cs_elsewhere():
+    ops = _ranked(title="Customer Success Operations Manager")["want"]
+    rev = _ranked(title="Revenue Operations Manager")["want"]
+    other = _ranked(title="Sales Enablement Manager")["want"]
+    cs_nl = _ranked(title="Senior Customer Success Manager")["want"]
+    cs_uk = _ranked(title="Senior Customer Success Manager", market="UK-London")["want"]
+    assert ops == rev > cs_nl > other
+    assert cs_nl > cs_uk
+    assert "post-sale ops" in _ranked(title="Strategy & Operations, Customer Success")["want_why"]
+    # pay against the market floor
+    paid = _ranked(comp={"stated": True, "min_base": 90000, "max_base": 100000,
+                         "currency": "EUR"})
+    assert paid["want"] > rev and "\u20ac100K vs \u20ac71K floor" in paid["want_why"]
+
+
+def test_rank_is_a_weighted_geometric_mean_and_balance_moves_it():
+    assert scan.rank_of(9.0, 4.0, 0.5) == 6.0
+    assert scan.rank_of(9.0, 4.0, 1.0) == 9.0
+    assert scan.rank_of(9.0, 4.0, 0.0) == 4.0
+    assert scan.rank_of(None, 4.0) is None
+    assert _ranked()["rank"] == scan.rank_of(_ranked()["shot"], _ranked()["want"])
+    cfg = scan.rank_config()
+    assert cfg["balance"] == 0.5 and "OneTrust" in cfg["large_domain_vendors"]
+
+
+def test_cs_operations_titles_are_the_ops_track_not_the_csm_track():
+    for t in ["Customer Success Operations Manager", "Strategy & Operations, Customer Success",
+              "Revenue Operations Manager, Customer Success",
+              "Senior Strategy & RevOps Analyst (Customer Success)"]:
+        assert not scan.is_csm_title(t), t
+    for t in ["Customer Success Manager", "Senior Customer Success Manager - Legal",
+              "Manager, Customer Success"]:
+        assert scan.is_csm_title(t), t
+
+
+def test_notifications_ring_by_rank_and_the_domain_counts_through_shot():
+    """Nov 2026: the home domain no longer rings at any score. It lifts Shot, and a role
+    rings when its rank clears RANK_NOTIFY."""
     sent = []
 
     class _R:
@@ -4099,21 +4173,22 @@ def test_home_domain_rings_whatever_it_scored(monkeypatch=None):
         def post(url, data=None, **kw):
             sent.append(data.decode("utf-8"))
 
+    def row(company, title, dims):
+        return {"score": 6.0, "title": title, "company": company, "market": "NL",
+                "source": "x", "dimensions": {k: dims for k in scan.RUBRIC_KEYS}}
     real = scan.requests
     scan.requests = _R
     try:
         scan.notify_strong_matches([
-            {"score": 5.4, "title": "CSM", "company": "Clio", "market": "NL", "source": "x"},
-            {"score": 5.4, "title": "CSM", "company": "Acme", "market": "NL", "source": "x"},
-            {"score": 8.0, "title": "RevOps", "company": "Acme", "market": "NL", "source": "x"},
+            row("Clio", "Revenue Operations Manager", 5),     # 5 + domain 2 -> rings
+            row("Acme", "Revenue Operations Manager", 5),     # 5, no domain -> does not
+            row("Clio", "Customer Success Manager", 3),       # domain, but a weak role
         ])
     finally:
         scan.requests = real
     assert len(sent) == 1
     lines = sent[0].splitlines()
-    assert lines[0].startswith("[domain] 5.4") and "Clio" in lines[0]
-    assert len(lines) == 2   # the 5.4 out-of-domain row still needs the threshold
-
+    assert len(lines) == 1 and lines[0].startswith("[domain]") and "Clio" in lines[0]
 
 
 def test_nl_admits_account_management_that_owns_a_book():

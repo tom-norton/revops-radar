@@ -586,6 +586,16 @@ SPONSOR_REQUIRED = False      # if True, drop UK/NL jobs whose company isn't on 
 # is doing real work rather than catching strays.
 GATE = 6.5     # 6.5+ -> "apply" section
 FLOOR = 6.0    # 6.0-6.4 -> collapsed "borderline"; below -> collapsed "excluded"
+# The same two lines on the two-axis rank (see rank_axes()), which the dashboard sorts and
+# sections by since Nov 2026. Ranks run higher than scores, so these were set to keep the
+# Apply section the size it was: on 14 Nov, 21 untouched recent roles at 6.8+ against 21 by
+# the old rule (6.5+ or home domain). The score thresholds above still govern the skill's
+# variation pick and the board lookup.
+RANK_GATE = 6.8
+RANK_FLOOR = 6.4
+# A role rings at this rank or above (it was a 7.5 score or any home-domain role). 7.5 rings
+# 6 of the 155 recent rows, the same as the old rule did.
+RANK_NOTIFY = 7.5
 
 # Annual base-salary floors per market, local currency (2026). The prose version lives in
 # profile.md for the model to reason with; this is the copy the below-floor cap uses.
@@ -1021,14 +1031,206 @@ def shot_want(dims):
     return half(SHOT_DIMS), half(WANT_DIMS)
 
 
+# ---------------------------------------------------------------- two-axis ranking
+# Two numbers, both computed here from fields the scorer already returns, so every stored
+# row gets them on the next scan with no rescoring (Nov 2026, Tom's call on the balance and
+# on the home-domain lift):
+#
+#   Shot  = how likely the role is to get Tom a screen. The scorer's experience, skills and
+#           seniority, plus the home domain (the one pattern that predicted a screen), minus
+#           each requirement he cannot meet, minus an unconfirmed UK/NL sponsor.
+#   Want  = how much the role is the job he wants next: the track (post-sale ops and RevOps
+#           generalist first, CS behind them, CS in the Netherlands ahead of CS elsewhere),
+#           the market in his own order, and the pay against the market's floor.
+#
+#   rank  = Shot^b * Want^(1-b), b = RANK_BALANCE. A weighted geometric mean, so a role
+#           has to do well on both: a 9 Shot cannot carry a 3 Want to the top, which is how
+#           CS used to fill it. The dashboard's slider moves b; 0.5 (even) is the default.
+#
+# The labels stay "Shot" and "Want" because the job-application-workflow skill parses those
+# lines in Copy for Claude. The 0-10 score is unchanged and still goes to the skill.
+#
+# Every weight here is a placeholder set by judgement, not fitted: four screens can disprove
+# a weighting but cannot fit one. They are published in status.json and the backtest
+# (tools/backtest.py) reports where past applications would have ranked under them.
+RANK_BALANCE = 0.5
+SHOT_DOMAIN_BOOST = 2.0
+SHOT_DOMAIN_BOOST_LARGE = 0.5
+# Large vendors in the home domain went 0 for 12 between them: a smaller boost, not a
+# penalty (penalising them was considered and rejected, Nov 2026).
+LARGE_DOMAIN_VENDORS = ("OneTrust", "Workiva", "Wolters Kluwer", "Diligent")
+# What one requirement Tom cannot meet costs, by kind. A years requirement is costed by the
+# number: 3 years in seat is a small risk with 11 years adjacent, 8+ is close to a wall.
+GAP_COST = {"language": 2.0, "book": 1.0, "people_mgmt": 1.0, "technical": 1.0,
+            "bi": 0.5, "crm_owner": 0.5, "other": 0.3}
+GAP_YEARS_COST = ((8, 2.0), (7, 1.5), (6, 1.1), (5, 0.8), (4, 0.5), (3, 0.3), (0, 0.2))
+GAP_COST_CAP = 4.0
+SHOT_SPONSOR_COST = {"not_found": 1.5, "agency": 1.5, "possible": 0.5, "unknown": 0.5}
+WANT_TRACK = {"post_sale_ops": 10.0, "revops": 10.0, "other_ops": 7.5,
+              "cs_nl": 8.0, "cs": 6.0}
+WANT_MARKET = {1: 10.0, 2: 8.0, 3: 6.5, 4: 5.0}
+WANT_WEIGHTS = {"track": 0.5, "market": 0.3, "pay": 0.2}
+WANT_PAY_UNSTATED = 7.0
+
+_GAP_KINDS = (
+    ("language", re.compile(r"\b(?:dutch|german|french|spanish|italian|swedish|danish"
+                            r"|norwegian|finnish|polish|portuguese|nordic language|fluen|native"
+                            r" speaker|language)\b", re.I)),
+    ("book", re.compile(r"book of business|existing (?:network|book|relationships)"
+                        r"|(?:european|dach|nordic|benelux) (?:book|network|relationships)", re.I)),
+    ("people_mgmt", re.compile(r"people manag|managing (?:a )?team|direct reports"
+                               r"|line manag|team leadership|led (?:a )?team|manag\w* (?:of )?(?:a )?team", re.I)),
+    ("technical", re.compile(r"technical (?:background|degree|depth|expertise)|engineering"
+                             r" (?:background|degree)|computer science|deep technical"
+                             r"|hands-on (?:coding|engineering)|software engineering", re.I)),
+    ("bi", re.compile(r"\bsql\b|tableau|power ?bi|looker|\bbi\b|data model|python|\bdbt\b"
+                      r"|snowflake|analytics engineering", re.I)),
+    ("crm_owner", re.compile(r"(?:salesforce|crm|hubspot)\s+(?:admin|administration|"
+                             r"architect|certif)|own(?:ing|ership of)? (?:the |a )?(?:production )?crm"
+                             r"|\bcpq\b", re.I)),
+)
+_GAP_YEARS = re.compile(r"(\d{1,2})\s*\+?\s*(?:-\s*\d{1,2}\s*)?\+?\s*(?:years|yrs)", re.I)
+
+
+def gap_kind(gap):
+    """(kind, years or None, cost) for one hard gap, read off its text. The scorer writes
+    gaps as short quotes of the posting ("5+ years in a dedicated Sales Ops role"), so the
+    kind is a property of the words; the costliest reading wins."""
+    m = _GAP_YEARS.search(gap or "")
+    years = int(m.group(1)) if m else None
+    best = ("other", GAP_COST["other"])
+    for kind, rx in _GAP_KINDS:
+        if rx.search(gap or "") and GAP_COST[kind] > best[1]:
+            best = (kind, GAP_COST[kind])
+    if years is not None:
+        ycost = next(c for floor, c in GAP_YEARS_COST if years >= floor)
+        if ycost >= best[1]:
+            best = ("years", ycost)
+    return best[0], years, best[1]
+
+
+_POST_SALE_OPS = re.compile(r"customer success (?:operations|ops|strategy)|\bcs (?:operations|ops)\b"
+                            r"|customer (?:operations|strategy (?:&|and) operations)|renewals? operations"
+                            r"|post[- ]sales? (?:operations|ops)|(?:operations|ops|strategy).{0,40}customer success"
+                            r"|customer success.{0,40}(?:operations|ops)", re.I)
+_REVOPS_GENERALIST = re.compile(r"revenue operations|\brevops\b|rev ops|sales operations|sales ops"
+                                r"|\bgtm operations|go[- ]to[- ]market operations|commercial operations", re.I)
+
+
+def want_track(title, market):
+    t = title or ""
+    if _POST_SALE_OPS.search(t):
+        return "post_sale_ops"
+    if is_csm_title(t):
+        return "cs_nl" if market == "NL" else "cs"
+    if _REVOPS_GENERALIST.search(t):
+        return "revops"
+    return "other_ops"
+
+
+_TRACK_TEXT = {"post_sale_ops": "post-sale ops", "revops": "RevOps / sales ops",
+               "other_ops": "other ops", "cs_nl": "CS in NL", "cs": "CS outside NL"}
+
+
+def _money(v, cur):
+    sym = {"EUR": "\u20ac", "GBP": "\u00a3", "USD": "$", "CAD": "C$"}.get(cur, cur + " ")
+    return f"{sym}{round(v / 1000):.0f}K"
+
+
+def rank_axes(job, balance=RANK_BALANCE):
+    """{shot, want, rank, shot_why, want_why, gap_kinds} for one scored row, or {} for a
+    row with no dimension scores to read."""
+    dims = job.get("dimensions") or {}
+    if not dims:
+        return {}
+    weights = {k: w for k, _label, w, _guide in RUBRIC}
+    base = sum(_as_float(dims.get(k)) * weights[k] for k in SHOT_DIMS) / sum(
+        weights[k] for k in SHOT_DIMS)
+    shot, why = base, [f"exp {_as_float(dims.get('experience')):g}, skills "
+                       f"{_as_float(dims.get('skills')):g}, level {_as_float(dims.get('seniority')):g}"]
+    if in_home_domain(job):
+        large = any(company_tokens(job.get("company")) == company_tokens(v)
+                    for v in LARGE_DOMAIN_VENDORS)
+        boost = SHOT_DOMAIN_BOOST_LARGE if large else SHOT_DOMAIN_BOOST
+        shot += boost
+        why.append(f"home domain +{boost:g}" + (" (large vendor)" if large else ""))
+    kinds, cost, named = [], 0.0, []
+    for g in job.get("hard_gaps") or []:
+        kind, years, c = gap_kind(g)
+        kinds.append({"gap": g, "kind": kind, "years": years, "cost": c})
+        cost += c
+        named.append(f"{years}+ yrs" if kind == "years" else
+                     " ".join(str(g).split()[:4]) if kind == "other" else kind.replace("_", " "))
+    if cost:
+        cost = min(cost, GAP_COST_CAP)
+        shot -= cost
+        why.append(f"gaps -{cost:.1f} ({', '.join(named[:3])})")
+    spon = SHOT_SPONSOR_COST.get(job.get("sponsor_raw") or "") if job.get(
+        "sponsor_region") in ("UK", "NL") else None
+    if spon:
+        shot -= spon
+        why.append(f"sponsor {job.get('sponsor_raw').replace('_', ' ')} -{spon:g}")
+    shot = round(max(0.0, min(10.0, shot)), 1)
+
+    market = job.get("market") or ""
+    track = want_track(job.get("title"), market)
+    t_score = WANT_TRACK[track]
+    m_score = WANT_MARKET.get(market_tier(market), 5.0)
+    comp = job.get("comp") or {}
+    floor, cur = floor_for(market, job.get("title"))[:2]
+    top = comp.get("max_base") or comp.get("min_base")
+    if comp.get("stated") and top and floor and (comp.get("currency") or "") == cur:
+        r = top / floor
+        p_score = 10.0 if r >= 1.3 else 8.5 if r >= 1.15 else 7.0 if r >= 1.0 else 4.0
+        pay = f"pay {_money(top, cur)} vs {_money(floor, cur)} floor"
+    elif comp.get("stated") and top and not floor:
+        p_score, pay = 8.0, f"pay {_money(top, comp.get('currency') or '')}"
+    else:
+        p_score, pay = WANT_PAY_UNSTATED, "pay not stated"
+    want = round(WANT_WEIGHTS["track"] * t_score + WANT_WEIGHTS["market"] * m_score
+                 + WANT_WEIGHTS["pay"] * p_score, 1)
+    return {"shot": shot, "want": want, "rank": rank_of(shot, want, balance),
+            "shot_why": "; ".join(why), "want_why": f"{_TRACK_TEXT[track]} \u00b7 "
+            f"{market or 'no market'} \u00b7 {pay}", "gap_kinds": kinds}
+
+
+def rank_of(shot, want, balance=RANK_BALANCE):
+    """Shot^b * Want^(1-b), 0-10 to one decimal. The dashboard computes the same thing when
+    its balance slider moves (RANK in status.json carries the default)."""
+    if shot is None or want is None:
+        return None
+    return round(max(shot, 0.01) ** balance * max(want, 0.01) ** (1 - balance), 1)
+
+
+def rank_config():
+    """Everything the dashboard needs to show and recompute the two axes, for status.json."""
+    return {"balance": RANK_BALANCE, "domain_boost": SHOT_DOMAIN_BOOST,
+            "domain_boost_large": SHOT_DOMAIN_BOOST_LARGE,
+            "large_domain_vendors": list(LARGE_DOMAIN_VENDORS), "gap_cost": GAP_COST,
+            "gap_years_cost": [list(x) for x in GAP_YEARS_COST], "gap_cost_cap": GAP_COST_CAP,
+            "sponsor_cost": SHOT_SPONSOR_COST, "want_track": WANT_TRACK,
+            "want_market": {str(k): v for k, v in WANT_MARKET.items()},
+            "want_weights": WANT_WEIGHTS, "want_pay_unstated": WANT_PAY_UNSTATED}
+
+
 def title_band(title):
     for band, rx in TITLE_BANDS:
         if rx.search(title or ""):
             return band
     return "normal"
 
+# A customer success title that names an operations, strategy or enablement job is the ops
+# track, not the CSM track: "Customer Success Operations Manager", "Strategy & Operations,
+# Customer Success", "Revenue Operations Manager, Customer Success". Until Nov 2026 those
+# were tagged CS and flagged "CSM outside NL", which mislabelled the post-sale ops work Tom
+# most wants as the safer fallback track.
+_CS_OPS_WORDS = re.compile(r"\b(?:operations|ops|revops|strategy|enablement|analyst|analytics"
+                           r"|systems)\b", re.I)
+
+
 def is_csm_title(title):
-    return bool(re.search(r"customer success", title or "", re.I))
+    t = title or ""
+    return bool(re.search(r"customer success", t, re.I)) and not _CS_OPS_WORDS.search(t)
 
 # ---------------------------------------------------------------- home domain
 # The November 2026 conversion diagnosis: 182 applications, 5 responses, and the one
@@ -1780,18 +1982,23 @@ def website_lookups(rows, entities, limit=WEBSITE_LOOKUPS_PER_RUN, lookup=None, 
 def notify_strong_matches(jobs):
     """Push a notification via ntfy.sh (free, no signup) for anything scoring high
     enough this run. Never lets a notification failure affect the scan itself."""
-    # A home-domain role rings whatever it scored -- the score has not predicted a response,
-    # the domain has -- and it is listed first. Everything else needs the threshold as before.
-    # A row in the no-sponsor lane does not ring: Tom's call, Nov 2026. It is still on the
-    # dashboard, collapsed, because a register miss can be a legal-name miss.
+    # By rank since Nov 2026. The home domain used to ring at any score; it now rings
+    # through its Shot boost like everything else (Tom's call). A row in the no-sponsor lane
+    # does not ring: it is still on the dashboard, collapsed, because a register miss can be
+    # a legal-name miss. A row with no rank yet (scored before the two axes existed and not
+    # re-ranked) falls back to the old score threshold.
+    def strong_enough(j):
+        r = j.get("rank")
+        if r is None:
+            r = rank_axes(j).get("rank") if j.get("dimensions") else None
+        return r >= RANK_NOTIFY if r is not None else (j.get("score") or 0) >= NTFY_SCORE_THRESHOLD
     strong = [j for j in jobs
-              if ((j.get("score") or 0) >= NTFY_SCORE_THRESHOLD or in_home_domain(j))
-              and market_tier(j.get("market")) <= NTFY_MAX_TIER
+              if strong_enough(j) and market_tier(j.get("market")) <= NTFY_MAX_TIER
               and not j.get("sponsor_lane")]
     if not strong:
         return
-    strong.sort(key=lambda j: (in_home_domain(j), j.get("score") or 0), reverse=True)
-    body = "\n".join(f"{'[domain] ' if in_home_domain(j) else ''}{j['score']} — "
+    strong.sort(key=lambda j: j.get("rank") or 0, reverse=True)
+    body = "\n".join(f"{'[domain] ' if in_home_domain(j) else ''}{j.get('rank') or j['score']} — "
                      f"{j['title']} @ {j.get('company') or j['source']}"
                      for j in strong[:10])
     try:
@@ -5846,12 +6053,13 @@ def main():
         f"{lane} row(s) in the no-sponsor lane; {looked} employer website(s) checked, "
         f"{len(entities)} cached; {len(sponsor_aliases)} alias(es)")
 
-    # Shot and Want for every row, not just this run's. They are arithmetic over dimension
-    # scores already stored, so the 495 rows scored before this existed get them here for
-    # free rather than needing a rescore.
+    # Shot, Want and rank for every row, not just this run's: arithmetic over stored scores,
+    # hard gaps, domain, sponsor status, market and pay, so every row already on the board is
+    # re-ranked on the next scan without a rescore. After the sponsor refresh above, because
+    # an unconfirmed sponsor costs Shot.
     for j in merged:
-        if j.get("dimensions") and (j.get("shot") is None or j.get("want") is None):
-            j["shot"], j["want"] = shot_want(j["dimensions"])
+        if j.get("dimensions"):
+            j.update(rank_axes(j))
 
     for j in merged:
         ats, fillable = submit.application_status(j)
@@ -6018,7 +6226,9 @@ def main():
                # showing nothing in the meantime. The weights are the rubric's, not a
                # second set.
                "shot_want": {"shot": list(SHOT_DIMS), "want": list(WANT_DIMS),
-                             "weights": {k: w for k, _l, w, _g in RUBRIC}}},
+                             "weights": {k: w for k, _l, w, _g in RUBRIC}},
+               "rank": {**rank_config(), "gate": RANK_GATE, "floor": RANK_FLOOR,
+                        "notify": RANK_NOTIFY}},
               open("docs/status.json", "w"), indent=1)
     if not dry:
         notify_strong_matches(scored)
