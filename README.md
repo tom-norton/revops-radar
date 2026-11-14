@@ -346,7 +346,9 @@ fact is missing rather than flattening both into one sentence.
     run to ask before a CV is built or a form is filled (see `/market` below).
 
 **Scoring (two stages, so the expensive model only sees real candidates):**
-14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill), and it may
+14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill) — except at a
+    home-domain employer, where it is skipped (it killed six such roles in the fortnight to
+    14 Nov 2026) and the deep scorer reads every one. It may
     kill for **one** reason: the role is unambiguously outside Tom's target functions.
     Location is not a kill ground — it has already been decided in code, and the resolved
     market is handed to the screen as settled — and neither are the industry, the employer,
@@ -1358,11 +1360,15 @@ names to the Dutch register directly. Every row on the board is re-checked every
 - **Which titles get through:** `INCLUDE_TITLE` / `EXCLUDE_TITLE`. This gate is **market-aware,
   not purely textual** — a plain "Customer Success Manager" is admitted in the Netherlands and
   the US and nowhere else (`CSM_ANY`, applied in `prefilter()`), mirroring the CSM track weighting in
-  `profile.md`. Widening it is now cheap: anything wrong gets screened, capped, and shown in
+  `profile.md` — except at a home-domain employer, where a customer success title is admitted
+  in every market (callers pass `company` to `prefilter()`). Widening it is now cheap: anything wrong gets screened, capped, and shown in
   the excluded section rather than sitting on the dashboard, so prefer erring wide. Re-run the
   live audit before and after a change — a widened alternative can silently break an existing
   one, which is what `test_widening_did_not_lose_anything_previously_kept` guards.
-- **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
+- **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs). Since
+  Nov 2026 it includes the 30 home-domain employers whose public board could be verified; the
+  other 37 on `home-domain.json` run Workday or their own careers stack and still arrive only
+  through the aggregators. A board that fails is named in the footer and raised as a warning.
 - **Home domain:** `home-domain.json`. The Nov 2026 conversion diagnosis found the employer's
   domain (GRC, ethics and compliance, legal tech, KYC/AML/fincrime, audit) was the only thing
   that separated responses from silence: 4 in 28 resolved inside it, 1 in 135 outside. An

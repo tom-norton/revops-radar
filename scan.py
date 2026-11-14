@@ -2682,23 +2682,29 @@ def priority(job, deferrals=None):
 def location_ok(country, location):
     return market_of(country, location) is not None
 
-def prefilter(title, location, country=""):
+def prefilter(title, location, country="", company=""):
     """None if the row passes the free filters; otherwise a short reason for the drop log.
 
     The title half of this gate is market-aware, not purely textual, in both directions: a
     plain "Customer Success Manager" is admitted in the Netherlands and the US and nowhere
     else (see CSM_ANY), and a US role has to clear the much narrower REVOPS_CORE instead of
     INCLUDE_TITLE. The market is resolved once here and reused for the location check
-    below."""
+    below.
+
+    One exception by employer: at a home-domain employer a customer success title is
+    admitted in every market (Nov 2026). Three of Tom's four screens came from this domain,
+    two of them CS roles; outside it plain CSM stays NL and US only, so CS does not swamp
+    the ops track. Callers pass `company` where the source gives one."""
     t = title or ""
     market = market_of(country, location)
+    home_cs = bool(company and CSM_ANY.search(t) and home_domain_company(company))
     if market == "US-Remote":
         # The US gets the two narrow gates, not the broad one: core RevOps, or customer
         # success at any seniority. Everything else INCLUDE_TITLE would admit -- renewals,
         # generic business operations -- stays out.
         if not (REVOPS_CORE.search(t) or CSM_ANY.search(t)):
             return "title: not core RevOps or customer success (US uses the narrow gates)"
-    elif not (INCLUDE_TITLE.search(t)
+    elif not (INCLUDE_TITLE.search(t) or home_cs
               or (market == "NL" and (CSM_ANY.search(t) or NL_ACCOUNT_MGMT.search(t)))):
         return "title: no target-function keyword"
     if (market == "NL" and NL_ACCOUNT_MGMT.search(t) and not INCLUDE_TITLE.search(t)
@@ -2819,7 +2825,7 @@ def fetch_adzuna(app_id, app_key, diag, sleep=time.sleep, fetch=None):
                         stub = {"id": jid, "title": title, "location": loc,
                                 "company": (j.get("company") or {}).get("display_name", ""),
                                 "source": "adzuna"}
-                        reason = prefilter(title, loc, cc)
+                        reason = prefilter(title, loc, cc, stub["company"])
                         if reason:
                             record_drop(stub, "prefilter", reason)
                             continue
@@ -3004,7 +3010,7 @@ def fetch_jobspy(diag=None):
                 if job is None:
                     bad += 1
                     continue
-                reason = prefilter(job["title"], job["location"], cc)
+                reason = prefilter(job["title"], job["location"], cc, job.get("company"))
                 if reason:
                     record_drop({k: job[k] for k in ("id", "title", "location", "company",
                                                      "source")}, "prefilter", reason)
@@ -3035,7 +3041,7 @@ def fetch_greenhouse(name, slug):
     bump_raw("ats", len(jobs))
     for j in jobs:
         loc = (j.get("location") or {}).get("name", "")
-        reason = prefilter(j.get("title", ""), loc)
+        reason = prefilter(j.get("title", ""), loc, company=name)
         if reason:
             record_drop({"id": f"gh-{slug}-{j['id']}", "title": j.get("title", ""),
                          "location": loc, "company": name, "source": "greenhouse"},
@@ -3112,7 +3118,7 @@ def fetch_lever(name, slug):
     bump_raw("ats", len(jobs))
     for j in jobs:
         loc = (j.get("categories") or {}).get("location", "") or ""
-        reason = prefilter(j.get("text", ""), loc)
+        reason = prefilter(j.get("text", ""), loc, company=name)
         if reason:
             record_drop({"id": f"lv-{slug}-{j['id']}", "title": j.get("text", ""),
                          "location": loc, "company": name, "source": "lever"},
@@ -3132,7 +3138,7 @@ def fetch_ashby(name, slug):
     bump_raw("ats", len(jobs))
     for j in jobs:
         loc = j.get("location", "") or ""
-        reason = prefilter(j.get("title", ""), loc)
+        reason = prefilter(j.get("title", ""), loc, company=name)
         if reason:
             record_drop({"id": f"as-{slug}-{j.get('id')}", "title": j.get("title", ""),
                          "location": loc, "company": name, "source": "ashby"},
@@ -3170,7 +3176,7 @@ def fetch_board(name, slug, ats):
         # what makes it unique. A bare tail would be unreadable in the drop log.
         jid = f"bd-{ats[:2]}-{slug[:14]}-" + re.sub(r"\W+", "-",
                                                     j.get("url", "") or title)[-46:]
-        reason = prefilter(title, loc)
+        reason = prefilter(title, loc, company=name)
         if reason:
             record_drop({"id": jid, "title": title, "location": loc, "company": name,
                          "source": ats}, "prefilter", reason)
@@ -3240,7 +3246,7 @@ def fetch_linkedin():
                 m_date = re.search(r'<time class="job-search-card__listdate[^"]*"\s+datetime="([^"]+)"', c)
                 title, loc = m_title.group(1), (m_loc.group(1) if m_loc else "")
                 company = m_company.group(1) if m_company else ""
-                reason = prefilter(title, loc)
+                reason = prefilter(title, loc, company=company)
                 if reason:
                     record_drop({"id": f"li-{jid}", "title": title, "location": loc,
                                  "company": company, "source": "linkedin"}, "prefilter", reason)
@@ -5688,11 +5694,18 @@ def main():
             j["description"] = sample_desc(j.get("description"), DESC_STORE_CAP)
             scored.append(j); seen.add(j["id"]); continue
 
-        # STAGE 1: cheap screen
-        try:
-            keep, reason = screen_job(api_key, j)
-        except Exception:
-            keep, reason = True, "screen error, passed through"
+        # STAGE 1: cheap screen -- skipped at home-domain employers. The cheap screen killed
+        # six roles at them in the fortnight to 14 Nov 2026 (Clio twice, Workiva, LSEG,
+        # Trulioo, Fieldguide), and the domain is the one signal that has predicted a
+        # response. The prefilter's title gate still ran, so this only skips the Haiku
+        # judgement, and the deep scorer still reads every one.
+        if home_domain_company(j.get("company")):
+            keep, reason = True, "home-domain employer, cheap screen skipped"
+        else:
+            try:
+                keep, reason = screen_job(api_key, j)
+            except Exception:
+                keep, reason = True, "screen error, passed through"
         why = "" if keep else overrule_kill(j.get("title"), reason)
         if why:
             overruled += 1; keep = True

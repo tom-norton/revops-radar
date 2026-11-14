@@ -2481,6 +2481,28 @@ def test_the_north_american_source_subsets_are_filters_over_the_full_lists():
     assert "customer success operations" in scan.JOBSPY_CORE_TERMS
 
 
+def test_home_domain_employers_admit_customer_success_in_every_market():
+    """Plain CSM stays NL and US only, except at a home-domain employer."""
+    for loc in ["London", "Dublin, Ireland", "Brussels", "Toronto, ON"]:
+        assert scan.prefilter("Customer Success Manager", loc, "", "Clio") is None, loc
+        assert scan.prefilter("Customer Success Manager", loc, "", "Acme") is not None, loc
+    # every other gate still applies
+    assert scan.prefilter("Customer Success Manager", "Austin, TX", "", "Clio") is not None
+    assert scan.prefilter("Customer Success Manager - Contract", "London", "", "Clio")
+    assert scan.prefilter("Senior Account Executive", "London", "", "Clio")
+    # a one-word home-domain name is whole-name only
+    assert scan.prefilter("Customer Success Manager", "London", "", "Harvey Nash")
+
+
+def test_home_domain_boards_are_watched():
+    import json
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    watched = {c["name"] for c in json.load(open(os.path.join(root, "companies.json")))["companies"]}
+    for name in ["Fourthline", "ComplyAdvantage", "Trulioo", "Fieldguide", "Harvey", "DataSnipper"]:
+        assert name in watched, name
+        assert scan.home_domain_company(name), name
+
+
 def test_a_failing_company_board_is_named_not_swallowed():
     saved = scan.FEED_ERRORS.copy()
     scan.FEED_ERRORS.clear()
