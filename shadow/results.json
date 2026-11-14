@@ -1037,6 +1037,35 @@
   "verdict": "Director-level global marketing leadership at an industrial manufacturer; off-target function and seniority, skip.",
   "want": 3.0
  },
+ "az-ca-5964346785": {
+  "at": "2026-11-14T14:33:26.441377+00:00",
+  "captured_at": "2026-11-14T14:16:14.684846+00:00",
+  "company": "Airports Council International",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 4.0,
+   "location_visa": 3.0,
+   "seniority": 6.0,
+   "skills": 5.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "One-year freelance consultancy with no benefits or permanence; runway only, not a career move.",
+   "Product marketing and portfolio role at an airports trade association, not SaaS RevOps."
+  ],
+  "id": "az-ca-5964346785",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 4.5,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM and product portfolio strategy, a commercial strategy function in scope",
+  "shot": 4.8,
+  "title": "Manager, Product Portfolio Strategy & Go-to-Market",
+  "verdict": "Freelance product-marketing gig at a non-SaaS association, demanding 10 years he lacks; skip.",
+  "want": 3.9
+ },
  "az-ca-5964476764": {
   "at": "2026-11-13T15:00:27.715667+00:00",
   "captured_at": "2026-11-13T13:25:38.559422+00:00",
@@ -1065,6 +1094,64 @@
   "title": "BizOps Manager",
   "verdict": "Customer success under a BizOps title at a Series A healthtech, screening for consulting tenure he lacks; skip in Canada.",
   "want": 4.6
+ },
+ "az-ca-5964818752": {
+  "at": "2026-11-14T14:33:26.441767+00:00",
+  "captured_at": "2026-11-13T17:44:02.143089+00:00",
+  "company": "Jobgether",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 3.0,
+   "location_visa": 3.0,
+   "seniority": 6.0,
+   "skills": 4.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "Listed via Jobgether on behalf of an unnamed partner, so the real employer and its stability are unknown.",
+   "Role is an engineering-heavy marketing ops build job, far from his post-sale CS and RevOps strengths."
+  ],
+  "id": "az-ca-5964818752",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 3.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Marketing operations and revenue systems ownership; commercial ops function.",
+  "shot": 4.1,
+  "title": "Senior Marketing Operations Engineer",
+  "verdict": "Marketing ops engineering role demanding production coding and attribution ownership he lacks; off-target function in his lowest-preference market. Skip.",
+  "want": 3.6
+ },
+ "az-ca-5965572300": {
+  "at": "2026-11-14T14:33:26.441929+00:00",
+  "captured_at": "2026-11-14T14:16:16.602596+00:00",
+  "company": "Jobgether",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 3.0,
+   "location_visa": 3.0,
+   "seniority": 5.0,
+   "skills": 3.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Engineering-first role: scrapers, pipelines and internal apps, judged against a software engineer bar, not an ops bar.",
+   "Jobgether intermediary hides the employer; AI screening against core engineering requirements will likely filter him out."
+  ],
+  "id": "az-ca-5965572300",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 4.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM systems and revenue ops tooling; engineering-heavy but commercial in scope",
+  "shot": 3.5,
+  "title": "GTM Engineer (Pacific Time)",
+  "verdict": "Engineering role in GTM clothing; no professional software engineering tenure, basic SQL, and Canada's weak placement make this a pass.",
+  "want": 5.1
  },
  "az-gb-5960197999": {
   "at": "2026-11-10T13:37:55.800445+00:00",
@@ -1550,6 +1637,93 @@
   "title": "Principal Business Developer - ISV, GenAI GTM Specialists, EMEA",
   "verdict": "Strong brand, wrong job: a Principal GenAI technical sales specialist role demanding AI product expertise Tom does not have.",
   "want": 5.2
+ },
+ "az-gb-5964345078": {
+  "at": "2026-11-14T14:33:26.442166+00:00",
+  "captured_at": "2026-11-14T14:16:11.564410+00:00",
+  "company": "Deliveroo",
+  "dimensions": {
+   "domain": 3.0,
+   "experience": 3.0,
+   "location_visa": 8.0,
+   "seniority": 5.0,
+   "skills": 3.0,
+   "trajectory": 2.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Despite the GTM title this is product marketing launch coordination, not revenue operations or GTM strategy."
+  ],
+  "id": "az-gb-5964345078",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 3.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM launch coordination and sales enablement, commercial operations work",
+  "shot": 3.5,
+  "title": "Senior Associate, GTM Marketing",
+  "verdict": "Product marketing campaign coordination dressed as GTM; off-function for Tom, no PMM experience, skip.",
+  "want": 4.7
+ },
+ "az-gb-5965576009": {
+  "at": "2026-11-14T14:33:26.442425+00:00",
+  "captured_at": "2026-11-14T14:16:08.578594+00:00",
+  "company": "Xsolla",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 4.0,
+   "location_visa": 6.0,
+   "seniority": 5.0,
+   "skills": 4.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "Role is administrative support for a marketing VP: budgets, expenses, travel booking and HR paperwork, not revenue operations.",
+   "Global role requires some out-of-hours working across three regions."
+  ],
+  "id": "az-gb-5965576009",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 4.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Business operations (finance admin, reporting) under a business operations title",
+  "shot": 4.3,
+  "title": "Business Operations Manager, Experiential Marketing",
+  "verdict": "Department admin for an events team dressed as business operations; no RevOps narrative, skip unless the pipeline is empty.",
+  "want": 4.5
+ },
+ "az-gb-5965587138": {
+  "at": "2026-11-14T14:33:26.442569+00:00",
+  "captured_at": "2026-11-14T14:16:09.976988+00:00",
+  "company": "Bloomberg",
+  "dimensions": {
+   "domain": 3.0,
+   "experience": 2.0,
+   "location_visa": 8.0,
+   "seniority": 3.0,
+   "skills": 2.0,
+   "trajectory": 2.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Despite the GTM title, this is a senior brand-marketing strategy role in Marketing & PR, not revenue operations."
+  ],
+  "id": "az-gb-5965587138",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 3.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Go-to-market strategy title names a target function; brand marketing ambiguous, ",
+  "shot": 2.3,
+  "title": "Go-To-Market Brand Strategist",
+  "verdict": "Senior brand-marketing strategist role demanding 12+ years of brand experience; off-target function, skip despite Bloomberg's brand.",
+  "want": 4.7
  },
  "az-nl-5961926126": {
   "at": "2026-11-12T01:48:06.848308+00:00",
@@ -3397,6 +3571,20 @@
   "verdict": "Director-level sales enablement at a government media company; pay clears the floor but the enablement tenure gap sinks it.",
   "want": 5.0
  },
+ "hc-rippling___everflow___0ff28674-d77b-4532-a58c-84fceda17547": {
+  "at": "2026-11-14T14:33:26.442649+00:00",
+  "captured_at": "2026-11-14T14:16:05.280033+00:00",
+  "company": "Everflow Technologies Inc.",
+  "id": "hc-rippling___everflow___0ff28674-d77b-4532-a58c-84fceda17547",
+  "market": "NL",
+  "outcome": "dropped",
+  "reason": "stated salary 50000-60000 EUR entirely below the NL visa floor (71304 EUR)",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success Manager at B2B SaaS company; in-scope CS function.",
+  "stage": "below-visa-floor",
+  "title": "Customer Success Manager, Support - EU"
+ },
  "hc-smartrecruiters___quadient1___e3b516c0-66f8-469d-b195-c8caf4": {
   "at": "2026-11-11T13:51:09.103486+00:00",
   "captured_at": "2026-11-11T13:36:35.041680+00:00",
@@ -3456,6 +3644,36 @@
   "title": "Senior Key Account Manager - Semiconductor",
   "verdict": "Dutch foothold, but industrial semiconductor hardware sales with business development weight; weak fit for a SaaS post-sale RevOps pivot.",
   "want": 4.5
+ },
+ "hc-talentbrew___43250___6c499eef-4b2a-474e-b848-abeed767ded2": {
+  "at": "2026-11-14T14:33:26.442814+00:00",
+  "captured_at": "2026-11-14T14:16:12.324319+00:00",
+  "company": "Lyra Health",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 5.0,
+   "seniority": 8.0,
+   "skills": 7.0,
+   "trajectory": 9.0
+  },
+  "flags": [
+   "Qualifications section is truncated, so years-of-experience and tooling requirements could not be checked.",
+   "Initial focus is channel partnerships, where Tom has no direct operating experience.",
+   "Heavy program and project management emphasis; PMP-style rigor expected beyond his account-level CS background.",
+   "Posting text does not confirm remote; verify there is no expected office attendance."
+  ],
+  "id": "hc-talentbrew___43250___6c499eef-4b2a-474e-b848-abeed767ded2",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 6.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM Strategy and Operations title names a core target function; keep for scoring",
+  "shot": 6.8,
+  "title": "GTM Strategy and Operations Manager",
+  "verdict": "Core GTM Strategy & Ops Manager role with pay clearing the floor; strong pivot fit, but channel and program-management scope stretch him.",
+  "want": 6.7
  },
  "hc-ttcportals___meltwatercareers___18469876": {
   "at": "2026-11-11T13:51:09.103586+00:00",
