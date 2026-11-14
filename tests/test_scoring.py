@@ -338,8 +338,8 @@ def test_widening_did_not_lose_anything_previously_kept():
     previously_kept = [
         "Revenue Operations Manager", "RevOps Lead", "Rev Ops Manager",
         "Sales Operations Manager", "Sales Ops Analyst", "GTM Strategy Manager",
-        "Go-to-Market Operations Manager", "Growth Operations Manager",
-        "Marketing Operations Manager", "CS Operations Manager",
+        "Go-to-Market Operations Manager", "Sales & Marketing Operations Manager",
+        "CS Operations Manager",
         "Customer Success Operations Manager", "Strategy and Operations Manager",
         "Strategy & Operations Manager", "Business Operations Manager",
         "Commercial Operations Manager", "Sales Strategy Manager",
@@ -2459,12 +2459,15 @@ def test_gtm_alone_is_not_enough_for_the_us_gate():
         assert scan.REVOPS_CORE.search(title), title
 
 
-def test_marketing_ops_is_off_target_and_so_is_out_of_the_us_gate():
-    """profile.md lists Marketing Ops as off-target for Domain. It stays in INCLUDE_TITLE
-    for Europe, where the deep scorer weighs it, but the US gate is the pivot proper."""
-    assert not scan.REVOPS_CORE.search("Head of Marketing Operations")
-    assert scan.INCLUDE_TITLE.search("Head of Marketing Operations")
-    assert scan.prefilter("Head of Marketing Operations", "Amsterdam") is None
+def test_marketing_and_growth_ops_are_out_of_the_title_gate():
+    """Cut in Nov 2026: profile.md lists marketing ops as off-target, and none of the nine
+    on the board was applied to. A combined sales and marketing ops title stays in."""
+    for t in ["Head of Marketing Operations", "Marketing Operations Manager",
+              "Growth Operations Manager"]:
+        assert not scan.INCLUDE_TITLE.search(t), t
+        assert scan.prefilter(t, "Amsterdam") is not None, t
+    assert scan.INCLUDE_TITLE.search("Sales and Marketing Operations Manager")
+    assert scan.prefilter("Marketing & Revenue Operations Lead", "Amsterdam") is None
 
 
 def test_the_north_american_source_subsets_are_filters_over_the_full_lists():

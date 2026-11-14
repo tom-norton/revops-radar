@@ -172,7 +172,12 @@ LINKEDIN_PAGES = 3       # 10 results/page per market
 
 INCLUDE_TITLE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
-    r"|gtm|go[- ]to[- ]market|growth operations|marketing operations"
+    r"|gtm|go[- ]to[- ]market"
+    # Marketing and growth operations were cut in Nov 2026 (Tom's call): profile.md lists
+    # marketing ops as off-target, and the 9 such roles on the board averaged 4.3 with none
+    # applied to, each still paying a screen and often a deep score. A combined sales and
+    # marketing ops title stays in.
+    r"|sales (?:&|and) marketing operations"
     r"|cs operations|customer success operations"
     # Strategy & Operations, in every wording the market actually uses. "op(eration)?s" so
     # the abbreviated "Strategy & Ops" isn't missed; the connector class covers "Strategy,
