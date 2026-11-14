@@ -63,6 +63,7 @@
        color:var(--sub); white-space:normal; overflow-wrap:anywhere}
   .tag.spon{border-color:var(--good); color:var(--good)}
   .tag.nospon{border-color:var(--warn); color:var(--warn)}
+  .tag.maybespon{border-color:var(--mut); color:var(--mut); border-style:dashed}
   .tag.flag{border-color:var(--warn); color:var(--warn)}
   /* A hard gap is not a risk to weigh, it is a stated requirement you do not meet -- the
      thing a recruiter stops on. Its own colour so it does not read as one more caution. */
@@ -147,6 +148,17 @@
            padding:8px 0 9px; margin:0 0 6px; border-bottom:1px solid var(--line)}
   .chips{display:flex; flex-wrap:wrap; gap:6px; align-items:center}
   .chips + .chips{margin-top:6px}
+  .balance input{width:140px; accent-color:var(--teal)}
+  .balance .bl{font-size:12px; color:var(--sub)}
+  .balance .bv{font-size:12px; color:var(--sub); min-width:7em}
+  /* Collapsed by default: rank, title, the two reason lines and the tags are what a
+     decision turns on; the verdict, watch-outs and dimension strip are one tap away. */
+  details.more{margin-top:6px}
+  details.more > summary{cursor:pointer; font-size:12px; color:var(--sub); list-style:none}
+  details.more > summary::before{content:"\25B8  "}
+  details.more[open] > summary::before{content:"\25BE  "}
+  .axes{font-size:13px; line-height:1.45; margin:6px 0 2px; color:var(--sub)}
+  .axes b{color:var(--ink, inherit); font-weight:650}
   .chips .lbl{font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
               color:var(--mut); font-weight:700; margin-right:2px; min-width:44px}
   .chip{font:600 11.5px -apple-system,"Segoe UI",Roboto,sans-serif; padding:4px 10px;
@@ -180,6 +192,11 @@
   <div class="filters" id="filters">
     <div class="chips" id="marketchips"><span class="lbl">Market</span></div>
     <div class="chips" id="trackchips"><span class="lbl">Track</span></div>
+    <div class="chips balance" id="balancerow"><span class="lbl">Balance</span>
+      <span class="bl">Likely to screen</span>
+      <input type="range" id="balance" min="0" max="100" step="10"
+             aria-label="Balance between likely to screen and want">
+      <span class="bl">Want</span><span class="bv" id="balanceval"></span></div>
   </div>
 
   <div id="ref-wrap"></div>
@@ -190,6 +207,7 @@
   </div>
 
   <div id="border-wrap"></div>
+  <div id="nospon-wrap"></div>
   <div id="aside-wrap"></div>
   <div id="excluded-wrap"></div>
   <div id="applied-wrap"></div>
@@ -202,6 +220,19 @@
 // Defaults only. scan.py writes the real values into status.json so the bands live in one
 // place; if status.json is older than this page these are what you get.
 let GATE = 6.5, FLOOR = 6.0;
+// The two-axis rank (scan.py rank_axes()): Shot = likely to screen, Want = the job Tom
+// wants, rank = Shot^b * Want^(1-b). Sections and order run on rank; the slider moves b.
+// Defaults only -- status.json's "rank" block carries scan.py's values.
+let RANK = {balance: 0.5, gate: 6.8, floor: 6.4};
+let BALANCE = null;
+try{ const v = localStorage.getItem("rr_balance"); if(v !== null && v !== "") BALANCE = Number(v); }catch(e){}
+function balance(){ return BALANCE == null || isNaN(BALANCE) ? RANK.balance : BALANCE; }
+function rankOf(j){
+  const [sh, w] = shotWant(j);
+  if(sh == null || w == null) return null;
+  const b = balance();
+  return Math.round(Math.pow(Math.max(sh, .01), b) * Math.pow(Math.max(w, .01), 1 - b) * 10) / 10;
+}
 // How far back the dashboard shows. The data keeps 45 days (scan.py's KEEP_DAYS) because
 // the scan dedupes each run against everything already on the dashboard -- drop a row from
 // jobs.json and the same role comes back tomorrow looking new -- so this is a view filter
@@ -291,13 +322,18 @@ function trackOf(j){
 }
 const MARKET_CHIPS = [["all","All"],["NL","NL"],["IE","IE"],["UK-London","London"],
                       ["BE","BE"],["CA","CA"],["US-Remote","US"]];
-const TRACK_CHIPS = [["all","All"],["revops","RevOps"],["cs","CS"]];
+const TRACK_CHIPS = [["all","All"],["revops","RevOps"],["postsale","Post-sale ops"],["cs","CS"]];
 function marketOf(j){ return j.tier || j.market || ""; }
+// "Post-sale ops" is a slice of the RevOps track (CS operations, renewals operations,
+// customer strategy & ops), read off scan.py's want_track, so the RevOps chip still shows it.
+function onTrack(j, t){
+  return t === "postsale" ? j.want_track === "post_sale_ops" : trackOf(j) === t;
+}
 function passesFilters(j){
   if(filters.market !== "all" && marketOf(j) !== filters.market) return false;
-  if(filters.track !== "all" && trackOf(j) !== filters.track) return false;
+  if(filters.track !== "all" && !onTrack(j, filters.track)) return false;
   // A home-domain row is never filtered out by Shot: the lift is "whatever the score".
-  if(filters.shotOnly && !inDomain(j)){ const sh = shotWant(j)[0]; if(sh != null && sh < GATE) return false; }
+  if(filters.shotOnly){ const sh = shotWant(j)[0]; if(sh != null && sh < GATE) return false; }
   return true;
 }
 
@@ -421,10 +457,18 @@ function logToTracker(j){
   if(!TRACKER_URL || !j) return;
   const token = trackerToken();
   if(!token) return;
+  // Shot, Want, rank, gap kinds, domain and sponsor go too, into columns of their own
+  // (tools/tracker-append.gs), so the ranking can be checked against outcomes later. A
+  // deployment still running the older script ignores them and writes the row as before.
+  const [tShot, tWant] = shotWant(j);
   const body = {token, company: j.company || "", title: j.title || "",
                 location: trackerCountry(j),
                 score: j.score == null ? "" : Number(j.score).toFixed(1),
-                link: j.url || ""};
+                link: j.url || "",
+                shot: tShot == null ? "" : tShot, want: tWant == null ? "" : tWant,
+                rank: rankOf(j) ?? "",
+                gaps: (j.gap_kinds || []).map(g=>g.years ? `${g.kind} ${g.years}y` : g.kind).join("; "),
+                domain: inDomain(j) ? "Y" : "", sponsor: j.sponsor || ""};
   fetch(TRACKER_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
                       body: JSON.stringify(body)})
     .then(r=>r.json())
@@ -490,8 +534,9 @@ function packetFor(j){
   // to apply to quickly and not agonise over.
   const [pShot, pWant] = shotWant(j);
   if(pShot != null && pWant != null){
-    L.push(`Shot ${pShot.toFixed(1)} (experience, skills, seniority — can you get the interview)`,
-           `Want ${pWant.toFixed(1)} (domain, location, trajectory — do you want the job)`);
+    L.push(`Shot ${pShot.toFixed(1)} (likely to screen${j.shot_why ? ": " + j.shot_why : ""})`,
+           `Want ${pWant.toFixed(1)} (the job you want${j.want_why ? ": " + j.want_why : ""})`,
+           `Rank ${(rankOf(j)??0).toFixed(1)} (both together, balance ${Math.round(balance()*100)}% screen)`);
   }
   if((j.hard_gaps||[]).length){
     L.push("Hard gaps (stated must-haves you do not meet — address these first):",
@@ -500,7 +545,13 @@ function packetFor(j){
   if(j.verdict) L.push("Radar verdict: " + j.verdict);
   // UK and NL only. Ireland runs permits rather than a register, and neither North
   // American market needs sponsorship at all, so the field is noise there.
-  if(j.sponsor && /^(UK|NL)$/.test(j.sponsor_region||"")) L.push("Sponsor: " + j.sponsor);
+  if(j.sponsor && /^(UK|NL)$/.test(j.sponsor_region||"")){
+    // The register entry that matched, or the legal name looked up and not found, so the
+    // workflow can see which company the check was actually about.
+    const ent = j.sponsor_entity ? ` (register entry: ${j.sponsor_entity})`
+              : j.sponsor_checked ? ` (checked as ${j.sponsor_checked})` : "";
+    L.push("Sponsor: " + j.sponsor + ent);
+  }
   const c = j.comp || {};
   // Only a figure the posting itself states ever lands here -- scan.py discards board
   // estimates (salary_is_predicted) precisely so this line cannot be mistaken for one.
@@ -658,8 +709,10 @@ function tierOf(j){ return MARKET_TIER[j.tier || j.market || ""] ?? TIER_UNKNOWN
 // The one signal that predicted a response in the Nov 2026 diagnosis, so it is a LIFT: these
 // rows sort first and sit in Apply whatever they scored. Nothing else moves.
 function inDomain(j){ return j.in_domain === true; }
+// Rank order, highest first, at the slider's balance; the old score breaks a tie. The home
+// domain used to sort first whatever it scored; since Nov 2026 it lifts Shot instead.
 function byScore(a,b){
-  return (Number(inDomain(b)) - Number(inDomain(a)))
+  return ((rankOf(b)??-1) - (rankOf(a)??-1))
       || ((b.score??0) - (a.score??0))
       || String(b.found_at||"").localeCompare(String(a.found_at||""));
 }
@@ -681,8 +734,15 @@ function card(j, reviewed){
         .join(" · ")}</div>` : "";
   let spon = "";
   if(j.sponsor){
-    const good = /sponsor/i.test(j.sponsor) && !/not on/i.test(j.sponsor);
-    spon = `<span class="tag ${good?'spon':'nospon'}">${j.sponsor}</span>`;
+    const good = /sponsor/i.test(j.sponsor) && !/not on/i.test(j.sponsor)
+              && !/possible/i.test(j.sponsor);
+    const cls = good ? "spon" : /possible/i.test(j.sponsor) ? "maybespon" : "nospon";
+    // Which register entry matched -- the legal name, when it differs from the trading
+    // name -- or which legal name was looked up and missed. A "possible" match is a loose
+    // word match and is only worth anything if this name is plainly the same company.
+    const ent = j.sponsor_entity && j.sponsor_entity.toLowerCase() !== String(j.company||"").toLowerCase()
+      ? ` · ${j.sponsor_entity}` : (!good && j.sponsor_checked ? ` · checked ${j.sponsor_checked}` : "");
+    spon = `<span class="tag ${cls}" title="${esc(j.sponsor_via ? "matched via " + j.sponsor_via : "")}">${esc(j.sponsor + ent)}</span>`;
   }
   // Two kinds of thing were sharing one row of pills. A handful are short facts -- a
   // title band, a CSM-outside-NL note, whether pay is confirmed -- and read fine as
@@ -711,10 +771,15 @@ function card(j, reviewed){
   // rather than inside the dimension strip: this is the split the decision turns on, and
   // the strip is six numbers nobody reads at a glance.
   const [cShot, cWant] = shotWant(j);
-  const sw = (cShot != null && cWant != null)
-    ? `<div class="sw" title="Shot: experience, skills and seniority — can you get the interview. Want: domain, location and trajectory — do you want the job."
-       ><div class="${cShot < FLOOR ? 'lo' : ''}">Shot <b>${cShot.toFixed(1)}</b></div>`
-      + `<div>Want <b>${cWant.toFixed(1)}</b></div></div>` : "";
+  const cRank = rankOf(j);
+  // The badge is the rank the list is sorted by; the score the skill reads sits under it.
+  const sw = cRank != null
+    ? `<div class="sw" title="The 0-10 fit score, which Copy for Claude still sends">score <b>${(j.score??0).toFixed(1)}</b></div>` : "";
+  // One line each for the two axes, with the reason scan.py wrote for it.
+  const axes = (cShot != null && cWant != null)
+    ? `<div class="axes"><div class="${cShot < FLOOR ? 'lo' : ''}"><b>Likely to screen ${cShot.toFixed(1)}</b>${
+        j.shot_why ? " — " + esc(j.shot_why) : ""}</div><div><b>Want ${cWant.toFixed(1)}</b>${
+        j.want_why ? " — " + esc(j.want_why) : ""}</div></div>` : "";
   // Pay, which this card has never shown. `salary` is populated on a few hundred rows and
   // was rendered nowhere, so a Versapay row whose feed said 110000-130000 USD displayed
   // "comp not listed" and nothing else. Where it came from is part of the fact: a figure
@@ -742,7 +807,7 @@ function card(j, reviewed){
   // Next to the referral tag and for the same reason: it is about Tom's history with the
   // buyer, not about the ad, and it is why a 5.8 can be sitting in Apply.
   const domainTag = inDomain(j)
-    ? `<span class="tag domain" title="Sells to GRC, compliance, legal, KYC/AML or audit buyers: your home domain. Lifted into Apply whatever the score."
+    ? `<span class="tag domain" title="Sells to GRC, compliance, legal, KYC/AML or audit buyers: your home domain. Adds to Likely to screen."
        >&#9670; Home domain</span>`
     : "";
   // The market, marked by tier so the backups read as backups at a glance rather than
@@ -750,7 +815,7 @@ function card(j, reviewed){
   const tier = tierOf(j);
   const marketTag = j.tier
     ? `<span class="tag market t${tier}" title="${tier===1?"Primary market"
-        :tier===2?"Strong option":tier===3?"Backup":"Last resort — remote RevOps only"}"
+        :tier===2?"Strong option":tier===3?"Backup (Belgium, US remote)":"Backup (Canada)"}"
        >${esc(j.tier)}</span>`
     : "";
   // Sits next to the market it disputes rather than down among the flags, because this one
@@ -833,7 +898,7 @@ function card(j, reviewed){
   el.innerHTML = `
     <div class="row1">
       <div class="scorecol">
-        <div class="score ${scoreClass(j.score)}">${s}</div>
+        <div class="score ${scoreClass(cRank ?? j.score)}" title="Rank: likely to screen and want, at the balance set above">${cRank != null ? cRank.toFixed(1) : s}</div>
         ${sw}
       </div>
       <div class="hd">
@@ -845,12 +910,13 @@ function card(j, reviewed){
                                      : j.also_in.join("; "))}</span>` : ""}</div>
       </div>
     </div>
-    ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
+    ${axes}
     <div class="tags">${refTag}${domainTag}${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${spon}${rawNote}${caps}${flags}</div>
-    ${watch}${deadEnd}
-    ${dims}
+    ${deadEnd}
+    ${(j.verdict || watch || dims) ? `<details class="more"><summary>Details</summary>
+      ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}${watch}${dims}</details>` : ""}
     <div class="foot">
-      <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
+      <a href="${esc(j.url||'#')}" target="_blank" rel="noopener">View posting &rarr;</a>
       ${applyLink}
       <span class="src">${j.source||""}${also} · ${fresh(j.found_at)}</span>
     </div>
@@ -901,7 +967,7 @@ function renderExcluded(lowScored){
 
   const d = document.createElement("details"); d.className = "excluded"; d.open = wasOpen;
   const bits = [];
-  if(lowScored.length) bits.push(`${lowScored.length} scored under ${FLOOR.toFixed(1)}`);
+  if(lowScored.length) bits.push(`${lowScored.length} ranked under ${RANK.floor.toFixed(1)}`);
   if(totalDropped) bits.push(`${totalDropped} dropped in the latest run`);
   bits.push(`last ${MAX_AGE_DAYS} days`);
   d.innerHTML = `<summary>Excluded — ${bits.join(", ")} · check these if the good ones look thin</summary>`;
@@ -973,6 +1039,22 @@ function shotChip(){
   return b;
 }
 
+// The balance slider: left is all "likely to screen", right is all "want". Remembered in
+// this browser only; it is a way of looking, not a setting the scan reads.
+function setupBalance(){
+  const el = document.getElementById("balance"), out = document.getElementById("balanceval");
+  const show = ()=>{ const b = balance();
+    out.textContent = Math.abs(b - RANK.balance) < 1e-9 ? "even (default)"
+      : `${Math.round(b*100)}% screen`; };
+  el.value = String(Math.round((1 - balance()) * 100));
+  show();
+  el.addEventListener("input", ()=>{
+    BALANCE = 1 - Number(el.value) / 100;
+    try{ localStorage.setItem("rr_balance", String(BALANCE)); }catch(e){}
+    show(); renderAll();
+  });
+}
+
 function renderAll(){
   let jobs = allJobs.filter(j=>!marked(hiddenIds, j) && !marked(appliedIds, j));
   const reviewed = allJobs.filter(j=>marked(hiddenIds, j) || marked(appliedIds, j));
@@ -986,7 +1068,7 @@ function renderAll(){
   // Only Apply and Borderline rows are counted. The chip is answering "how many roles
   // worth looking at are in Belgium", and a count padded with rows scored under the floor
   // (or never scored) says there is more there than there is.
-  const countable = j=>!isSetAside(j) && (inDomain(j) || (j.score??0) >= FLOOR);
+  const countable = j=>!isSetAside(j) && j.sponsor_lane !== true && (rankOf(j)??0) >= RANK.floor;
   const countBy = (rows, of, defs)=>{
     rows = rows.filter(countable);
     const c = {all: rows.length};
@@ -994,10 +1076,12 @@ function renderAll(){
     rows.forEach(r=>{ const k = of(r); if(k in c) c[k]++; });
     return c;
   };
-  const byTrack = jobs.filter(j=>filters.track === "all" || trackOf(j) === filters.track);
+  const byTrack = jobs.filter(j=>filters.track === "all" || onTrack(j, filters.track));
   const byMarket = jobs.filter(j=>filters.market === "all" || marketOf(j) === filters.market);
   renderChips("marketchips", MARKET_CHIPS, "market", countBy(byTrack, marketOf, MARKET_CHIPS));
-  renderChips("trackchips", TRACK_CHIPS, "track", countBy(byMarket, trackOf, TRACK_CHIPS));
+  const trackCounts = countBy(byMarket, trackOf, TRACK_CHIPS);
+  trackCounts.postsale = byMarket.filter(countable).filter(j=>onTrack(j, "postsale")).length;
+  renderChips("trackchips", TRACK_CHIPS, "track", trackCounts);
   // Rebuilt with the track chips, since renderChips clears the row it owns.
   document.getElementById("trackchips").appendChild(shotChip());
 
@@ -1008,7 +1092,7 @@ function renderAll(){
   // referral is exactly what gets a CV past the screen.
   const refJobs = jobs.filter(j=>referralOf(j)
       && (filters.market === "all" || marketOf(j) === filters.market)
-      && (filters.track === "all" || trackOf(j) === filters.track)).sort(byScore);
+      && (filters.track === "all" || onTrack(j, filters.track))).sort(byScore);
   const refWrap = document.getElementById("ref-wrap");
   refWrap.innerHTML = "";
   if(refJobs.length){
@@ -1043,10 +1127,18 @@ function renderAll(){
   const setAside = jobs.filter(isSetAside);
   jobs = jobs.filter(j=>!isSetAside(j));
 
-  // A home-domain row is in Apply at any score; the bands below only sort out the rest.
-  const apply = jobs.filter(j=>inDomain(j) || (j.score??0) >= GATE);
-  const border = jobs.filter(j=>!inDomain(j) && (j.score??0) >= FLOOR && (j.score??0) < GATE);
-  const lowScored = jobs.filter(j=>!inDomain(j) && (j.score??0) < FLOOR);
+  // UK and Dutch rows whose employer is not on its sponsor register, after the legal-name
+  // lookup, and agency posts that do not name the employer. Out of Apply and Borderline,
+  // into a collapsed lane of their own, and they do not ring (Tom's call, Nov 2026).
+  // Rows under the floor stay in Excluded with everything else that scored low.
+  const noSpon = jobs.filter(j=>j.sponsor_lane === true && (rankOf(j)??0) >= RANK.floor);
+  jobs = jobs.filter(j=>!noSpon.includes(j));
+
+  // Sections by rank at the slider's balance. The home domain is no longer in Apply at any
+  // score: it adds to Shot, so it gets there by ranking there.
+  const apply = jobs.filter(j=>(rankOf(j)??0) >= RANK.gate);
+  const border = jobs.filter(j=>(rankOf(j)??0) >= RANK.floor && (rankOf(j)??0) < RANK.gate);
+  const lowScored = jobs.filter(j=>(rankOf(j)??0) < RANK.floor);
 
   const lr = allStatus.last_run ? new Date(allStatus.last_run).toLocaleString("en-GB",
       {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "never";
@@ -1056,23 +1148,42 @@ function renderAll(){
       (newCount ? `${newCount} new since ${since}  ·  ` : "")
       + (refJobs.length ? `${refJobs.length} at referral companies  ·  ` : "")
       + `${apply.length} to apply, ${border.length} borderline`
+      + (noSpon.length ? `, ${noSpon.length} no sponsor` : "")
       + (setAside.length ? `, ${setAside.length} unscored` : "")
       + (staleCount ? `  ·  ${staleCount} older than ${MAX_AGE_DAYS}d hidden` : "")
       + `  ·  last run ${lr}`;
 
   const a = document.getElementById("apply"); a.innerHTML = "";
   if(apply.length) apply.forEach(j=>a.appendChild(card(j, false)));
-  else a.innerHTML = `<div class="empty">No home-domain roles and none at ${GATE}+ yet. The next daily run may surface some.</div>`;
+  else a.innerHTML = `<div class="empty">Nothing ranked ${RANK.gate.toFixed(1)}+ at this balance yet. The next run may surface some.</div>`;
 
   const borderWrap = document.getElementById("border-wrap");
   const borderWasOpen = borderWrap.querySelector("details")?.open ?? false;
   borderWrap.innerHTML = "";
   if(border.length){
     const d = document.createElement("details"); d.className = "borderline"; d.open = borderWasOpen;
-    d.innerHTML = `<summary>${border.length} borderline (${FLOOR.toFixed(1)}–${(GATE-0.1).toFixed(1)}) — volume plays, weaker fit</summary>`;
+    d.innerHTML = `<summary>${border.length} borderline (rank ${RANK.floor.toFixed(1)}–${(RANK.gate-0.1).toFixed(1)}) — volume plays, weaker fit</summary>`;
     const box = document.createElement("div"); box.style.marginTop = "10px";
     border.forEach(j=>box.appendChild(card(j, false)));
     d.appendChild(box); borderWrap.appendChild(d);
+  }
+
+  const nosponWrap = document.getElementById("nospon-wrap");
+  const nosponWasOpen = nosponWrap.querySelector("details")?.open ?? false;
+  nosponWrap.innerHTML = "";
+  if(noSpon.length){
+    const d = document.createElement("details"); d.className = "borderline"; d.open = nosponWasOpen;
+    d.innerHTML = `<summary>${noSpon.length} with no sponsor on the register — UK and Dutch `
+      + `roles whose employer is not on its register, and agency posts that do not name the employer</summary>`;
+    const box = document.createElement("div"); box.style.marginTop = "10px";
+    const note = document.createElement("div"); note.className = "note";
+    note.textContent = "The check looked up each employer's legal name first (alias list, "
+      + "the scorer's reading, the ad, the company's own website) before giving up, and the "
+      + "badge says which name it checked. A miss can still be a legal name nobody found: if "
+      + "you know the company sponsors, add it to sponsor_aliases.json.";
+    box.appendChild(note);
+    noSpon.forEach(j=>box.appendChild(card(j, false)));
+    d.appendChild(box); nosponWrap.appendChild(d);
   }
 
   // Between borderline and excluded on purpose: these are not rejects, and burying them
@@ -1125,7 +1236,7 @@ function openWhy(cardEl, id){
   const prev = (job && hideNote(job)) || hideNotes[id] || {};
   const picked = new Set(prev.reasons || []);
   const box = document.createElement("div"); box.className = "why";
-  box.innerHTML = `<div class="wq">Hidden. What was wrong with it? Optional — this feeds the weekly review.</div>
+  box.innerHTML = `<div class="wq">Hidden. What was wrong with it? One tap saves — optional, it feeds the weekly review.</div>
     <div class="chips"></div>
     <input type="text" maxlength="280" placeholder="Anything else (optional)" value="${esc(prev.note||"")}">
     <div class="actions"><button data-save>Save</button><button data-skip>Skip</button></div>`;
@@ -1134,23 +1245,30 @@ function openWhy(cardEl, id){
     const b = document.createElement("button");
     b.className = "chip"; b.type = "button"; b.textContent = label;
     b.setAttribute("aria-pressed", String(picked.has(code)));
+    // One tap records the reason and closes the panel: 113 notes in two months says the
+    // reasons are worth having, and a second tap on Save was the step most often skipped.
+    // A typed note in the box goes with it.
     b.addEventListener("click", ev=>{
       ev.stopPropagation();
-      picked.has(code) ? picked.delete(code) : picked.add(code);
-      b.setAttribute("aria-pressed", String(picked.has(code)));
+      picked.add(code);
+      save();
     });
     chips.appendChild(b);
   });
-  box.querySelector("[data-save]").addEventListener("click", ev=>{
-    ev.stopPropagation();
+  // The snapshot carries the row's own Shot, Want, rank and gap kinds, so the weekly review
+  // can tell whether a "Skills I lack" hide was a gap the radar had already costed.
+  function save(){
     const note = box.querySelector("input").value.trim().slice(0, 280);
     if(picked.size || note){
       hideNotes[id] = {at: new Date().toISOString(), reasons: [...picked], note,
         title: job?.title || "", company: job?.company || "", score: job?.score ?? null,
-        market: job ? marketOf(job) : "", track: job ? trackOf(job) : ""};
+        market: job ? marketOf(job) : "", track: job ? trackOf(job) : "",
+        rank: job ? rankOf(job) : null, shot: job?.shot ?? null, want: job?.want ?? null,
+        gaps: (job?.gap_kinds || []).map(g=>g.kind)};
     } else delete hideNotes[id];
     saveMap("rr_hide_notes", hideNotes); pushState(); renderAll();
-  });
+  }
+  box.querySelector("[data-save]").addEventListener("click", ev=>{ ev.stopPropagation(); save(); });
   box.querySelector("[data-skip]").addEventListener("click", ev=>{ ev.stopPropagation(); renderAll(); });
   const actions = cardEl.querySelector(".actions");
   (actions || cardEl.lastElementChild).replaceWith(box);
@@ -1238,8 +1356,11 @@ Promise.all([
     MARKET_TIER = allStatus.market_tier;
   if(allStatus.shot_want && allStatus.shot_want.weights)
     SHOT_WANT = allStatus.shot_want;
+  if(allStatus.rank && typeof allStatus.rank === "object")
+    RANK = Object.assign({}, RANK, allStatus.rank);
+  setupBalance();
   jobs.sort(byScore);
-  document.getElementById("apply-h").textContent = `Apply — home domain, then ${GATE.toFixed(1)} and up`;
+  document.getElementById("apply-h").textContent = `Apply — rank ${RANK.gate.toFixed(1)} and up`;
   renderAll();
   refreshContacts();
 

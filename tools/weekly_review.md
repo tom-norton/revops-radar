@@ -103,6 +103,17 @@ section with nothing worth saying and say so in one line.
      group is too small to mean anything (under ~10 decided applications is anecdote).
    - Where the radar score and the outcomes disagree: if high-scoring applications do no
      better than mid ones, say so, and look at what the interviews had in common instead.
+   - **Calibration table** (`applications.calibration`): interview rate by rank band, by
+     Shot band and by Want band, as a small table. The question each week is whether the
+     rank separates screens from silence better than the old score did, and which axis
+     does the separating. `rank_from` says how many rows carry a rank at all; with four
+     screens to date, say plainly that this can rule a weighting out but cannot fit one,
+     and name the weight in `scan.py` (`SHOT_DOMAIN_BOOST`, `GAP_COST`, `WANT_TRACK`, ...)
+     the numbers argue against, if any. `gap_kinds_on_rejected` says which kind of gap
+     the rejections share.
+   - `tom.skills_hides_on_top_ops`: "Skills I lack" hides on ops roles ranked for Apply.
+     The plan's target is for this to fall; if it does not, the gap kinds on those notes
+     say which requirement the Shot axis is under-costing.
    - The gap that keeps costing him: `hard_gaps_on_rejected` plus the rows' `radar`
      detail. One concrete thing to do about it (a bullet from real work, a certification,
      a referral route).

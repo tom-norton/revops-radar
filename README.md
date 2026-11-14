@@ -48,9 +48,11 @@ Cloudflare** below.
 ## How it works
 
 **Data layer (several sources so no single one can break the run):**
-1. **Adzuna API** — Netherlands, UK, Canada and the US. (No Ireland coverage, hence the
-   others.) North America gets a narrower phrase set: the US title gate would drop the rest
-   on arrival, and the free tier's nominal 1,000 calls/month is already well exceeded.
+1. **Adzuna API** — Netherlands, UK and Canada. (No Ireland coverage, hence the others.)
+   Canada gets a narrower phrase set, and the free tier's nominal 1,000 calls/month is already
+   well exceeded. The US is off (`ADZUNA_SKIP_COUNTRIES`): 12 calls a run kept zero rows on
+   every run back to 28 Oct 2026, because its results carry no work-mode field for the
+   remote-only US gate to read.
 2. **Reed API** — extra UK/London depth (free key).
 3. **JobSpy** — Indeed for the **Netherlands**, **Belgium** and Ireland, plus Indeed and
    **Google Jobs** for the Netherlands, Belgium, Canada and the US. Google Jobs is the
@@ -81,10 +83,10 @@ Cloudflare** below.
    companies with no overlap with `companies.json`, including the two highest-scoring rows
    the radar has found. Its value is long-tail discovery of companies not on the watchlist,
    which is why a watchlist cannot replace it.
-   The **five** searches are **structured dicts** in `scan.py`, not the percent-encoded
+   The **six** searches are **structured dicts** in `scan.py`, not the percent-encoded
    `searchState` blobs they used to be: `revops` (NL/IE/BE/CA + London 50mi),
-   `cs-eu-ca`, `cs-nl`, `us-revops` and `us-cs`. `hiringcafe_url()` rebuilds the URLs, and
-   `tests/fixtures/hiringcafe-searchstate.json` is a capture of the five URLs Tom's own
+   `cs-eu-ca`, `cs-nl`, `am-nl`, `us-revops` and `us-cs`. `hiringcafe_url()` rebuilds the URLs, and
+   `tests/fixtures/hiringcafe-searchstate.json` is a capture of the five original URLs Tom's own
    browser produced — the round-trip test asserts the code asks for precisely what he
    asked for, because a silent change in targeting shows up as a source going thin rather
    than as an error.
@@ -201,8 +203,11 @@ fact is missing rather than flattening both into one sentence.
     feed over an aggregator — and it carries the ids of the rows it absorbed, so a Hide or
     Mark applied recorded against a duplicate still holds. It lists the other sources that
     had the same posting as "also on" links.
-11. Every UK/NL company is matched against the **official sponsor registers** (gov.uk daily
-    CSV, IND monthly register) and badged: sponsor / sponsor (likely) / not on register / n/a.
+11. Every London and Dutch row is matched against the **official sponsor registers** (gov.uk
+    daily CSV, IND register), by legal name first — see "The sponsor check" below — and
+    badged sponsor / likely / possible / not on register / agency post. Rows not on their
+    register, and agency posts that do not name the employer, go to a collapsed "No sponsor
+    on register" lane and do not notify.
 
 **Reading the actual ad (everything downstream is only as good as this):**
 12. Job boards routinely hand back a career page's marketing copy instead of the posting, so
@@ -341,7 +346,9 @@ fact is missing rather than flattening both into one sentence.
     run to ask before a CV is built or a form is filled (see `/market` below).
 
 **Scoring (two stages, so the expensive model only sees real candidates):**
-14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill), and it may
+14. **Stage 1 — Claude Haiku** cheaply screens each survivor (keep / kill) — except at a
+    home-domain employer, where it is skipped (it killed six such roles in the fortnight to
+    14 Nov 2026) and the deep scorer reads every one. It may
     kill for **one** reason: the role is unambiguously outside Tom's target functions.
     Location is not a kill ground — it has already been decided in code, and the resolved
     market is handed to the screen as settled — and neither are the industry, the employer,
@@ -728,22 +735,45 @@ bot fill this form", and the bot is mothballed — applications are made by hand
 row (the apply-link state is derived from them, and the mothballed code reads them); they
 are simply not something worth reading on a card any more.
 
-**Shot and Want, under the score.** The six dimensions answer two different questions, and
-the weighted total blends them into one number that cannot tell them apart. Stripe's GTM
-S&O Analyst scored 6.8 and Qualio's Senior CSM 6.5 — opposite problems: the Stripe role is
-one Tom badly wants and would probably not be screened for (advanced SQL and BI required),
-the Qualio one he would likely be screened for and does not much want. Split by the
-rubric's own weights they read **5.6 / 8.6** and **7.4 / 5.1**.
+**Two axes and a rank (Nov 2026).** The 0–10 score blends two different questions. The
+dashboard now ranks by two numbers instead, both computed in code (`rank_axes()` in
+`scan.py`) from fields the scorer already returns, so every stored row gets them on the next
+scan without a rescore:
 
 ```
-Shot = (experience*25 + skills*20 + seniority*15) / 60     can I get the interview
-Want = (domain*15 + location*15 + trajectory*10) / 40      do I want the job
+Shot ("likely to screen") = experience/skills/seniority (rubric weights)
+                          + home domain 2.0 (0.5 at OneTrust, Workiva, Wolters Kluwer, Diligent)
+                          - each hard gap by kind: years in seat 0.3 (3 yrs) .. 2.0 (8+),
+                            language 2.0, existing book / people management / deep technical
+                            1.0, BI tooling / CRM ownership 0.5, other 0.3 (capped at 4)
+                          - UK/NL sponsor not confirmed: 1.5 (not on register, agency),
+                            0.5 (possible, register down)
+Want                      = 0.5 track + 0.3 market + 0.2 pay
+                            track: post-sale ops 10, RevOps / sales ops 10, other ops 7.5,
+                                   CS in NL 8, CS elsewhere 6
+                            market: NL 10, IE / London 8, BE / US 6.5, Canada 5
+                            pay: stated top vs the market floor (1.3x 10, 1.15x 8.5, 1x 7),
+                                 not stated 7
+rank                      = Shot^b * Want^(1-b), b = 0.5 (even) by default
 ```
 
-No extra model call: it is arithmetic over dimension scores already stored, so every row
-already scored has both (`shot_want()` in `scan.py`, written onto each row, with the weights
-also published in `status.json` so the page can derive them for a row stored before the
-split existed). Next to them, **hard gaps** — the posting's own stated must-haves the
+Each card shows **Likely to screen** and **Want** with a one-line reason each; the big number
+is the rank. A **Balance** slider (Likely to screen ↔ Want) re-sorts the list and re-draws
+the sections in the browser; it is remembered per browser only. Apply is rank 6.8+ and
+Borderline 6.4–6.7 (`RANK_GATE` / `RANK_FLOOR`, set so Apply kept its size on 14 Nov), and a
+role notifies at rank 7.5+ (`RANK_NOTIFY`, the same weekly volume as the old rule). The home
+domain is no longer first and in Apply whatever it scored: it adds to Shot. At even balance
+the top 12 untouched roles went from 7 CS / 5 ops to 5 CS / 7 ops.
+
+Every weight is a judgement, not a fit: four screens can disprove a weighting but not fit
+one. All of them are constants in `scan.py`, published in `status.json` under `rank`, and
+`tools/backtest.py` shows where past applications would have ranked under them. The labels
+in Copy for Claude stay `Shot` / `Want` (the skill parses them), followed by the reason and
+a `Rank` line; the score line is unchanged. A customer success title that names an
+operations, strategy or enablement job ("Customer Success Operations Manager") is the ops
+track now, not the CSM track.
+
+Next to them, **hard gaps** — the posting's own stated must-haves the
 profile does not meet, quoted in under 12 words, asked for as a list in `SCORE_SCHEMA`
 rather than left as prose in the flags. They render first in the tag row, travel in the
 Copy-for-Claude block, and are where the skill's bullet audit now starts.
@@ -1103,7 +1133,7 @@ it for you.
 | `score_flags()` and `parse_score_result()` in `scan.py` | Decide the flag wordings its Step 0 table matches on; an unmatched line makes it announce that the dashboard has changed |
 | `cvbuild.contact_for()` / `NA_MARKETS` | Decides which contact block a market takes (Barcelona for NL/IE/UK/BE, Grand Rapids and no nationality line for CA/US) |
 | `profile.md` and `RUBRIC` in `scan.py` | What `score-role` scores against; it fetches both at run time rather than remembering them |
-| `shot_want()` in `scan.py` | The split both skills report |
+| `rank_axes()` in `scan.py` | Shot, Want, rank and their reasons, which both skills report |
 | `bankwrite.py` | The bullet bank's writer, called by the application skill's Step 9d |
 
 ## Application tracker
@@ -1114,6 +1144,15 @@ Location (the country: Netherlands, Ireland, UK, Belgium, Canada or US-Remote), 
 radar's Score, today's date, Status `Applied`, and the posting link. Referral? and
 Interview Date stay blank. A small note at the bottom of the page says whether it went in.
 If it did not, the Applied mark still stands and the row just needs adding by hand.
+
+Since Nov 2026 it also writes the radar's reading at the moment of applying — **Shot, Want,
+Rank, Gaps** (the kinds of hard gap, with any years figure), **Domain** and **Sponsor** — into
+columns of those names, which the script creates at the right-hand end of the tab the first
+time and fills by header name after that, so the original columns never move. This needs
+the new `tools/tracker-append.gs` pasted into the sheet's Apps Script and **deployed as a new
+version** (Deploy → Manage deployments → edit → New version; the URL stays the same). Until
+then the old script ignores the extra fields and writes the row as before.
+`tests/test_tracker_gs.mjs` runs the script against an in-memory sheet.
 
 The sheet side is `tools/tracker-append.gs`, an Apps Script web app that lives on the sheet
 itself; the dashboard posts to it. It skips a link already in column G, so un-applying and
@@ -1316,13 +1355,34 @@ push`.
 
 ## The sponsor check: read this
 
-Registers list **legal** names ("Adyen N.V."); postings show **trading** names ("Adyen").
-- **"not on register"** means the name didn't match — usually true, sometimes a legal-vs-trading
-  mismatch. It's a caution flag, not a delete, and the deep score treats it as a small penalty.
-- **UK** is reliable (daily CSV, ~126k sponsors). **NL** is best-effort (IND monthly register);
-  add companies you care about to `nl_sponsors_extra.txt` (one per line) to firm it up.
-- **Ireland** has no sponsor register (it uses employment permits), so Irish roles show no
-  badge — verify sponsorship directly.
+Registers list **legal** names ("IVXS UK Limited"); postings show **trading** names
+("ComplyAdvantage"). Measured on the board in Nov 2026, 37 of 66 direct-employer London "not on
+register" rows, and 7 of 21 Dutch ones, were trading-name misses: the employer was on the
+register under another name. So the check (`sponsor_fields()` in `scan.py`, `resolve()` in
+`sponsors.py`) looks for the legal name first, and only then gives up:
+
+1. **Which register** comes from the row's **market** (UK-London → UK, NL → NL), not from the
+   location text. Ireland, Belgium, Canada and the US have no register check; Ireland runs
+   employment permits, so verify sponsorship there from the ad.
+2. **Legal names tried, best first:** `sponsor_aliases.json` (hand-kept, trading name → legal
+   name(s)); the scorer's `employer_legal_entity`; a legal name written in the ad; the
+   employer's own website (footer, privacy, terms, imprint), read once a quarter per company
+   and cached in `entities.json`. A name from any of these counts **only on an exact register
+   match**, so a wrong guess can fail to help but never invents a sponsor.
+3. **Then the trading name:** an exact match (suffixes, `.com`/`.io`, "t/a" trade names and
+   parentheticals handled) is a **sponsor**; the name plus corporate filler ("Pleo" → "Pleo
+   Technologies Limited") is **likely**; a loose word match against at most three entries is
+   **possible** and shows the entry it hit, so "Clay → Clay Oven Dagenham" can be judged at a
+   glance.
+4. **Agency posts** (the agency name, or "our client is…" in the ad, or the scorer's
+   `posted_by_agency`) are checked against the client the ad names; with no client named they
+   are "agency post, employer not named".
+
+**Not on register** and **agency, employer not named** rows leave Apply and Borderline for the
+collapsed **No sponsor on register** lane and never ring (Tom's call, Nov 2026). The badge
+says which legal name was checked. If you know a lane company sponsors, add its legal name to
+`sponsor_aliases.json` and the next scan moves it back. `nl_sponsors_extra.txt` still adds
+names to the Dutch register directly. Every row on the board is re-checked every run.
 
 ## Tuning
 
@@ -1332,11 +1392,15 @@ Registers list **legal** names ("Adyen N.V."); postings show **trading** names (
 - **Which titles get through:** `INCLUDE_TITLE` / `EXCLUDE_TITLE`. This gate is **market-aware,
   not purely textual** — a plain "Customer Success Manager" is admitted in the Netherlands and
   the US and nowhere else (`CSM_ANY`, applied in `prefilter()`), mirroring the CSM track weighting in
-  `profile.md`. Widening it is now cheap: anything wrong gets screened, capped, and shown in
+  `profile.md` — except at a home-domain employer, where a customer success title is admitted
+  in every market (callers pass `company` to `prefilter()`). Widening it is now cheap: anything wrong gets screened, capped, and shown in
   the excluded section rather than sitting on the dashboard, so prefer erring wide. Re-run the
   live audit before and after a change — a widened alternative can silently break an existing
   one, which is what `test_widening_did_not_lose_anything_previously_kept` guards.
-- **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs).
+- **Watched companies:** `companies.json` (run `python scan.py --verify` to test slugs). Since
+  Nov 2026 it includes the 30 home-domain employers whose public board could be verified; the
+  other 37 on `home-domain.json` run Workday or their own careers stack and still arrive only
+  through the aggregators. A board that fails is named in the footer and raised as a warning.
 - **Home domain:** `home-domain.json`. The Nov 2026 conversion diagnosis found the employer's
   domain (GRC, ethics and compliance, legal tech, KYC/AML/fincrime, audit) was the only thing
   that separated responses from silence: 4 in 28 resolved inside it, 1 in 135 outside. An

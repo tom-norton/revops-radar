@@ -57,6 +57,29 @@ function doPost(e) {
     ]]);
     // Commit the row before touching formats, so nothing below can take it with it.
     SpreadsheetApp.flush();
+    // The radar's own reading of the role at the moment Tom applied (Nov 2026): Shot,
+    // Want, rank, the kinds of hard gap, home domain and sponsor status. Written by header
+    // name into columns of their own, created at the right-hand end the first time, so the
+    // nine columns above never move and the weekly review can test the ranking against
+    // what actually happened. Best effort: a refusal here leaves the application row in.
+    try {
+      const extra = [["Shot", body.shot], ["Want", body.want], ["Rank", body.rank],
+                     ["Gaps", body.gaps], ["Domain", body.domain], ["Sponsor", body.sponsor]];
+      if (extra.some(([, v]) => v !== undefined && v !== "")) {
+        let head = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0]
+                        .map(h => String(h).trim());
+        for (const [name, value] of extra) {
+          let col = head.indexOf(name) + 1;
+          if (!col) {
+            col = head.length + 1;
+            sheet.getRange(1, col).setValue(name);
+            head.push(name);
+          }
+          sheet.getRange(2, col).setValue(value == null ? "" : value);
+        }
+        SpreadsheetApp.flush();
+      }
+    } catch (err) { /* the application row is in; the radar columns are a bonus */ }
     // Cosmetic only, and after the data is in. The converted sheet is a Sheets table, whose
     // typed columns refuse format changes -- the reason a run failed AFTER the row was
     // written, and the dashboard reported a failure for a row that had landed. The table's

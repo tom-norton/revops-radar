@@ -102,6 +102,11 @@ ADZUNA_COUNTRIES = {"nl": "EUR", "gb": "GBP", "ca": "CAD", "us": "USD"}
 # a month and 2 countries x 9 phrases x 2 pages x 4 runs a day already runs well past it,
 # so doubling the country count on the full phrase list is not something to do casually.
 ADZUNA_CORE_COUNTRIES = ("us", "ca")
+# Countries kept in the currency map above but not fetched. Adzuna US made 12 calls a run
+# and kept zero rows on every run on record back to 28 Oct 2026: its US results carry no
+# work-mode field, so nothing survives the remote-only US gate. The calls were pure spend
+# against the free tier's monthly budget. Remove "us" here to bring it back.
+ADZUNA_SKIP_COUNTRIES = ("us",)
 # Targeted phrase queries. A broad word-OR query sorted by date just surfaces the
 # freshest generic "operations/customer/revenue" noise, none of which passes the title
 # filter (that was the original "Adzuna returned nothing" bug). Precise phrases return
@@ -141,9 +146,11 @@ REED_KEYWORDS = OR_KEYWORDS
 JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
                 "revenue strategy", "customer success operations"]
 # The US subset, kept as a filter over the list above so a term added there cannot be
-# silently missing here. "customer success operations" survives because it IS core RevOps;
-# plain CSM was never in this list.
-JOBSPY_CORE_TERMS = [t for t in JOBSPY_TERMS if t != "customer success operations"]
+# silently missing here. "customer success operations" stays because it IS core RevOps
+# (REVOPS_CORE admits it in the US) and post-sale ops is the work Tom most wants; plain CSM
+# was never in this list. Until Nov 2026 the code removed it while this comment said it
+# stayed.
+JOBSPY_CORE_TERMS = list(JOBSPY_TERMS)   # every term is core today; a test checks it
 
 # LinkedIn "Jobs based on your preferences" is personalized off account-level preference
 # data, not a literal text search -- replaying that natural-language phrase as a keyword
@@ -355,11 +362,19 @@ REMOTE_ONLY = re.compile(r"\b(remote|anywhere|work from home|wfh|emea|europe)\b"
 # when there is none. Full province and state names are matched anywhere in the string;
 # the two-letter codes only count after a comma, which is the "City, ST" shape the feeds
 # actually emit and which stops "ON"/"IN"/"OR"/"ME" matching ordinary English.
-CA_PROVINCE = re.compile(
+# Names and two-letter codes are kept as separate patterns because they are not equally
+# strong evidence. A full name ("Ontario", "New Hampshire") says North America outright. A
+# code after a comma usually does too, but Dutch and Irish feeds emit their own region codes
+# in exactly that shape: Indeed writes "Amsterdam, NH, Netherlands" (Noord-Holland, not New
+# Hampshire), "Almere, FL, Netherlands" (Flevoland) and "Utrecht, UT, Netherlands", and
+# ", NL" / ", NB" are Newfoundland and New Brunswick as well as the Netherlands and
+# Noord-Brabant. See european_overrides_code().
+CA_PROVINCE_NAME = re.compile(
     r"\b(?:ontario|quebec|qu\u00e9bec|british columbia|alberta|manitoba|saskatchewan"
     r"|nova scotia|new brunswick|newfoundland|labrador|prince edward island|yukon"
-    r"|nunavut|northwest territories)\b"
-    r"|,\s*(?:ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU)\b", re.I)
+    r"|nunavut|northwest territories)\b", re.I)
+CA_PROVINCE_CODE = re.compile(r",\s*(?:ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU)\b", re.I)
+CA_PROVINCE = re.compile(CA_PROVINCE_NAME.pattern + "|" + CA_PROVINCE_CODE.pattern, re.I)
 CA_CITY = re.compile(
     r"\b(?:toronto|vancouver|montreal|montr\u00e9al|calgary|edmonton|ottawa|winnipeg"
     r"|quebec city|hamilton|kitchener|waterloo|mississauga|brampton|burnaby|richmond hill"
@@ -368,17 +383,19 @@ CA_CITY = re.compile(
     r"ontario|sherbrooke|moncton|st\. john\u2019s|st\. johns|saint john)\b", re.I)
 CA_COUNTRY = re.compile(r"\bcanada\b|\bcanadian\b", re.I)
 
-US_STATE = re.compile(
+US_STATE_NAME = re.compile(
     r"\b(?:alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware"
     r"|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana"
     r"|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana"
     r"|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina"
     r"|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina"
     r"|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia"
-    r"|wisconsin|wyoming|district of columbia)\b"
-    r"|,\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|MD|MA|MI|MN|MS"
+    r"|wisconsin|wyoming|district of columbia)\b", re.I)
+US_STATE_CODE = re.compile(
+    r",\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|MD|MA|MI|MN|MS"
     r"|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC"
     r"|ME|OR)\b", re.I)
+US_STATE = re.compile(US_STATE_NAME.pattern + "|" + US_STATE_CODE.pattern, re.I)
 # "united states" and "u.s." are safe case-insensitively. A bare "US"/"USA" is not -- "us"
 # is an ordinary English word -- so that alternative is matched case-sensitively.
 US_COUNTRY = re.compile(r"united states|u\.s\.a?\.?|\bstateside\b", re.I)
@@ -395,8 +412,42 @@ US_REMOTE = re.compile(
 REMOTE_ELSEWHERE = re.compile(r"\bemea\b|\beurope\b|\bapac\b|\blatam\b|\bglobal\b", re.I)
 
 
+# A European country named in the string. "England", "Scotland" and "Wales" count because
+# LinkedIn writes "London, England, United Kingdom" and some feeds drop the last part.
+EU_COUNTRY_NAMED = re.compile(
+    r"netherlands|nederland|belgium|belgie|belgique|ireland|ierland|\beire\b"
+    r"|united kingdom|great britain|(?<!new )\bengland\b|\bscotland\b|(?<!south )\bwales\b", re.I)
+EU_FEED_COUNTRIES = ("nl", "be", "ie", "gb")
+# Dutch province codes as Indeed writes them ("Enschede, OV, Netherlands"). Only used to read
+# a code that follows a Dutch city when the country itself is missing ("Amsterdam, NL",
+# "Breda, NB"): "Amsterdam, NY" is still New York.
+NL_PROVINCE_CODE = re.compile(r",\s*(?:NH|ZH|UT|NB|GE|GLD|OV|LI|FL|GR|FR|DR|ZE|NL)\b", re.I)
+
+
+def na_strong(loc, cc=""):
+    """North American evidence that no European signal can outweigh: a country, a full
+    province or state name, a Canadian city, or a North American feed."""
+    return bool(CA_COUNTRY.search(loc) or CA_PROVINCE_NAME.search(loc) or CA_CITY.search(loc)
+                or US_COUNTRY.search(loc) or US_COUNTRY_ABBR.search(loc)
+                or US_STATE_NAME.search(loc) or cc in ("ca", "us"))
+
+
+def european_overrides_code(loc, cc=""):
+    """True when a two-letter code after a comma is a European region code, not a state or
+    province. A named European country or a European feed country beats a bare code; so does
+    a Dutch city followed by a Dutch province code. Never true against strong North American
+    evidence."""
+    if na_strong(loc, cc):
+        return False
+    if EU_COUNTRY_NAMED.search(loc) or cc in EU_FEED_COUNTRIES:
+        return True
+    return bool(NL_CITY.search(loc) and NL_PROVINCE_CODE.search(loc))
+
+
 def ca_context(loc, cc=""):
     """Does this row look Canadian at all, before the remote question is asked."""
+    if european_overrides_code(loc, cc):
+        return False
     return bool(CA_COUNTRY.search(loc) or CA_PROVINCE.search(loc) or CA_CITY.search(loc)
                 or cc == "ca")
 
@@ -408,6 +459,8 @@ def us_context(loc, cc=""):
     nothing else: it decides whether a source's work-mode field is allowed to speak, and
     that permission is US-only. Two copies of "does this look American" would be one copy
     too many."""
+    if european_overrides_code(loc, cc):
+        return False
     return bool(US_COUNTRY.search(loc) or US_COUNTRY_ABBR.search(loc)
                 or US_STATE.search(loc) or cc == "us")
 
@@ -533,6 +586,16 @@ SPONSOR_REQUIRED = False      # if True, drop UK/NL jobs whose company isn't on 
 # is doing real work rather than catching strays.
 GATE = 6.5     # 6.5+ -> "apply" section
 FLOOR = 6.0    # 6.0-6.4 -> collapsed "borderline"; below -> collapsed "excluded"
+# The same two lines on the two-axis rank (see rank_axes()), which the dashboard sorts and
+# sections by since Nov 2026. Ranks run higher than scores, so these were set to keep the
+# Apply section the size it was: on 14 Nov, 21 untouched recent roles at 6.8+ against 21 by
+# the old rule (6.5+ or home domain). The score thresholds above still govern the skill's
+# variation pick and the board lookup.
+RANK_GATE = 6.8
+RANK_FLOOR = 6.4
+# A role rings at this rank or above (it was a 7.5 score or any home-domain role). 7.5 rings
+# 6 of the 155 recent rows, the same as the old rule did.
+RANK_NOTIFY = 7.5
 
 # Annual base-salary floors per market, local currency (2026). The prose version lives in
 # profile.md for the model to reason with; this is the copy the below-floor cap uses.
@@ -968,14 +1031,207 @@ def shot_want(dims):
     return half(SHOT_DIMS), half(WANT_DIMS)
 
 
+# ---------------------------------------------------------------- two-axis ranking
+# Two numbers, both computed here from fields the scorer already returns, so every stored
+# row gets them on the next scan with no rescoring (Nov 2026, Tom's call on the balance and
+# on the home-domain lift):
+#
+#   Shot  = how likely the role is to get Tom a screen. The scorer's experience, skills and
+#           seniority, plus the home domain (the one pattern that predicted a screen), minus
+#           each requirement he cannot meet, minus an unconfirmed UK/NL sponsor.
+#   Want  = how much the role is the job he wants next: the track (post-sale ops and RevOps
+#           generalist first, CS behind them, CS in the Netherlands ahead of CS elsewhere),
+#           the market in his own order, and the pay against the market's floor.
+#
+#   rank  = Shot^b * Want^(1-b), b = RANK_BALANCE. A weighted geometric mean, so a role
+#           has to do well on both: a 9 Shot cannot carry a 3 Want to the top, which is how
+#           CS used to fill it. The dashboard's slider moves b; 0.5 (even) is the default.
+#
+# The labels stay "Shot" and "Want" because the job-application-workflow skill parses those
+# lines in Copy for Claude. The 0-10 score is unchanged and still goes to the skill.
+#
+# Every weight here is a placeholder set by judgement, not fitted: four screens can disprove
+# a weighting but cannot fit one. They are published in status.json and the backtest
+# (tools/backtest.py) reports where past applications would have ranked under them.
+RANK_BALANCE = 0.5
+SHOT_DOMAIN_BOOST = 2.0
+SHOT_DOMAIN_BOOST_LARGE = 0.5
+# Large vendors in the home domain went 0 for 12 between them: a smaller boost, not a
+# penalty (penalising them was considered and rejected, Nov 2026).
+LARGE_DOMAIN_VENDORS = ("OneTrust", "Workiva", "Wolters Kluwer", "Diligent")
+# What one requirement Tom cannot meet costs, by kind. A years requirement is costed by the
+# number: 3 years in seat is a small risk with 11 years adjacent, 8+ is close to a wall.
+GAP_COST = {"language": 2.0, "book": 1.0, "people_mgmt": 1.0, "technical": 1.0,
+            "bi": 0.5, "crm_owner": 0.5, "other": 0.3}
+GAP_YEARS_COST = ((8, 2.0), (7, 1.5), (6, 1.1), (5, 0.8), (4, 0.5), (3, 0.3), (0, 0.2))
+GAP_COST_CAP = 4.0
+SHOT_SPONSOR_COST = {"not_found": 1.5, "agency": 1.5, "possible": 0.5, "unknown": 0.5}
+WANT_TRACK = {"post_sale_ops": 10.0, "revops": 10.0, "other_ops": 7.5,
+              "cs_nl": 8.0, "cs": 6.0}
+WANT_MARKET = {1: 10.0, 2: 8.0, 3: 6.5, 4: 5.0}
+WANT_WEIGHTS = {"track": 0.5, "market": 0.3, "pay": 0.2}
+WANT_PAY_UNSTATED = 7.0
+
+_GAP_KINDS = (
+    ("language", re.compile(r"\b(?:dutch|german|french|spanish|italian|swedish|danish"
+                            r"|norwegian|finnish|polish|portuguese|nordic language|fluen|native"
+                            r" speaker|language)\b", re.I)),
+    ("book", re.compile(r"book of business|existing (?:network|book|relationships)"
+                        r"|(?:european|dach|nordic|benelux) (?:book|network|relationships)", re.I)),
+    ("people_mgmt", re.compile(r"people manag|managing (?:a )?team|direct reports"
+                               r"|line manag|team leadership|led (?:a )?team|manag\w* (?:of )?(?:a )?team", re.I)),
+    ("technical", re.compile(r"technical (?:background|degree|depth|expertise)|engineering"
+                             r" (?:background|degree)|computer science|deep technical"
+                             r"|hands-on (?:coding|engineering)|software engineering", re.I)),
+    ("bi", re.compile(r"\bsql\b|tableau|power ?bi|looker|\bbi\b|data model|python|\bdbt\b"
+                      r"|snowflake|analytics engineering", re.I)),
+    ("crm_owner", re.compile(r"(?:salesforce|crm|hubspot)\s+(?:admin|administration|"
+                             r"architect|certif)|own(?:ing|ership of)? (?:the |a )?(?:production )?crm"
+                             r"|\bcpq\b", re.I)),
+)
+_GAP_YEARS = re.compile(r"(\d{1,2})\s*\+?\s*(?:-\s*\d{1,2}\s*)?\+?\s*(?:years|yrs)", re.I)
+
+
+def gap_kind(gap):
+    """(kind, years or None, cost) for one hard gap, read off its text. The scorer writes
+    gaps as short quotes of the posting ("5+ years in a dedicated Sales Ops role"), so the
+    kind is a property of the words; the costliest reading wins."""
+    m = _GAP_YEARS.search(gap or "")
+    years = int(m.group(1)) if m else None
+    best = ("other", GAP_COST["other"])
+    for kind, rx in _GAP_KINDS:
+        if rx.search(gap or "") and GAP_COST[kind] > best[1]:
+            best = (kind, GAP_COST[kind])
+    if years is not None:
+        ycost = next(c for floor, c in GAP_YEARS_COST if years >= floor)
+        if ycost >= best[1]:
+            best = ("years", ycost)
+    return best[0], years, best[1]
+
+
+_POST_SALE_OPS = re.compile(r"customer success (?:operations|ops|strategy)|\bcs (?:operations|ops)\b"
+                            r"|customer (?:operations|strategy (?:&|and) operations)|renewals? operations"
+                            r"|post[- ]sales? (?:operations|ops)|(?:operations|ops|strategy).{0,40}customer success"
+                            r"|customer success.{0,40}(?:operations|ops)", re.I)
+_REVOPS_GENERALIST = re.compile(r"revenue operations|\brevops\b|rev ops|sales operations|sales ops"
+                                r"|\bgtm operations|go[- ]to[- ]market operations|commercial operations", re.I)
+
+
+def want_track(title, market):
+    t = title or ""
+    if _POST_SALE_OPS.search(t):
+        return "post_sale_ops"
+    if is_csm_title(t):
+        return "cs_nl" if market == "NL" else "cs"
+    if _REVOPS_GENERALIST.search(t):
+        return "revops"
+    return "other_ops"
+
+
+_TRACK_TEXT = {"post_sale_ops": "post-sale ops", "revops": "RevOps / sales ops",
+               "other_ops": "other ops", "cs_nl": "CS in NL", "cs": "CS outside NL"}
+
+
+def _money(v, cur):
+    sym = {"EUR": "\u20ac", "GBP": "\u00a3", "USD": "$", "CAD": "C$"}.get(cur, cur + " ")
+    return f"{sym}{round(v / 1000):.0f}K"
+
+
+def rank_axes(job, balance=RANK_BALANCE):
+    """{shot, want, rank, shot_why, want_why, gap_kinds} for one scored row, or {} for a
+    row with no dimension scores to read."""
+    dims = job.get("dimensions") or {}
+    if not dims:
+        return {}
+    weights = {k: w for k, _label, w, _guide in RUBRIC}
+    base = sum(_as_float(dims.get(k)) * weights[k] for k in SHOT_DIMS) / sum(
+        weights[k] for k in SHOT_DIMS)
+    shot, why = base, [f"exp {_as_float(dims.get('experience')):g}, skills "
+                       f"{_as_float(dims.get('skills')):g}, level {_as_float(dims.get('seniority')):g}"]
+    if in_home_domain(job):
+        large = any(company_tokens(job.get("company")) == company_tokens(v)
+                    for v in LARGE_DOMAIN_VENDORS)
+        boost = SHOT_DOMAIN_BOOST_LARGE if large else SHOT_DOMAIN_BOOST
+        shot += boost
+        why.append(f"home domain +{boost:g}" + (" (large vendor)" if large else ""))
+    kinds, cost, named = [], 0.0, []
+    for g in job.get("hard_gaps") or []:
+        kind, years, c = gap_kind(g)
+        kinds.append({"gap": g, "kind": kind, "years": years, "cost": c})
+        cost += c
+        named.append(f"{years}+ yrs" if kind == "years" else
+                     " ".join(str(g).split()[:4]) if kind == "other" else kind.replace("_", " "))
+    if cost:
+        cost = min(cost, GAP_COST_CAP)
+        shot -= cost
+        why.append(f"gaps -{cost:.1f} ({', '.join(named[:3])})")
+    spon = SHOT_SPONSOR_COST.get(job.get("sponsor_raw") or "") if job.get(
+        "sponsor_region") in ("UK", "NL") else None
+    if spon:
+        shot -= spon
+        why.append(f"sponsor {job.get('sponsor_raw').replace('_', ' ')} -{spon:g}")
+    shot = round(max(0.0, min(10.0, shot)), 1)
+
+    market = job.get("market") or ""
+    track = want_track(job.get("title"), market)
+    t_score = WANT_TRACK[track]
+    m_score = WANT_MARKET.get(market_tier(market), 5.0)
+    comp = job.get("comp") or {}
+    floor, cur = floor_for(market, job.get("title"))[:2]
+    top = comp.get("max_base") or comp.get("min_base")
+    if comp.get("stated") and top and floor and (comp.get("currency") or "") == cur:
+        r = top / floor
+        p_score = 10.0 if r >= 1.3 else 8.5 if r >= 1.15 else 7.0 if r >= 1.0 else 4.0
+        pay = f"pay {_money(top, cur)} vs {_money(floor, cur)} floor"
+    elif comp.get("stated") and top and not floor:
+        p_score, pay = 8.0, f"pay {_money(top, comp.get('currency') or '')}"
+    else:
+        p_score, pay = WANT_PAY_UNSTATED, "pay not stated"
+    want = round(WANT_WEIGHTS["track"] * t_score + WANT_WEIGHTS["market"] * m_score
+                 + WANT_WEIGHTS["pay"] * p_score, 1)
+    return {"shot": shot, "want": want, "rank": rank_of(shot, want, balance),
+            "want_track": track,
+            "shot_why": "; ".join(why), "want_why": f"{_TRACK_TEXT[track]} \u00b7 "
+            f"{market or 'no market'} \u00b7 {pay}", "gap_kinds": kinds}
+
+
+def rank_of(shot, want, balance=RANK_BALANCE):
+    """Shot^b * Want^(1-b), 0-10 to one decimal. The dashboard computes the same thing when
+    its balance slider moves (RANK in status.json carries the default)."""
+    if shot is None or want is None:
+        return None
+    return round(max(shot, 0.01) ** balance * max(want, 0.01) ** (1 - balance), 1)
+
+
+def rank_config():
+    """Everything the dashboard needs to show and recompute the two axes, for status.json."""
+    return {"balance": RANK_BALANCE, "domain_boost": SHOT_DOMAIN_BOOST,
+            "domain_boost_large": SHOT_DOMAIN_BOOST_LARGE,
+            "large_domain_vendors": list(LARGE_DOMAIN_VENDORS), "gap_cost": GAP_COST,
+            "gap_years_cost": [list(x) for x in GAP_YEARS_COST], "gap_cost_cap": GAP_COST_CAP,
+            "sponsor_cost": SHOT_SPONSOR_COST, "want_track": WANT_TRACK,
+            "want_market": {str(k): v for k, v in WANT_MARKET.items()},
+            "want_weights": WANT_WEIGHTS, "want_pay_unstated": WANT_PAY_UNSTATED}
+
+
 def title_band(title):
     for band, rx in TITLE_BANDS:
         if rx.search(title or ""):
             return band
     return "normal"
 
+# A customer success title that names an operations, strategy or enablement job is the ops
+# track, not the CSM track: "Customer Success Operations Manager", "Strategy & Operations,
+# Customer Success", "Revenue Operations Manager, Customer Success". Until Nov 2026 those
+# were tagged CS and flagged "CSM outside NL", which mislabelled the post-sale ops work Tom
+# most wants as the safer fallback track.
+_CS_OPS_WORDS = re.compile(r"\b(?:operations|ops|revops|strategy|enablement|analyst|analytics"
+                           r"|systems)\b", re.I)
+
+
 def is_csm_title(title):
-    return bool(re.search(r"customer success", title or "", re.I))
+    t = title or ""
+    return bool(re.search(r"customer success", t, re.I)) and not _CS_OPS_WORDS.search(t)
 
 # ---------------------------------------------------------------- home domain
 # The November 2026 conversion diagnosis: 182 applications, 5 responses, and the one
@@ -1332,12 +1588,20 @@ SCORE_SCHEMA = {
         "hard_gaps": {"type": "array", "items": {"type": "string"}},
         "flags": {"type": "array", "items": {"type": "string"}},
         "verdict": {"type": "string"},
+        # Who would actually employ Tom, for the sponsor check. Registers list legal
+        # entities and agencies post under their own name, so these four are what let
+        # code look up the right company (see sponsors.resolve()).
+        "posted_by_agency": {"type": "boolean"},
+        "employer": {"type": "string"},
+        "employer_legal_entity": {"type": "string"},
+        "employer_domain": {"type": "string"},
     },
     "required": ["dimensions", "function_match", "company_standout", "home_domain",
                  "language_hard_requirement", "salary_stated", "salary_min_base",
                  "salary_max_base", "salary_currency", "posting_location",
                  "work_arrangement", "employment_type", "hard_gaps",
-                 "flags", "verdict"],
+                 "flags", "verdict", "posted_by_agency", "employer",
+                 "employer_legal_entity", "employer_domain"],
     "additionalProperties": False,
 }
 
@@ -1421,10 +1685,11 @@ Alongside the dimensions, report these observations from the posting:
 - posting_location: the work location the POSTING itself states, copied as it is written ("Toronto, ON", "Amsterdam, Netherlands", "Remote - US"). This is a transcription, not an opinion: report what the ad says even when it disagrees with the market you were given, and especially then. Give the location of the job, not the company's headquarters, and where several offices are listed give the one the role is actually based in. Use "" when the posting genuinely does not say, which is common -- do not infer one from the company, the currency or the language of the ad.
 - work_arrangement: "fully_remote" when the posting says the role is remote with no office attendance expected ("Location: Ireland (Remote)", "remote-first, work from anywhere in the country"); "hybrid" when some office days are expected or offered; "on_site" when the role is office-based; "unstated" when the posting does not say. A remote-friendly role that names an office the candidate would work from is "hybrid", not "fully_remote". In Europe (NL, BE, UK-London, IE) "fully_remote" DROPS the role: a remote role there is too weak a basis for a work permit. Report what the posting says either way; code decides.
 - employment_type: "contract" for a contractor, freelance or interim engagement; "fixed_term" for a fixed-term, temporary, maternity-cover or secondment role; "permanent" for a permanent / full-time role; "unstated" when the posting does not say. In Europe "contract" and "fixed_term" DROP the role, since they rarely carry sponsorship. Report what the posting says either way; code decides.
+- posted_by_agency / employer / employer_legal_entity / employer_domain: who would actually employ the candidate, for the visa-sponsor check, which looks the employer up on the official UK and Dutch registers -- and those list legal entities, not trading names. posted_by_agency is true when a recruitment agency or search firm posted the role for a client. employer is the company the candidate would work for: the client an agency names, "" when an agency does not name it, otherwise the company as the job details give it, corrected if the posting shows it is really another company (a parent posting for a subsidiary, a board listing the wrong name). employer_legal_entity is that employer's legal entity in the role's country ("IVXS UK Limited" for ComplyAdvantage in London, "Recruitee B.V." for Tellent in Amsterdam), taken from the posting where it says, otherwise what you know with confidence; "" when unsure -- a guess only helps if it is exactly right, so do not construct one. employer_domain is the employer's own website domain ("complyadvantage.com"), "" when unsure. None of these four affects the score.
 
 The market (NL / BE / UK-London / IE / CA / US-Remote) has already been resolved in code and is given to you in the job details. Trust it for SCORING. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted. If the posting's own location contradicts that market, posting_location is where that goes and the only place it goes: report what the ad says there, score the market you were given, and let code reconcile the two. Do not mention the disagreement in a dimension score, in flags or in the verdict. Where it sits in Tom's preference ordering is the whole of the Location & Visa dimension -- see that dimension's guidance, and note that the ordering is about where he wants to live, not about which market is easiest to get hired in.
 
-Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution on Location & Visa (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles, and for the Netherlands specifically it is what separates the 9-10 band from the 7 band. Ignore sponsor entirely for Ireland, Canada and the US: Ireland runs employment permits rather than a register, and Tom needs no sponsorship in either North American market.
+Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution on Location & Visa (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles, and for the Netherlands specifically it is what separates the 9-10 band from the 7 band. "sponsor (possible)" is a loose name match and "agency post, employer not named" means the employer is unknown: treat both as sponsor status not confirmed. Ignore sponsor entirely for Ireland, Canada and the US: Ireland runs employment permits rather than a register, and Tom needs no sponsorship in either North American market.
 
 Salary: if not stated, do NOT penalise on salary; judge comp risk from the seniority and the company.
 
@@ -1518,7 +1783,7 @@ FEED_ERRORS = {}
 # The feeds whose raw count is steady enough to judge against its own history. hiring.cafe
 # is fetched incrementally (only rows new since the last run are charged) and revopsroles
 # is however many emails arrived, so a small number from either is not a fault.
-RAW_WATCH = ("adzuna:nl", "adzuna:gb", "adzuna:ca", "adzuna:us", "reed", "linkedin", "ats",
+RAW_WATCH = ("adzuna:nl", "adzuna:gb", "adzuna:ca", "reed", "linkedin", "ats",
              "indeed:nl", "indeed:be", "indeed:ie", "indeed:ca", "indeed:us")
 RAW_HISTORY_RUNS = 30        # runs kept per feed in status.json, about ten days
 RAW_HISTORY_MIN = 3          # working runs needed before a feed is judged against them
@@ -1531,6 +1796,30 @@ FEED_LABELS = {"adzuna": "Adzuna", "reed": "Reed", "linkedin": "LinkedIn",
 def feed_label(key):
     src, _, cc = key.partition(":")
     return FEED_LABELS.get(src, src) + (f" {cc.upper()}" if cc else "")
+
+def run_company_boards(companies, found, fetch=None):
+    """Fetch every watched company board into `found`; return the names that failed.
+
+    A failing board used to be swallowed by a bare `except: pass`, so a moved or renamed
+    board (a new ATS, a changed slug) went quiet with nothing in the footer, and the only
+    sign was a home-domain employer that stopped producing rows. Each failure is now named
+    in the source line and raised as a feed warning, one per company. Returns
+    (rows kept, names of the boards that failed)."""
+    fetch = fetch or fetch_company
+    kept, fails = 0, []
+    for c in companies:
+        try:
+            jobs = fetch(c)
+        except Exception as e:
+            name = c.get("name") or c.get("slug") or "?"
+            fails.append(name)
+            FEED_ERRORS[f"ats:{name}"] = (f"Company board {name} ({c.get('ats', '?')}) "
+                                          f"failed: {redact(str(e))[:80]}")
+            continue
+        found += jobs
+        kept += len(jobs)
+    return kept, fails
+
 
 def feed_warnings(history, raw, ran, errors):
     """(new history, warnings) for one run.
@@ -1602,18 +1891,115 @@ def note_usage(u):
     USAGE["cache_read"] += u.get("cache_read_input_tokens", 0) or 0
     USAGE["cache_write"] += u.get("cache_creation_input_tokens", 0) or 0
 
+# ---------------------------------------------------------------- sponsor check
+# Website lookups per run for employers still not found on their register. Each is four or
+# five plain page fetches, cached per company in entities.json for ENTITY_RECHECK_DAYS, so
+# this only bounds how long a scan with many new employers can take.
+WEBSITE_LOOKUPS_PER_RUN = 15
+# ...and a wall-clock budget over all of them, because a slow site's timeouts are somebody
+# else's infrastructure and a scan that overruns its tick races the next one on the push.
+WEBSITE_LOOKUP_SECONDS = 90
+
+
+def sponsor_who(job):
+    """(employer to look up, agency?) for one row. The scorer's reading wins where there
+    is one; older rows fall back to the company name and the agency regex."""
+    if "agency" in job:
+        agency = bool(job.get("agency"))
+    else:
+        agency = spon.looks_like_agency(job.get("company"), job.get("description"))
+    employer = (job.get("employer") or "").strip()
+    if not agency:
+        employer = employer or (job.get("company") or "")
+    return employer, agency
+
+
+def sponsor_domain(job):
+    return (job.get("employer_domain") or spon.employer_domain(job.get("apply_url"))
+            or spon.employer_domain(job.get("url")) or "")
+
+
+def sponsor_fields(job, regs, aliases, entities):
+    """The sponsor check for one row, as the fields it writes. Pure: every lookup it needs
+    (both registers, the alias file, the website cache) is passed in, so it runs on every
+    row on the board each scan, not just new ones, and a register or alias change reaches
+    rows already shown.
+
+    regs: {"UK": Register, "NL": Register}. Rows outside the UK and NL get empty fields."""
+    region = spon.which_register(market=job.get("market"))
+    if not region:
+        return {"sponsor_region": "", "sponsor_raw": "n/a", "sponsor": "",
+                "sponsor_entity": "", "sponsor_via": "", "sponsor_checked": "",
+                "sponsor_lane": False}
+    employer, agency = sponsor_who(job)
+    company = job.get("company") or ""
+    legal = []
+    for who in dict.fromkeys(n for n in (employer, company) if n):
+        if agency and who == company:
+            continue          # the agency's own legal name says nothing about the client
+        legal += [(n, "alias") for n in aliases.get(spon._key(who), [])]
+    if job.get("legal_entity_guess"):
+        legal.append((job["legal_entity_guess"], "scorer"))
+    if employer:
+        legal += [(n, "ad") for n in spon.legal_names_in(
+            job.get("description"), employer, sponsor_domain(job))]
+        rec = entities.get(spon._key(employer)) or {}
+        legal += [(n, "website") for n in rec.get("legal", [])]
+    res = spon.resolve(regs.get(region), company, employer=employer if agency else
+                       ("" if employer == company else employer), agency=agency,
+                       legal=legal)
+    return {"sponsor_region": region, "sponsor_raw": res["raw"],
+            "sponsor": spon.status_label(res["raw"], region),
+            "sponsor_entity": res["entity"], "sponsor_via": res["via"],
+            "sponsor_checked": (res["checked"] or [""])[0][:90],
+            "sponsor_lane": spon.in_lane(res["raw"], region)}
+
+
+def website_lookups(rows, entities, limit=WEBSITE_LOOKUPS_PER_RUN, lookup=None, today=None,
+                    budget=WEBSITE_LOOKUP_SECONDS, clock=time.monotonic):
+    """Check the employer's own website for its legal name, for rows still not confirmed
+    on their register. One attempt per company per ENTITY_RECHECK_DAYS, misses included.
+    Returns how many companies were looked up."""
+    lookup = lookup or spon.website_legal_names
+    done, start = 0, clock()
+    for j in rows:
+        if done >= limit or clock() - start > budget:
+            break
+        if j.get("sponsor_raw") not in ("not_found", "possible"):
+            continue
+        employer, _ = sponsor_who(j)
+        domain = sponsor_domain(j)
+        if not employer or not domain or not spon.entity_due(entities, employer, today):
+            continue
+        names = lookup(domain, employer)
+        entities[spon._key(employer)] = {
+            "company": employer, "domain": domain, "legal": names,
+            "checked": (today or datetime.now(timezone.utc).date()).isoformat(),
+            "source": "website"}
+        done += 1
+    return done
+
+
 def notify_strong_matches(jobs):
     """Push a notification via ntfy.sh (free, no signup) for anything scoring high
     enough this run. Never lets a notification failure affect the scan itself."""
-    # A home-domain role rings whatever it scored -- the score has not predicted a response,
-    # the domain has -- and it is listed first. Everything else needs the threshold as before.
+    # By rank since Nov 2026. The home domain used to ring at any score; it now rings
+    # through its Shot boost like everything else (Tom's call). A row in the no-sponsor lane
+    # does not ring: it is still on the dashboard, collapsed, because a register miss can be
+    # a legal-name miss. A row with no rank yet (scored before the two axes existed and not
+    # re-ranked) falls back to the old score threshold.
+    def strong_enough(j):
+        r = j.get("rank")
+        if r is None:
+            r = rank_axes(j).get("rank") if j.get("dimensions") else None
+        return r >= RANK_NOTIFY if r is not None else (j.get("score") or 0) >= NTFY_SCORE_THRESHOLD
     strong = [j for j in jobs
-              if ((j.get("score") or 0) >= NTFY_SCORE_THRESHOLD or in_home_domain(j))
-              and market_tier(j.get("market")) <= NTFY_MAX_TIER]
+              if strong_enough(j) and market_tier(j.get("market")) <= NTFY_MAX_TIER
+              and not j.get("sponsor_lane")]
     if not strong:
         return
-    strong.sort(key=lambda j: (in_home_domain(j), j.get("score") or 0), reverse=True)
-    body = "\n".join(f"{'[domain] ' if in_home_domain(j) else ''}{j['score']} — "
+    strong.sort(key=lambda j: j.get("rank") or 0, reverse=True)
+    body = "\n".join(f"{'[domain] ' if in_home_domain(j) else ''}{j.get('rank') or j['score']} — "
                      f"{j['title']} @ {j.get('company') or j['source']}"
                      for j in strong[:10])
     try:
@@ -2275,9 +2661,14 @@ def market_of(country, location):
     # North America first. A row with a Canadian or US signal never falls through to the
     # European branches, so a US onsite role is out here rather than being misread as a
     # European city match ("Amsterdam, NY" is not the Netherlands).
-    if (CA_COUNTRY.search(loc) or CA_PROVINCE.search(loc) or CA_CITY.search(loc)
-            or US_COUNTRY.search(loc) or US_COUNTRY_ABBR.search(loc) or US_STATE.search(loc)
-            or cc in ("ca", "us")):
+    #
+    # Except where the only North American signal is a two-letter code and the row names a
+    # European country, comes from a European feed, or is a Dutch city with a Dutch
+    # province code: "Amsterdam, NH, Netherlands" is Noord-Holland, and "Kildare, KY,
+    # Ireland" is not Kentucky. Until Nov 2026 those rows were read as North American and
+    # dropped (NH, UT, FL) or filed under Canada (NB, NL), which is why the Indeed NL feed
+    # kept 0-4 of ~50 rows a run.
+    if ca_context(loc, cc) or us_context(loc, cc):
         return north_america_of(loc, cc)
 
     # An explicitly named city we don't want, with no target city alongside it, is out --
@@ -2465,7 +2856,12 @@ def priority(job, deferrals=None):
 
     # 5. A company we can already see can sponsor is materially more actionable than one we
     #    cannot. Only meaningful for NL and UK; the others have no register and score 0.
-    sponsor = {"sponsor": 2, "sponsor (likely)": 1}.get(job.get("sponsor") or "", 0)
+    #    Read off sponsor_raw. The old lookup keyed on the bare words "sponsor" and
+    #    "sponsor (likely)", but stored labels carry the register ("UK sponsor"), so it
+    #    never matched a real row; the label suffix is still accepted for older rows.
+    raw, label = job.get("sponsor_raw") or "", job.get("sponsor") or ""
+    sponsor = (2 if raw == "on_register" or label.endswith("sponsor")
+               else 1 if raw == "likely" or label.endswith("sponsor (likely)") else 0)
 
     # 6. A US employer with a route to a market Tom actually wants.
     transfer = 1 if job.get("transfer_markets") else 0
@@ -2494,23 +2890,29 @@ def priority(job, deferrals=None):
 def location_ok(country, location):
     return market_of(country, location) is not None
 
-def prefilter(title, location, country=""):
+def prefilter(title, location, country="", company=""):
     """None if the row passes the free filters; otherwise a short reason for the drop log.
 
     The title half of this gate is market-aware, not purely textual, in both directions: a
     plain "Customer Success Manager" is admitted in the Netherlands and the US and nowhere
     else (see CSM_ANY), and a US role has to clear the much narrower REVOPS_CORE instead of
     INCLUDE_TITLE. The market is resolved once here and reused for the location check
-    below."""
+    below.
+
+    One exception by employer: at a home-domain employer a customer success title is
+    admitted in every market (Nov 2026). Three of Tom's four screens came from this domain,
+    two of them CS roles; outside it plain CSM stays NL and US only, so CS does not swamp
+    the ops track. Callers pass `company` where the source gives one."""
     t = title or ""
     market = market_of(country, location)
+    home_cs = bool(company and CSM_ANY.search(t) and home_domain_company(company))
     if market == "US-Remote":
         # The US gets the two narrow gates, not the broad one: core RevOps, or customer
         # success at any seniority. Everything else INCLUDE_TITLE would admit -- renewals,
         # generic business operations -- stays out.
         if not (REVOPS_CORE.search(t) or CSM_ANY.search(t)):
             return "title: not core RevOps or customer success (US uses the narrow gates)"
-    elif not (INCLUDE_TITLE.search(t)
+    elif not (INCLUDE_TITLE.search(t) or home_cs
               or (market == "NL" and (CSM_ANY.search(t) or NL_ACCOUNT_MGMT.search(t)))):
         return "title: no target-function keyword"
     if (market == "NL" and NL_ACCOUNT_MGMT.search(t) and not INCLUDE_TITLE.search(t)
@@ -2602,6 +3004,8 @@ def adzuna_get(url, params, sleep=time.sleep, fetch=None):
 def fetch_adzuna(app_id, app_key, diag, sleep=time.sleep, fetch=None):
     out, ids = [], set()
     for cc in ADZUNA_COUNTRIES:
+        if cc in ADZUNA_SKIP_COUNTRIES:
+            continue
         raw = kept = 0
         failed, in_a_row, last_err = 0, 0, None
         phrases = (ADZUNA_CORE_PHRASES if cc in ADZUNA_CORE_COUNTRIES
@@ -2629,7 +3033,7 @@ def fetch_adzuna(app_id, app_key, diag, sleep=time.sleep, fetch=None):
                         stub = {"id": jid, "title": title, "location": loc,
                                 "company": (j.get("company") or {}).get("display_name", ""),
                                 "source": "adzuna"}
-                        reason = prefilter(title, loc, cc)
+                        reason = prefilter(title, loc, cc, stub["company"])
                         if reason:
                             record_drop(stub, "prefilter", reason)
                             continue
@@ -2814,7 +3218,7 @@ def fetch_jobspy(diag=None):
                 if job is None:
                     bad += 1
                     continue
-                reason = prefilter(job["title"], job["location"], cc)
+                reason = prefilter(job["title"], job["location"], cc, job.get("company"))
                 if reason:
                     record_drop({k: job[k] for k in ("id", "title", "location", "company",
                                                      "source")}, "prefilter", reason)
@@ -2845,7 +3249,7 @@ def fetch_greenhouse(name, slug):
     bump_raw("ats", len(jobs))
     for j in jobs:
         loc = (j.get("location") or {}).get("name", "")
-        reason = prefilter(j.get("title", ""), loc)
+        reason = prefilter(j.get("title", ""), loc, company=name)
         if reason:
             record_drop({"id": f"gh-{slug}-{j['id']}", "title": j.get("title", ""),
                          "location": loc, "company": name, "source": "greenhouse"},
@@ -2922,7 +3326,7 @@ def fetch_lever(name, slug):
     bump_raw("ats", len(jobs))
     for j in jobs:
         loc = (j.get("categories") or {}).get("location", "") or ""
-        reason = prefilter(j.get("text", ""), loc)
+        reason = prefilter(j.get("text", ""), loc, company=name)
         if reason:
             record_drop({"id": f"lv-{slug}-{j['id']}", "title": j.get("text", ""),
                          "location": loc, "company": name, "source": "lever"},
@@ -2942,7 +3346,7 @@ def fetch_ashby(name, slug):
     bump_raw("ats", len(jobs))
     for j in jobs:
         loc = j.get("location", "") or ""
-        reason = prefilter(j.get("title", ""), loc)
+        reason = prefilter(j.get("title", ""), loc, company=name)
         if reason:
             record_drop({"id": f"as-{slug}-{j.get('id')}", "title": j.get("title", ""),
                          "location": loc, "company": name, "source": "ashby"},
@@ -2980,7 +3384,7 @@ def fetch_board(name, slug, ats):
         # what makes it unique. A bare tail would be unreadable in the drop log.
         jid = f"bd-{ats[:2]}-{slug[:14]}-" + re.sub(r"\W+", "-",
                                                     j.get("url", "") or title)[-46:]
-        reason = prefilter(title, loc)
+        reason = prefilter(title, loc, company=name)
         if reason:
             record_drop({"id": jid, "title": title, "location": loc, "company": name,
                          "source": ats}, "prefilter", reason)
@@ -3050,7 +3454,7 @@ def fetch_linkedin():
                 m_date = re.search(r'<time class="job-search-card__listdate[^"]*"\s+datetime="([^"]+)"', c)
                 title, loc = m_title.group(1), (m_loc.group(1) if m_loc else "")
                 company = m_company.group(1) if m_company else ""
-                reason = prefilter(title, loc)
+                reason = prefilter(title, loc, company=company)
                 if reason:
                     record_drop({"id": f"li-{jid}", "title": title, "location": loc,
                                  "company": company, "source": "linkedin"}, "prefilter", reason)
@@ -3874,7 +4278,7 @@ def hiringcafe_url(search_state):
 # The cap is the bill if incremental mode silently stopped working: 150 rows x 3 scans a
 # day x 31 days x $1.25/1000 is $17.44, inside the $19 the plan includes. Pinned by
 # test_apify_worst_case_month_fits_the_plan. Raise it and that test says what it costs.
-APIFY_MAX_ITEMS = 150   # across all five searches combined
+APIFY_MAX_ITEMS = 150   # across all six searches combined
 APIFY_PRICE_PER_ROW = 1.25 / 1000
 APIFY_PLAN_USD = 19.0
 SCANS_PER_DAY = 3
@@ -4000,7 +4404,7 @@ def fetch_apify_hiringcafe(token, diag=None):
     budget, is the direct fix and also gives a count per search (diag) instead of one
     opaque total, so a search failing is visible in the status footer."""
     out = []
-    # Ids already returned by an earlier search in THIS run. The five searches overlap by
+    # Ids already returned by an earlier search in THIS run. The six searches overlap by
     # design -- cs-nl and revops-nl both match a Dutch CS Ops role -- and every other
     # fetcher scopes its ids to a single query, so this was the one source that could hand
     # the same posting to the pipeline twice. It cost two Opus calls and put two identical
@@ -4508,6 +4912,12 @@ def parse_score_result(job, data):
         # or filling a form. Parsing it back out of a flag string would be the wrong kind
         # of clever. None on a row where the posting and the feed agree, which is most.
         "market_conflict": market_conflict(job, data),
+        # Who would employ Tom, as the scorer read it, for sponsor_fields(). Absent on rows
+        # scored before Nov 2026, which fall back to the company name and the agency regex.
+        "agency": bool(data.get("posted_by_agency")),
+        "employer": clean_text(data.get("employer"))[:80],
+        "legal_entity_guess": clean_text(data.get("employer_legal_entity"))[:90],
+        "employer_domain": clean_text(data.get("employer_domain")).lower()[:60],
     }
 
 def _score_extra():
@@ -5142,12 +5552,12 @@ def main():
         ran.add("adzuna")
         try:
             jobs = fetch_adzuna(aid, akey, diag); found += jobs
-            src_status["Adzuna (NL+UK+CA+US)"] = f"{src_line('adzuna', len(jobs))} | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("adzuna:"))
+            src_status["Adzuna (NL+UK+CA)"] = f"{src_line('adzuna', len(jobs))} | " + "; ".join(f"{k.split(':')[1]}={v}" for k, v in diag.items() if k.startswith("adzuna:"))
         except Exception as e:
-            src_status["Adzuna (NL+UK+CA+US)"] = f"FAIL: {e}"
+            src_status["Adzuna (NL+UK+CA)"] = f"FAIL: {e}"
             FEED_ERRORS["adzuna"] = f"Adzuna failed outright: {str(e)[:80]}"
     else:
-        src_status["Adzuna (NL+UK+CA+US)"] = "skipped: no ADZUNA_APP_ID/KEY set"
+        src_status["Adzuna (NL+UK+CA)"] = "skipped: no ADZUNA_APP_ID/KEY set"
 
     # 2. Reed (UK)
     reed_key = os.environ.get("REED_API_KEY", "")
@@ -5179,12 +5589,11 @@ def main():
     ats_n = 0
     if companies:
         ran.add("ats")
-    for c in companies:
-        try:
-            jobs = fetch_company(c); found += jobs; ats_n += len(jobs)
-        except Exception:
-            pass
-    src_status[f"Company ATS ({len(companies)} watched)"] = src_line("ats", ats_n)
+    ats_n, board_fails = run_company_boards(companies, found)
+    line = src_line("ats", ats_n)
+    if board_fails:
+        line += f" | {len(board_fails)} board(s) failed: " + ", ".join(board_fails)
+    src_status[f"Company ATS ({len(companies)} watched)"] = line
 
     # 5. hiring.cafe via Apify (direct API blocks datacenter IPs, so this runs
     # Tom's saved searches through the Apify actor instead)
@@ -5331,15 +5740,9 @@ def main():
     src_status["UK sponsor register"] = reg_status(uk_reg, "FAIL")
     src_status["NL sponsor register"] = reg_status(nl_reg, "degraded")
 
-    def sponsor_for(job):
-        which = spon.which_register(job.get("location", ""), job.get("country", ""))
-        if which == "UK":
-            raw = uk_reg.match(job.get("company", "")) if uk_reg.ok else "unknown"
-            return which, raw, spon.status_label(raw, "UK")
-        if which == "NL":
-            raw = nl_reg.match(job.get("company", "")) if nl_reg.ok else "unknown"
-            return which, raw, spon.status_label(raw, "NL")
-        return None, "n/a", ""
+    sponsor_regs = {"UK": uk_reg, "NL": nl_reg}
+    sponsor_aliases = spon.load_aliases()
+    entities = spon.load_entities()
 
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     system_score = score_system()
@@ -5458,10 +5861,10 @@ def main():
             record_drop(j, "us-comp-unstated", reason)
             seen.add(j["id"]); continue
 
-        which, raw, label = sponsor_for(j)
-        j["sponsor_region"], j["sponsor_raw"], j["sponsor"] = which or "", raw, label
-        if SPONSOR_REQUIRED and raw == "not_found":
-            record_drop(j, "sponsor-required", f"company not on the {which} sponsor register")
+        j.update(sponsor_fields(j, sponsor_regs, sponsor_aliases, entities))
+        if SPONSOR_REQUIRED and j["sponsor_raw"] == "not_found":
+            record_drop(j, "sponsor-required",
+                        f"company not on the {j['sponsor_region']} sponsor register")
             seen.add(j["id"]); continue
 
         # Every recovery route is now spent and there is still no posting to read. Set the
@@ -5499,11 +5902,18 @@ def main():
             j["description"] = sample_desc(j.get("description"), DESC_STORE_CAP)
             scored.append(j); seen.add(j["id"]); continue
 
-        # STAGE 1: cheap screen
-        try:
-            keep, reason = screen_job(api_key, j)
-        except Exception:
-            keep, reason = True, "screen error, passed through"
+        # STAGE 1: cheap screen -- skipped at home-domain employers. The cheap screen killed
+        # six roles at them in the fortnight to 14 Nov 2026 (Clio twice, Workiva, LSEG,
+        # Trulioo, Fieldguide), and the domain is the one signal that has predicted a
+        # response. The prefilter's title gate still ran, so this only skips the Haiku
+        # judgement, and the deep scorer still reads every one.
+        if home_domain_company(j.get("company")):
+            keep, reason = True, "home-domain employer, cheap screen skipped"
+        else:
+            try:
+                keep, reason = screen_job(api_key, j)
+            except Exception:
+                keep, reason = True, "screen error, passed through"
         why = "" if keep else overrule_kill(j.get("title"), reason)
         if why:
             overruled += 1; keep = True
@@ -5626,12 +6036,31 @@ def main():
     for j in merged:
         j["in_domain"] = in_home_domain(j)
 
-    # Shot and Want for every row, not just this run's. They are arithmetic over dimension
-    # scores already stored, so the 495 rows scored before this existed get them here for
-    # free rather than needing a rescore.
+    # The sponsor check for every row on the board, not just this run's: a register that
+    # changed, an alias added, or a legal name the scorer or a website supplied reaches the
+    # rows already shown on the next scan. Until Nov 2026 a row kept the status it was
+    # given on its first run forever. Then, for rows still not confirmed, the employer's
+    # own website, cached per company, and a second pass with what it found.
     for j in merged:
-        if j.get("dimensions") and (j.get("shot") is None or j.get("want") is None):
-            j["shot"], j["want"] = shot_want(j["dimensions"])
+        j.update(sponsor_fields(j, sponsor_regs, sponsor_aliases, entities))
+    looked = website_lookups(sorted(merged, key=lambda j: j.get("score") or 0, reverse=True),
+                             entities)
+    if looked:
+        for j in merged:
+            j.update(sponsor_fields(j, sponsor_regs, sponsor_aliases, entities))
+    spon.save_entities(entities)
+    lane = sum(1 for j in merged if j.get("sponsor_lane"))
+    src_status["sponsor check"] = (
+        f"{lane} row(s) in the no-sponsor lane; {looked} employer website(s) checked, "
+        f"{len(entities)} cached; {len(sponsor_aliases)} alias(es)")
+
+    # Shot, Want and rank for every row, not just this run's: arithmetic over stored scores,
+    # hard gaps, domain, sponsor status, market and pay, so every row already on the board is
+    # re-ranked on the next scan without a rescore. After the sponsor refresh above, because
+    # an unconfirmed sponsor costs Shot.
+    for j in merged:
+        if j.get("dimensions"):
+            j.update(rank_axes(j))
 
     for j in merged:
         ats, fillable = submit.application_status(j)
@@ -5798,7 +6227,9 @@ def main():
                # showing nothing in the meantime. The weights are the rubric's, not a
                # second set.
                "shot_want": {"shot": list(SHOT_DIMS), "want": list(WANT_DIMS),
-                             "weights": {k: w for k, _l, w, _g in RUBRIC}}},
+                             "weights": {k: w for k, _l, w, _g in RUBRIC}},
+               "rank": {**rank_config(), "gate": RANK_GATE, "floor": RANK_FLOOR,
+                        "notify": RANK_NOTIFY}},
               open("docs/status.json", "w"), indent=1)
     if not dry:
         notify_strong_matches(scored)
