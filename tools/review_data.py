@@ -56,6 +56,14 @@ BASELINE_WEEKS = 4
 NO_RESPONSE_DAYS = 21
 CS_TITLE = re.compile(r"customer success|\bcsm\b|customer business|customer experience"
                       r"|customer enablement", re.I)
+# The same exclusion scan.is_csm_title() makes: "Customer Success Operations Manager" is the
+# ops track, not the CSM track, or the review counts post-sale ops applications as CS.
+CS_OPS_WORDS = re.compile(r"\b(?:operations|ops|revops|strategy|enablement|analyst|analytics"
+                          r"|systems)\b", re.I)
+
+
+def is_cs_title(t):
+    return bool(CS_TITLE.search(t or "")) and not CS_OPS_WORDS.search(t or "")
 TRACKER_MARKETS = {"netherlands": "NL", "ireland": "IE", "uk": "UK-London",
                    "united kingdom": "UK-London", "belgium": "BE", "canada": "CA",
                    "us-remote": "US-Remote", "us": "US-Remote"}
@@ -269,7 +277,7 @@ def applications(source, jobs, now, start, lines=RANK_LINES):
         loc = (r.get("Location") or "").strip()
         a = {"company": r.get("Company", "").strip(), "title": r.get("Title", "").strip(),
              "market": TRACKER_MARKETS.get(loc.lower(), loc or "?"),
-             "track": "cs" if CS_TITLE.search(r.get("Title") or "") else "revops",
+             "track": "cs" if is_cs_title(r.get("Title")) else "revops",
              "score": r.get("Score", "").strip(), "band": score_band(r.get("Score")),
              "applied_on": on.date().isoformat() if on else None,
              "status_in_sheet": (r.get("Status") or "").strip(),

@@ -815,7 +815,7 @@ function card(j, reviewed){
   const tier = tierOf(j);
   const marketTag = j.tier
     ? `<span class="tag market t${tier}" title="${tier===1?"Primary market"
-        :tier===2?"Strong option":tier===3?"Backup":"Last resort — remote RevOps only"}"
+        :tier===2?"Strong option":tier===3?"Backup (Belgium, US remote)":"Backup (Canada)"}"
        >${esc(j.tier)}</span>`
     : "";
   // Sits next to the market it disputes rather than down among the flags, because this one
@@ -916,7 +916,7 @@ function card(j, reviewed){
     ${(j.verdict || watch || dims) ? `<details class="more"><summary>Details</summary>
       ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}${watch}${dims}</details>` : ""}
     <div class="foot">
-      <a href="${j.url||'#'}" target="_blank" rel="noopener">View posting &rarr;</a>
+      <a href="${esc(j.url||'#')}" target="_blank" rel="noopener">View posting &rarr;</a>
       ${applyLink}
       <span class="src">${j.source||""}${also} · ${fresh(j.found_at)}</span>
     </div>
