@@ -167,14 +167,21 @@ function contactsByCompany(con) {
   return groups;
 }
 
+// How far Tom has got with one contact. A chat or a reply ranks first whenever it happened.
+// After that the current round of outreach (a First email sent date, or a Role set on a
+// contact still to be emailed) outranks the earlier round (only the old First Outreach
+// column), so an Active company's tag describes this round rather than a message from May.
 function contactStage(con, r) {
   const name = con.get(r, "name");
   const chat = con.get(r, "chat date"), rep = con.get(r, "last reply");
-  const sent = con.get(r, "first email sent") || con.get(r, "first outreach");
-  if (chat) return { name: name, rank: 4, label: "chatted " + chat };
-  if (rep) return { name: name, rank: 3, label: "replied " + rep };
-  if (sent) return { name: name, rank: 2, label: "emailed " + sent };
-  return { name: name, rank: 1, label: "to contact" };
+  const sent = con.get(r, "first email sent"), old = con.get(r, "first outreach");
+  if (chat) return { name: name, rank: 5, label: "chatted " + chat };
+  if (rep) return { name: name, rank: 4, label: "replied " + rep };
+  if (sent) return { name: name, rank: 3, label: "emailed " + sent };
+  const role = con.get(r, "role (first or backup)");
+  if (role) return { name: name, rank: role === "First" ? 2.5 : 2, label: "to contact" };
+  if (old) return { name: name, rank: 1, label: "emailed " + old + " (earlier round)" };
+  return { name: name, rank: 0, label: "to contact" };
 }
 
 function outreachList(ss, withPeople) {
@@ -193,7 +200,8 @@ function outreachList(ss, withPeople) {
       item.keys.forEach(k => (groups[k] || []).forEach(cr => {
         count++;
         const s = contactStage(con, cr);
-        if (!best || s.rank > best.rank) best = s;
+        // >= so that on a tie the later row (the newer contact) wins.
+        if (!best || s.rank >= best.rank) best = s;
       }));
       item.contacts = count;
       if (best) { item.contact = best.name; item.stage = best.label; }

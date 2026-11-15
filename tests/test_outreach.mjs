@@ -57,10 +57,13 @@ const tabs = {
   ]),
   Contacts: sheet([
     ['Name', 'Company', 'First Outreach', 'Follow-up Date', 'Chat Date', 'Notes', 'Contact ID', 'Stage',
-     'Next action', 'Title', 'First email sent', 'Last reply'],
-    ['Old Contact', 'SAI360', '5/1/26', '', '', '', 'C-077', 'Messaged', '', '', '', ''],
-    ['Neil Example', 'SAI360', '', '', '', '', 'C-143', 'To contact', '', '', '16 Nov 2026', '18 Nov 2026'],
-    ['Ann Example', 'Fenergo', '', '', '', '', 'C-145', 'To contact', '', '', '16 Nov 2026', ''],
+     'Next action', 'Title', 'First email sent', 'Last reply', 'Role (First or Backup)'],
+    ['Old Contact', 'SAI360', '5/1/26', '', '', '', 'C-077', 'Messaged', '', '', '', '', ''],
+    ['Neil Example', 'SAI360', '', '', '', '', 'C-143', 'To contact', '', '', '16 Nov 2026', '18 Nov 2026', 'First'],
+    ['Older Example', 'Fenergo', '4/7/26', '', '', '', 'C-050', 'Messaged', '', '', '', '', ''],
+    ['Ann Example', 'Fenergo', '', '', '', '', 'C-145', 'To contact', '', '', '', '', 'First'],
+    ['Nadira Example', 'Fenergo', '', '', '', '', 'C-146', 'To contact', '', '', '', '', 'Backup'],
+    ['Wk Example', 'Workiva', '3/9/26', '', '', '', 'C-020', 'Messaged', '', '', '', '', ''],
   ]),
   Touches: sheet(
     [['Contact ID', 'Type', 'Channel', 'Sent date', 'Reply date', 'Status'],
@@ -98,8 +101,12 @@ check('BWise carries its keys, active flag and signal',
 check('BWise counts both contacts found through the SAI360 alias', bw.contacts === 2);
 check('the most advanced contact wins (replied beats an old message)',
   bw.contact === 'Neil Example' && bw.stage === 'replied 18 Nov 2026');
-check('an old contact with only First Outreach shows as emailed',
-  get({ action: 'outreach' }).companies.find(c => c.company === 'Fenergo').stage === 'emailed 16 Nov 2026');
+const fe = o.companies.find(c => c.company === 'Fenergo');
+check('a contact queued this round outranks an email from the earlier round',
+  fe.stage === 'to contact' && fe.contact !== 'Older Example');
+check('before anyone is emailed, the First contact shows rather than the backup', fe.contact === 'Ann Example');
+check('a company with only an earlier round says so',
+  o.companies.find(c => c.company === 'Workiva').stage === 'emailed 3/9/26 (earlier round)');
 const oc = get({ action: 'outreach_companies' });
 check('outreach_companies carries no people',
   oc.ok && oc.companies.every(c => !('contact' in c) && !('stage' in c) && !('contacts' in c)));
@@ -110,8 +117,8 @@ check('funnel counts the last seven days only',
 check('funnel counts a bounce', f.last_7_days.bounced === 1);
 const fen = f.active.find(a => a.company === 'Fenergo');
 check('funnel lists only Active companies', f.active.length === 2 && !f.active.some(a => a.company === 'Workiva'));
-check('funnel per company: emailed, replied, drop flag',
-  fen.emailed === 1 && fen.replied === 0 && fen.drop === true &&
+check('funnel per company: emailed (this round only), replied, drop flag',
+  fen.emailed === 0 && fen.replied === 0 && fen.drop === true &&
   f.active.find(a => a.company === 'BWise (SAI360)').replied === 1);
 check('funnel carries no names of people', !JSON.stringify(f).includes('Example'));
 check('an unknown action is refused', get({ action: 'nope' }).error === 'unknown action');
