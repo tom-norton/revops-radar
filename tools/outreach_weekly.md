@@ -50,10 +50,18 @@ which is public: no names, emails or titles of people go in it.
    a customer-success-to-RevOps path and set Commonality to match; otherwise None.
 5. **Queue.** Add a Touches row (Contact ID, Outreach, Email) for each new First contact and
    read back the Checks column. Fix a failed check in the Lookups tables, never in the text.
-6. **Replies.** If the Microsoft 365 connector is connected, search Outlook for mail from
-   each contacted address since its Sent date and fill Reply date and Status on the Touches
-   row (Replied, Chat booked, or Bounced for a delivery failure). Without it, ask Tom which
-   replies came in. A bounce: set the contact's Email status to "bounced" and move to the
-   backup.
+6. **Replies.** With the Microsoft 365 connector (read-only; tested 15 Nov 2026 on Tom's
+   ESADE mailbox), for each Touches row with a Sent date and no Reply date:
+   - `outlook_email_search` with `sender` = the contact's work email and `afterDateTime` =
+     the Sent date. If nothing comes back, try `sender` = the company's email domain (a
+     reply can come from a colleague or an alias) and check the name in the result.
+   - Bounces: `outlook_email_search` with `query` = `Undeliverable OR "Delivery has failed"
+     OR "couldn't be delivered"` and `afterDateTime` = the earliest open Sent date, then
+     match the bounced address.
+   - Fill Reply date and Status on the Touches row (Replied, Chat booked, or Bounced). A
+     calendar acceptance counts as Chat booked; put the chat date in the contact's Chat
+     Date. A bounce: set the contact's Email status to "bounced" and move to the backup.
+   - Read only. Never use the connector's send, draft, delete or label tools.
+   Without the connector, ask Tom which replies came in.
 7. **Close.** Read out the Keep checks tab (credits per contact, bounces per 20, chat rate)
    and what is due this week.
