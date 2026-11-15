@@ -80,7 +80,7 @@ Usage:
                              text is recovered and the stale scores are named.
 """
 
-import email, html, imaplib, json, os, re, subprocess, sys, time, urllib.parse
+import email, html, imaplib, json, os, re, subprocess, sys, time, unicodedata, urllib.parse
 from datetime import datetime, timezone, timedelta
 import requests
 import sponsors as spon
@@ -2037,6 +2037,83 @@ def notify_strong_matches(jobs):
                                "Priority": "high", "Tags": "briefcase"})
     except Exception:
         pass
+
+# ---------------------------------------------------------------- the outreach list
+#
+# Tom's outreach list is the Companies tab of Job Search Tracker (the companies he contacts
+# people at before a role is posted). When one of them posts a role the radar keeps, that
+# is the moment his contact there matters most, so it gets its own push. The list comes
+# from the tracker's web app (?action=outreach_companies, company names only, no people),
+# read with TRACKER_TOKEN. Without the token this does nothing, and it never lets a failure
+# touch the scan.
+OUTREACH_NOISE = re.compile(
+    r"\b(the|inc|incorporated|ltd|limited|llc|plc|corp|corporation|co|gmbh|ag|bv|b v|nv|n v|"
+    r"sa|sas|srl|ulc|holdings?|group|uk|ireland|netherlands|nederland|belgium|canada|usa|us|"
+    r"europe|emea|international|global)\b")
+
+
+def outreach_key(name):
+    """docs/index.html's companyKey(), so the push and the dashboard tag agree."""
+    s = unicodedata.normalize("NFKD", str(name or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    s = re.sub(r"\([^)]*\)", " ", s).replace("&", " and ")
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return " ".join(OUTREACH_NOISE.sub(" ", s).split())
+
+
+def outreach_hits(jobs, companies):
+    """[(job, company entry)] for new rows at a listed company: any score at an Active
+    company, at or above FLOOR (or in the home domain) at the others."""
+    index = {}
+    for c in companies or []:
+        for k in (c.get("keys") or [c.get("company")]):
+            k = outreach_key(k)
+            if k and k not in index:
+                index[k] = c
+    out = []
+    for j in jobs:
+        c = index.get(outreach_key(j.get("company")))
+        if not c:
+            continue
+        if c.get("active") or (j.get("score") or 0) >= FLOOR or in_home_domain(j):
+            out.append((j, c))
+    return out
+
+
+def outreach_companies(token, get=None):
+    """The Companies tab via the tracker web app, or [] on any failure."""
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "index.html"),
+                  encoding="utf-8") as f:
+            m = re.search(r'TRACKER_URL\s*=\s*"([^"]+)"', f.read())
+        if not m:
+            return []
+        r = (get or requests.get)(m.group(1), params={"action": "outreach_companies", "token": token},
+                                  timeout=30)
+        data = r.json()
+        return data.get("companies") or [] if data.get("ok") else []
+    except Exception:
+        return []
+
+
+def notify_outreach_list(jobs):
+    token = os.environ.get("TRACKER_TOKEN", "").strip()
+    if not token or not jobs:
+        return
+    hits = outreach_hits(jobs, outreach_companies(token))
+    if not hits:
+        return
+    hits.sort(key=lambda h: (not h[1].get("active"), -(h[0].get("score") or 0)))
+    body = "\n".join(f"{c.get('company')} ({'Active' if c.get('active') else c.get('signal') or 'on list'}): "
+                     f"{j.get('title')}, {j.get('market') or '?'}, {j.get('score') if j.get('score') is not None else 'unscored'}"
+                     for j, c in hits[:10])
+    try:
+        requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=body.encode("utf-8"), timeout=15,
+                      headers={"Title": f"{len(hits)} new role{'s' if len(hits) != 1 else ''} at outreach companies",
+                               "Tags": "envelope"})
+    except Exception:
+        pass
+
 
 def get(url, **kw):
     kw.setdefault("timeout", 30)
@@ -6270,6 +6347,7 @@ def main():
               open("docs/status.json", "w"), indent=1)
     if not dry:
         notify_strong_matches(scored)
+        notify_outreach_list(scored)
     print(f"Done. {len(scored)} new on dashboard, {len(set_aside)} set aside unscored, "
           f"{len(merged)} total, {sum(DROP_COUNTS.values())} dropped this run.")
 

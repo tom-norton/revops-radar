@@ -15,7 +15,9 @@
 // Chat Date: the dashboard flags roles at their companies as referral candidates. That
 // list goes only to a browser holding the token, never into the public repo.
 // ?action=applications&token=... answers with the Applications tab as CSV, for the weekly
-// review. Both reads are GETs rather than POST actions on purpose: a deployment still
+// review. ?action=outreach, ?action=outreach_companies and ?action=funnel serve the
+// outreach list; they are described above outreachList() below. All reads are GETs rather
+// than POST actions on purpose: a deployment still
 // running an older version of this file would take a POST it did not understand for an
 // application and add a blank row, where a GET it has no handler for just fails.
 
@@ -108,9 +110,144 @@ function doGet(e) {
   const p = (e && e.parameter) || {};
   const token = PropertiesService.getScriptProperties().getProperty("TOKEN");
   if (!token || p.token !== token) return reply({ ok: false, error: "bad token" });
-  if (p.action === "contacts") return contacts(SpreadsheetApp.getActiveSpreadsheet());
-  if (p.action === "applications") return applications(SpreadsheetApp.getActiveSpreadsheet());
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (p.action === "contacts") return contacts(ss);
+  if (p.action === "applications") return applications(ss);
+  if (p.action === "outreach") return outreachList(ss, true);
+  if (p.action === "outreach_companies") return outreachList(ss, false);
+  if (p.action === "funnel") return funnel(ss);
   return reply({ ok: false, error: "unknown action" });
+}
+
+// ---------------------------------------------------------------- the outreach list
+//
+// ?action=outreach answers with every company on the Companies tab (the outreach, or LAMP,
+// list): its name and aliases, whether it is Active, its Hiring signal, and the most
+// advanced contact there with their stage ("emailed 16 Nov 2026", "chatted 3/26/26"). The
+// dashboard tags roles at these companies with it. Like ?action=contacts, the names go only
+// to a browser holding the token, never into the repo.
+//
+// ?action=outreach_companies is the same list with no people in it, for the scan, which
+// pushes an ntfy alert when one of these companies posts a role. Company names only.
+//
+// ?action=funnel answers with counts for the Monday review: the Keep checks tab, the last
+// seven days of the Touches tab, and per Active company how many contacts were emailed,
+// replied and chatted. No names of people.
+
+// The dashboard's companyKey(), so a company here and a job's company match the same way.
+const COMPANY_NOISE = /\b(the|inc|incorporated|ltd|limited|llc|plc|corp|corporation|co|gmbh|ag|bv|b v|nv|n v|sa|sas|srl|ulc|holdings?|group|uk|ireland|netherlands|nederland|belgium|canada|usa|us|europe|emea|international|global)\b/g;
+function companyKey(name) {
+  return String(name || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/\([^)]*\)/g, " ").replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ")
+    .replace(COMPANY_NOISE, " ").replace(/\s+/g, " ").trim();
+}
+
+// A tab as display values, with columns found by header text.
+function table(ss, tab) {
+  const sh = ss.getSheetByName(tab);
+  if (!sh) return { error: "no tab named " + tab };
+  const rows = sh.getDataRange().getDisplayValues();
+  const head = (rows.shift() || []).map(h => String(h).trim().toLowerCase());
+  return { rows: rows, get: (r, name) => { const i = head.indexOf(name); return i < 0 ? "" : String(r[i]).trim(); } };
+}
+
+function companyKeys(t, r) {
+  const company = t.get(r, "company");
+  const names = (t.get(r, "names to match") || company).split(";").concat([company]);
+  return [...new Set(names.map(companyKey).filter(Boolean))];
+}
+
+function contactsByCompany(con) {
+  const groups = {};
+  if (con.error) return groups;
+  con.rows.forEach(r => {
+    const k = companyKey(con.get(r, "company"));
+    if (k) (groups[k] = groups[k] || []).push(r);
+  });
+  return groups;
+}
+
+function contactStage(con, r) {
+  const name = con.get(r, "name");
+  const chat = con.get(r, "chat date"), rep = con.get(r, "last reply");
+  const sent = con.get(r, "first email sent") || con.get(r, "first outreach");
+  if (chat) return { name: name, rank: 4, label: "chatted " + chat };
+  if (rep) return { name: name, rank: 3, label: "replied " + rep };
+  if (sent) return { name: name, rank: 2, label: "emailed " + sent };
+  return { name: name, rank: 1, label: "to contact" };
+}
+
+function outreachList(ss, withPeople) {
+  const comp = table(ss, "Companies");
+  if (comp.error) return reply({ ok: false, error: comp.error });
+  const con = withPeople ? table(ss, CONTACTS_SHEET) : null;
+  const groups = withPeople ? contactsByCompany(con) : {};
+  const out = [];
+  comp.rows.forEach(r => {
+    const company = comp.get(r, "company");
+    if (!company) return;
+    const item = { company: company, keys: companyKeys(comp, r),
+                   active: comp.get(r, "active") === "Yes", signal: comp.get(r, "hiring signal") };
+    if (withPeople) {
+      let best = null, count = 0;
+      item.keys.forEach(k => (groups[k] || []).forEach(cr => {
+        count++;
+        const s = contactStage(con, cr);
+        if (!best || s.rank > best.rank) best = s;
+      }));
+      item.contacts = count;
+      if (best) { item.contact = best.name; item.stage = best.label; }
+    }
+    out.push(item);
+  });
+  return reply({ ok: true, companies: out });
+}
+
+function funnel(ss) {
+  const out = { ok: true };
+  const kc = ss.getSheetByName("Keep checks");
+  if (kc && kc.getLastRow() > 3) {
+    out.keep_checks = kc.getRange(4, 1, kc.getLastRow() - 3, 5).getDisplayValues()
+      .filter(r => r[1])
+      .map(r => ({ phase: r[0], measure: r[1], now: r[2], target: r[3], status: r[4] }));
+  }
+  const t = ss.getSheetByName("Touches");
+  if (t) {
+    const vals = t.getDataRange().getValues();
+    const head = (vals.shift() || []).map(h => String(h).trim().toLowerCase());
+    const i = n => head.indexOf(n);
+    const since = new Date(Date.now() - 7 * 864e5);
+    const w = { outreach_sent: 0, follow_ups_sent: 0, other_sent: 0, replies: 0, bounced: 0 };
+    vals.forEach(r => {
+      const sent = r[i("sent date")], rep = r[i("reply date")];
+      const type = String(r[i("type")]), status = String(r[i("status")]);
+      if (sent instanceof Date && sent >= since) {
+        if (type === "Outreach") w.outreach_sent++;
+        else if (type === "Follow-up") w.follow_ups_sent++;
+        else w.other_sent++;
+        if (status === "Bounced") w.bounced++;
+      }
+      if (rep instanceof Date && rep >= since) w.replies++;
+    });
+    out.last_7_days = w;
+  }
+  const comp = table(ss, "Companies");
+  const con = table(ss, CONTACTS_SHEET);
+  if (!comp.error) {
+    const groups = contactsByCompany(con);
+    out.active = comp.rows.filter(r => comp.get(r, "active") === "Yes").map(r => {
+      let emailed = 0, replied = 0, chatted = 0;
+      companyKeys(comp, r).forEach(k => (groups[k] || []).forEach(cr => {
+        if (con.get(cr, "first email sent")) emailed++;
+        if (con.get(cr, "last reply")) replied++;
+        if (con.get(cr, "chat date")) chatted++;
+      }));
+      return { company: comp.get(r, "company"), signal: comp.get(r, "hiring signal"),
+               emailed: emailed, replied: replied, chatted: chatted,
+               silent: comp.get(r, "silent contacts"), drop: comp.get(r, "drop (2 silent)") !== "" };
+    });
+  }
+  return reply(out);
 }
 
 // The whole Applications tab as CSV, for the weekly review (tools/review_data.py). The
