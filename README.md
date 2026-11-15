@@ -1224,6 +1224,34 @@ needs `Company` and `Chat Date` (and `Name`) headers.
 This needs the updated `tools/tracker-append.gs` pasted in and deployed as a **New
 version** (above). Until then the dashboard simply shows no referral flags.
 
+### Outreach list
+
+The same web app also reads the **Companies** tab, Tom's outreach list (the companies he
+contacts people at before a role is posted, per Dalton's *2-Hour Job Search*). Three
+read-only GETs serve it, all behind the same token:
+
+- `?action=outreach` (the dashboard): each company with its aliases, whether it is Active,
+  its Hiring signal, and the most advanced contact there with their stage. A role at a
+  listed company gets a **✉ Outreach** tag (filled for Active companies), and roles at
+  Active companies get an **Outreach companies** section at the top. Like the referral
+  contacts, the names stay in the browser; the score is not changed.
+- `?action=outreach_companies` (the scan): the same list with no people in it. When a
+  listed company posts a role the radar keeps (any score at an Active company; at or above
+  the floor, or in the home domain, at the others), the scan sends a separate ntfy push.
+  It needs `TRACKER_TOKEN` as a repository secret (below); without it the push is skipped.
+- `?action=funnel` (the Monday review): the tracker's Keep checks tab, the last seven days
+  of the Touches tab, and per Active company how many contacts were emailed, replied and
+  chatted. Counts and company names only. `tools/review_data.py` reads it into
+  `outreach_funnel`, and the review reports it under "Outreach funnel".
+
+The weekly hiring-signal refresh for the same list is `tools/lamp_signals.py` (run by a
+Monday scheduled session following `tools/lamp_signals.md`), and the attended weekly
+outreach session follows `tools/outreach_weekly.md`.
+
+This needs the updated `tools/tracker-append.gs` pasted in and deployed as a **New
+version**. Until then the tags are missing, the push finds nothing, and the review says
+the funnel could not be read ("unknown action").
+
 ## Tests
 
 ```
@@ -1235,6 +1263,9 @@ python tests/test_submit.py     # the form: what code fills, what nobody fills, 
 node tests/test_worker.mjs      # the Worker: its two guards, and the scan schedule incl. DST
 node tests/test_tracker.mjs     # the country each market is written into Networking Tracker as
 node tests/test_referrals.mjs   # how a job's company is matched to the Contacts tab
+node tests/test_outreach.mjs    # the outreach tag, and the web app's outreach reads on a fake sheet
+python tests/test_outreach_scan.py # the scan's push for roles at outreach companies
+python tests/test_lamp_signals.py  # the weekly hiring-signal refresh, pure parts
 python tests/preview_messages.py # print every bot message as Telegram renders it (no asserts)
 python tests/test_cv_render.py --install  # the real render: docx -> PDF -> JPEG, measured
 python tests/test_submit_form.py --install  # a real browser filling, printing and submitting a form
@@ -1278,6 +1309,7 @@ Repository secrets (Settings → Secrets and variables → Actions):
 - `TELEGRAM_CHAT_ID` — message the bot once, then read it off
   `api.telegram.org/bot<TOKEN>/getUpdates`
 - `BULLET_BANK_PAT` — fine-grained PAT, read/write contents on `tom-bullet-bank` only
+- `TRACKER_TOKEN` — the same value as the `TOKEN` script property on Job Search Tracker; lets the scan read the outreach list (company names only) for its push
 
 Pages: Settings → Pages → Deploy from a branch → `main` / `/docs`.
 Dashboard: `https://tom-norton.github.io/revops-radar/`.

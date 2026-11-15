@@ -252,6 +252,31 @@ def fetch_tracker(url, token, get=requests.get):
     return text
 
 
+def fetch_funnel(url, token, get=requests.get):
+    """The outreach funnel from the same web app (?action=funnel): the Keep checks tab, the
+    last seven days of the Touches tab, and per Active company how many contacts were
+    emailed, replied and chatted. Counts and company names only, no people."""
+    if not url:
+        raise ValueError("TRACKER_URL is empty in docs/index.html")
+    try:
+        r = get(url, params={"action": "funnel", "token": token}, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except requests.HTTPError:
+        raise ValueError(f"tracker web app answered HTTP {r.status_code}") from None
+    except requests.RequestException as e:
+        raise ValueError(f"tracker web app unreachable ({type(e).__name__})") from None
+    except ValueError:
+        raise ValueError("tracker web app did not answer with JSON") from None
+    if not data.get("ok"):
+        err = data.get("error") or "not ok"
+        if err == "unknown action":
+            err += (" (the web app is running an older tracker-append.gs: paste the new one "
+                    "and deploy a new version)")
+        raise ValueError(f"tracker web app said: {err}")
+    return {k: data.get(k) for k in ("keep_checks", "last_7_days", "active")}
+
+
 def applications(source, jobs, now, start, lines=RANK_LINES):
     """The coaching block: outcomes from the tracker, joined to the radar's own reading of
     each role where the dashboard still has it. `source` is a CSV file's path, or a file
@@ -492,6 +517,14 @@ def main():
         except Exception as e:
             # Never the URL with its query string: that would print the token.
             out["applications_error"] = f"tracker unreadable: {str(e)[:160]}"
+    out["outreach_funnel"], out["outreach_funnel_error"] = None, None
+    if not token:
+        out["outreach_funnel_error"] = "no tracker: set TRACKER_TOKEN in the environment"
+    else:
+        try:
+            out["outreach_funnel"] = fetch_funnel(tracker_url(), token)
+        except Exception as e:
+            out["outreach_funnel_error"] = f"funnel unreadable: {str(e)[:160]}"
     json.dump(out, sys.stdout, indent=1, default=str)
     print()
 
