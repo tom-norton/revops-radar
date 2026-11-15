@@ -187,7 +187,7 @@ def test_several_flags_are_all_reported():
     below-floor salary are excluded from this scenario deliberately -- they disqualify the
     role via deep_score_disqualifier() before score_flags() would ever run on it.)"""
     obs = dict(NO_OBS, company_standout=False)
-    flags = scan.score_flags(flag_job(title="Senior Customer Success Analyst",
+    flags = scan.score_flags(flag_job(title="Senior Customer Success Specialist",
                                       market="UK-London"), obs)
     assert len(flags) == 2      # title band, CSM outside NL
 
@@ -338,8 +338,8 @@ def test_widening_did_not_lose_anything_previously_kept():
     previously_kept = [
         "Revenue Operations Manager", "RevOps Lead", "Rev Ops Manager",
         "Sales Operations Manager", "Sales Ops Analyst", "GTM Strategy Manager",
-        "Go-to-Market Operations Manager", "Growth Operations Manager",
-        "Marketing Operations Manager", "CS Operations Manager",
+        "Go-to-Market Operations Manager", "Sales & Marketing Operations Manager",
+        "CS Operations Manager",
         "Customer Success Operations Manager", "Strategy and Operations Manager",
         "Strategy & Operations Manager", "Business Operations Manager",
         "Commercial Operations Manager", "Sales Strategy Manager",
@@ -1267,6 +1267,265 @@ def test_sponsor_status_labels_cover_every_match_value():
         assert sponsors.status_label(raw, "NL"), raw
 
 
+def _reg(label, names):
+    import sponsors
+    reg = sponsors.Register(label)
+    for n in names:
+        reg.add(n)
+    reg.ok = True
+    return reg
+
+
+def test_sponsor_matcher_finds_the_trading_name_misses_measured_in_nov_2026():
+    """Each of these was "not on register" on the board while the employer was on it."""
+    uk = _reg("UK", ["Aircall UK Ltd", "CHECKOUT LTD", "CHECKOUT (WIMBLEDON) LIMITED",
+                     "PingPong Payment (UK) Limited", "S&P Global Limited",
+                     "Amazon UK Services Ltd", "Maxico Uk limited t/a The Amazon"])
+    nl = _reg("NL", ["Orbisk B.V.", "Kubota Holdings Europe B.V.",
+                     "o9 Solutions Netherlands B.V.", "Thermo Fisher Scientific B.V.",
+                     "Smith &amp; Nephew Operations B.V."])
+    assert uk.lookup("Aircall.io, Inc.") == ("on_register", "Aircall UK Ltd")
+    # the real entity, not the one with a parenthetical
+    assert uk.lookup("Checkout.com") == ("on_register", "CHECKOUT LTD")
+    assert uk.lookup("PingPong Payments")[0] == "on_register"
+    assert uk.lookup("S&P Global")[0] == "on_register"            # used to normalise to ""
+    assert uk.lookup("Amazon") == ("on_register", "Amazon UK Services Ltd")
+    assert nl.lookup("Orbisk | Zero Food Waste")[0] == "on_register"
+    assert nl.lookup("Kubota in Europe")[0] == "on_register"
+    assert nl.lookup("o9 Solutions, Inc.")[0] == "on_register"
+    assert nl.lookup("ThermoFisher Scientific")[0] == "on_register"
+    assert nl.lookup("Smith & Nephew")[0] == "likely"           # HTML entity unescaped
+
+
+def test_likely_needs_filler_words_not_an_unrelated_business():
+    """20 of 93 "likely" rows had matched an unrelated company that shared a word."""
+    uk = _reg("UK", ["Pleo Technologies Limited", "Navan Labs UK Limited",
+                     "Hadrian Health Centre", "Hadrian Security Limited",
+                     "Hadrian Healthcare Limited", "Hadrian Homes Ltd",
+                     "Zoom Digital Printers Limited", "Zoom In Private Ltd",
+                     "Zoom Maintenance Ltd", "Zoom Couriers Ltd",
+                     "3D Coffee (Oadby) Limited T/A Costa Coffee",
+                     "Amhaus Limited T/A Costa Coffee"])
+    assert uk.lookup("Pleo") == ("likely", "Pleo Technologies Limited")
+    assert uk.lookup("Navan")[0] == "likely"
+    assert uk.lookup("Hadrian")[0] == "not_found"     # four unrelated businesses
+    assert uk.lookup("Zoom")[0] == "not_found"
+    # a trade name several franchisees carry is not the brand's own licence
+    assert uk.lookup("Costa Coffee")[0] == "likely"
+    one = _reg("UK", ["Stott and May Professional Search Limited"])
+    st, entry = one.lookup("Stott and May")
+    assert st == "possible" and entry.startswith("Stott and May")
+
+
+def test_legal_names_are_read_off_page_text_and_filtered_to_the_employer():
+    import sponsors
+    names = sponsors.legal_names_in
+    assert names("Copyright 2026 IVXS UK Limited trading as ComplyAdvantage",
+                 "ComplyAdvantage", "complyadvantage.com") == ["IVXS UK Limited"]
+    assert names("\u00a9 2026 Pineapple Technology Ltd.", "incident.io",
+                 "incident.io") == ["Pineapple Technology Ltd."]
+    assert names("Impressum Recruitee B.V. Amsterdam", "Tellent", "tellent.com") \
+        == ["Recruitee B.V."]
+    assert names("30th October 2026 EPX Limited is the controller", "epx",
+                 "epx.co.uk")[0] == "EPX Limited"
+    # another company named on the page is not this employer
+    assert names("Our processor Google UK Limited hosts data", "Wiz", "wiz.io") == []
+    got = names("Moss Credit (Germany) GetMoss NL B.V. and Moss Credit Airwallex (UK) Limited",
+                "Moss", "getmoss.com")
+    assert "GetMoss NL B.V." in got and not any(g.startswith("Airwallex") for g in got)
+    # the generic word in an agency's name is not the employer
+    assert names("Rise Technical Recruitment Ltd is acting as an agency",
+                 "Rise Technical Recruitment") == ["Rise Technical Recruitment Ltd"]
+
+
+def test_employer_domain_comes_only_from_the_employers_own_site():
+    import sponsors
+    assert sponsors.employer_domain("https://careers.scrive.com/jobs/1") == "scrive.com"
+    assert sponsors.employer_domain("https://www.qualtrics.com/careers/us/en/job/1") \
+        == "qualtrics.com"
+    for url in ["https://www.linkedin.com/jobs/view/1", "https://jobs.ashbyhq.com/x/1",
+                "https://job-boards.greenhouse.io/x/jobs/1", "https://aquablu.recruitee.com/o/x",
+                "https://outsystems.wd503.myworkdayjobs.com/x", "", None]:
+        assert sponsors.employer_domain(url) is None, url
+
+
+def test_agency_posts_are_recognised_by_name_or_by_the_ad():
+    import sponsors
+    assert sponsors.looks_like_agency("Rise Technical Recruitment Limited")
+    assert sponsors.looks_like_agency("Randstad Digital")
+    assert sponsors.looks_like_agency("Acme", "Our client is a private equity-backed SaaS")
+    assert sponsors.looks_like_agency("Acme", "We're partnering with an established B2B")
+    # direct employers write "our client" too, about their own customers
+    for ad in ["ensure our client\u2019s needs are met", "our client-facing teams",
+               "work with our client success team"]:
+        assert not sponsors.looks_like_agency("Octus", ad), ad
+    assert not sponsors.looks_like_agency("Celmor", "Celmor builds agentic AI systems")
+
+
+def test_sponsor_fields_use_the_market_and_every_legal_name_known():
+    import sponsors
+    regs = {"UK": _reg("UK", ["IVXS UK Limited", "Randstad UK Holding Ltd", "Monzo Bank Ltd"]),
+            "NL": _reg("NL", ["Recruitee B.V."])}
+    aliases = {sponsors._key("ComplyAdvantage"): ["IVXS UK Limited"]}
+    f = scan.sponsor_fields({"company": "ComplyAdvantage", "market": "UK-London"},
+                            regs, aliases, {})
+    assert f["sponsor_raw"] == "on_register" and f["sponsor_via"] == "alias"
+    assert f["sponsor_entity"] == "IVXS UK Limited" and not f["sponsor_lane"]
+    # the website cache
+    ents = {sponsors._key("Tellent"): {"legal": ["Recruitee B.V."]}}
+    f = scan.sponsor_fields({"company": "Tellent", "market": "NL"}, regs, {}, ents)
+    assert (f["sponsor_raw"], f["sponsor_via"]) == ("on_register", "website")
+    # the scorer's guess counts only on an exact register match
+    f = scan.sponsor_fields({"company": "Acme", "market": "UK-London",
+                             "legal_entity_guess": "IVXS UK Ltd"}, regs, {}, {})
+    assert f["sponsor_raw"] == "on_register" and f["sponsor_via"] == "scorer"
+    f = scan.sponsor_fields({"company": "Acme", "market": "UK-London",
+                             "legal_entity_guess": "Acme Widgets Limited"}, regs, {}, {})
+    assert f["sponsor_raw"] == "not_found" and f["sponsor_lane"]
+    assert f["sponsor_checked"] == "Acme Widgets Limited"
+    # by market, not location text: a Canadian London is not a UK row
+    f = scan.sponsor_fields({"company": "Trudell", "market": "CA",
+                             "location": "London, Ontario, Canada"}, regs, {}, {})
+    assert f["sponsor_raw"] == "n/a" and f["sponsor"] == "" and not f["sponsor_lane"]
+    # an agency's own licence says nothing; an unnamed client goes to the lane
+    f = scan.sponsor_fields({"company": "Randstad Digital", "market": "UK-London",
+                             "description": "Our client is a fintech."}, regs, {}, {})
+    assert f["sponsor_raw"] == "agency" and f["sponsor_lane"]
+    # ...a named client is looked up instead
+    f = scan.sponsor_fields({"company": "Randstad Digital", "market": "UK-London",
+                             "agency": True, "employer": "Monzo"}, regs, {}, {})
+    assert f["sponsor_raw"] == "likely" and f["sponsor_entity"] == "Monzo Bank Ltd"
+    # a scorer correction of the company name is used
+    f = scan.sponsor_fields({"company": "Ink Foundation", "market": "UK-London",
+                             "agency": False, "employer": "Monzo"}, regs, {}, {})
+    assert f["sponsor_raw"] == "likely"
+    # a register that did not load is never a negative
+    down = sponsors.Register("UK")
+    f = scan.sponsor_fields({"company": "Acme", "market": "UK-London"},
+                            {"UK": down, "NL": down}, {}, {})
+    assert f["sponsor_raw"] == "unknown" and not f["sponsor_lane"]
+
+
+def test_ireland_permit_list_is_a_plus_only():
+    import sponsors
+    xlsx = _tiny_xlsx(["Employer Name", "HubSpot Ireland Limited", "Fenergo Limited",
+                       "One Identity Software International DAC"])
+    assert sponsors.xlsx_first_column(xlsx)[1] == "HubSpot Ireland Limited"
+
+    class _R:
+        def __init__(self, text="", content=b""):
+            self.text, self.content, self.ok = text, content, True
+        def raise_for_status(self): pass
+
+    def get(url):
+        if url.endswith(".html"):
+            return _R(text='<a href="/en/publications/publication-files/employment-permits-'
+                           'issued-to-companies-2026.xlsx">x</a>')
+        return _R(content=xlsx)
+    ie = sponsors.load_ie(years=[2026], get=get)
+    assert ie.ok and not ie.trust_negatives
+    regs = {"IE": ie}
+    hit = scan.sponsor_fields({"company": "HubSpot", "market": "IE"}, regs, {}, {})
+    assert hit["sponsor_raw"] == "on_register" and hit["sponsor"].startswith("IE permits")
+    assert not hit["sponsor_lane"]
+    miss = scan.sponsor_fields({"company": "Salesforce", "market": "IE"}, regs, {}, {})
+    assert miss["sponsor_raw"] == "unknown" and miss["sponsor"] == "" and not miss["sponsor_lane"]
+    dims = {k: 6 for k in scan.RUBRIC_KEYS}
+    with_permit = scan.rank_axes({**hit, "company": "HubSpot", "market": "IE",
+                                  "title": "Revenue Operations Manager", "dimensions": dims})
+    without = scan.rank_axes({**miss, "company": "Salesforce", "market": "IE",
+                              "title": "Revenue Operations Manager", "dimensions": dims})
+    assert with_permit["shot"] == 6.0 + scan.SHOT_IE_PERMIT_BOOST and without["shot"] == 6.0
+    assert "IE permits issued" in with_permit["shot_why"]
+
+
+def _tiny_xlsx(col):
+    """A minimal .xlsx with one column of shared strings."""
+    import io, zipfile
+    from xml.sax.saxutils import escape
+    ss = "".join(f"<si><t>{escape(v)}</t></si>" for v in col)
+    rows = "".join(f'<row r="{i+1}"><c r="A{i+1}" t="s"><v>{i}</v></c></row>' for i in range(len(col)))
+    ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("xl/sharedStrings.xml", f"<sst {ns}>{ss}</sst>")
+        z.writestr("xl/worksheets/sheet1.xml", f"<worksheet {ns}><sheetData>{rows}</sheetData></worksheet>")
+    return buf.getvalue()
+
+
+def test_lane_rows_do_not_notify():
+    sent = []
+
+    class _R:
+        @staticmethod
+        def post(url, data=None, **kw):
+            sent.append(data.decode("utf-8"))
+    real = scan.requests
+    scan.requests = _R
+    try:
+        scan.notify_strong_matches([
+            {"score": 8.4, "title": "RevOps", "company": "NoSponsor", "market": "UK-London",
+             "source": "x", "sponsor_lane": True}])
+        assert sent == []
+        scan.notify_strong_matches([
+            {"score": 8.4, "title": "RevOps", "company": "Sponsor", "market": "UK-London",
+             "source": "x", "sponsor_lane": False}])
+        assert len(sent) == 1
+    finally:
+        scan.requests = real
+
+
+def test_website_lookups_are_capped_cached_and_skip_confirmed_rows():
+    import sponsors
+    from datetime import date
+    calls = []
+    def lookup(domain, company):
+        calls.append(domain)
+        return [f"{company} Limited"]
+    rows = [{"company": f"Co{i}", "sponsor_raw": "not_found",
+             "url": f"https://careers.co{i}.com/job"} for i in range(5)]
+    rows.append({"company": "Done", "sponsor_raw": "on_register",
+                 "url": "https://careers.done.com/job"})
+    rows.append({"company": "NoSite", "sponsor_raw": "not_found",
+                 "url": "https://www.linkedin.com/jobs/view/1"})
+    ents = {}
+    n = scan.website_lookups(rows, ents, limit=3, lookup=lookup, today=date(2026, 11, 14))
+    assert n == 3 and calls == ["co0.com", "co1.com", "co2.com"]
+    assert ents[sponsors._key("Co0")]["legal"] == ["Co0 Limited"]
+    # cached: a second run looks up only the ones not yet done
+    calls.clear()
+    scan.website_lookups(rows, ents, limit=10, lookup=lookup, today=date(2026, 11, 15))
+    assert calls == ["co3.com", "co4.com"]
+    # and re-checks after ENTITY_RECHECK_DAYS
+    calls.clear()
+    scan.website_lookups(rows, ents, limit=10, lookup=lookup, today=date(2027, 3, 1))
+    assert len(calls) == 5
+    # the wall-clock budget stops it
+    calls.clear()
+    ticks = iter(range(0, 1000, 100))
+    scan.website_lookups(rows, {}, limit=10, lookup=lookup, today=date(2026, 11, 14),
+                         budget=150, clock=lambda: next(ticks))
+    assert len(calls) == 1          # started at 0, first row at 100, second at 200 > 150
+
+
+def test_the_seeded_alias_file_loads_and_every_name_is_a_legal_name():
+    import re
+    import sponsors
+    aliases = sponsors.load_aliases()
+    assert aliases[sponsors._key("ComplyAdvantage")] == ["IVXS UK Limited"]
+    assert aliases[sponsors._key("LSEG")] == ["London Stock Exchange Group plc"]
+    for names in aliases.values():
+        for n in names:
+            assert re.search(r"(Ltd|Limited|LTD|LIMITED|plc|PLC|B\.V\.|EXCHANGE|Association)$",
+                             n), n
+
+
+def test_score_schema_asks_for_the_employer_fields_and_they_are_stored():
+    for k in ["posted_by_agency", "employer", "employer_legal_entity", "employer_domain"]:
+        assert k in scan.SCORE_SCHEMA["required"], k
+        assert k in scan.SCORE_SCHEMA["properties"], k
+
+
 # ------------------------------------------------------- hard disqualifiers
 # The two facts that ended an application before it started and that run 1 missed entirely,
 # because the scorer was handed a truncated or boilerplate copy of the ad. The first case in
@@ -1697,6 +1956,40 @@ def test_north_american_place_names_do_not_collide_with_european_ones():
     # ...while the European originals are untouched
     assert scan.market_of("", "London") == "UK-London"
     assert scan.market_of("", "Amsterdam") == "NL"
+
+
+def test_european_region_codes_are_not_read_as_states_or_provinces():
+    """Indeed writes Dutch and Irish rows as "City, XX, Country", and the region codes
+    collide with US states and Canadian provinces: NH is Noord-Holland, UT Utrecht, FL
+    Flevoland, NB Noord-Brabant. A named European country, a European feed, or a Dutch city
+    followed by a Dutch province code must win over a bare two-letter code."""
+    for loc in ["Amsterdam, NH, Netherlands", "Utrecht, UT, Netherlands",
+                "Almere, FL, Netherlands", "Eindhoven, NB, Netherlands",
+                "Enschede, OV, Netherlands", "Maastricht, LI, Netherlands"]:
+        assert scan.market_of("", loc) == "NL", loc
+        assert scan.market_of("nl", loc) == "NL", loc
+    # a Dutch city with a Dutch code and no country
+    assert scan.market_of("", "Amsterdam, NL") == "NL"
+    assert scan.market_of("", "Breda, NB") == "NL"
+    # the feed country alone is enough
+    assert scan.market_of("nl", "Hoofddorp, NH") == "NL"
+    # Irish counties carrying a state code
+    for loc in ["Kildare, KY, Ireland", "Cork, CO, Ireland", "Mayo, MO, Ireland",
+                "Dublin, MN, Ireland"]:
+        assert scan.market_of("", loc) == "IE", loc
+    # ...and the real North American places are unchanged
+    assert scan.market_of("", "St. John's, NL") == "CA"
+    assert scan.market_of("", "Moncton, NB") == "CA"
+    assert scan.market_of("", "Amsterdam, NY") is None
+    assert scan.market_of("", "Dublin, OH") is None
+    assert scan.market_of("", "London, ON") == "CA"
+    assert scan.market_of("", "London, Ontario, Canada") == "CA"
+    # strong North American evidence still beats a European word
+    assert scan.market_of("", "Manchester, New Hampshire") is None
+    assert scan.market_of("", "Remote, New England, MA") == "US-Remote"
+    # the US work-mode tag is not applied to a Dutch row with a state-looking code
+    assert scan.gate_location("Amsterdam, NH, Netherlands", "Remote", "nl") == \
+        "Amsterdam, NH, Netherlands"
 
 
 def test_a_remote_role_scoped_to_another_region_is_not_a_us_remote_role():
@@ -2213,12 +2506,27 @@ def test_gtm_alone_is_not_enough_for_the_us_gate():
         assert scan.REVOPS_CORE.search(title), title
 
 
-def test_marketing_ops_is_off_target_and_so_is_out_of_the_us_gate():
-    """profile.md lists Marketing Ops as off-target for Domain. It stays in INCLUDE_TITLE
-    for Europe, where the deep scorer weighs it, but the US gate is the pivot proper."""
-    assert not scan.REVOPS_CORE.search("Head of Marketing Operations")
-    assert scan.INCLUDE_TITLE.search("Head of Marketing Operations")
-    assert scan.prefilter("Head of Marketing Operations", "Amsterdam") is None
+def test_marketing_and_growth_ops_are_out_of_the_title_gate():
+    """Cut in Nov 2026: profile.md lists marketing ops as off-target, and none of the nine
+    on the board was applied to. A combined sales and marketing ops title stays in."""
+    for t in ["Head of Marketing Operations", "Marketing Operations Manager",
+              "Growth Operations Manager"]:
+        assert not scan.INCLUDE_TITLE.search(t), t
+        assert scan.prefilter(t, "Amsterdam") is not None, t
+    assert scan.INCLUDE_TITLE.search("Sales and Marketing Operations Manager")
+    assert scan.prefilter("Marketing & Revenue Operations Lead", "Amsterdam") is None
+
+
+def test_customer_success_is_searched_by_name_in_the_netherlands_only_and_capped():
+    cs = [t for t in scan.JOBSPY_TARGETS
+          if any("customer success manager" in x for x in (t["terms"] or scan.JOBSPY_TERMS))]
+    assert [t["cc"] for t in cs] == ["nl"]
+    assert cs[0]["sites"] == ["indeed"] and cs[0]["label"] == "nl-cs"   # no Google Jobs
+    queries = scan.linkedin_queries()
+    extra = [(g, p) for g, k, p in queries if "customer success manager" in k]
+    assert extra == [(scan.LINKEDIN_NL_GEO, 1)]                         # one page a run
+    assert all((g, scan.LINKEDIN_KEYWORDS, scan.LINKEDIN_PAGES) in queries
+               for g in scan.LINKEDIN_GEO_IDS)
 
 
 def test_the_north_american_source_subsets_are_filters_over_the_full_lists():
@@ -2228,6 +2536,74 @@ def test_the_north_american_source_subsets_are_filters_over_the_full_lists():
     assert set(scan.ADZUNA_CORE_PHRASES) <= set(scan.ADZUNA_PHRASES)
     assert set(scan.JOBSPY_CORE_TERMS) <= set(scan.JOBSPY_TERMS)
     assert scan.ADZUNA_CORE_PHRASES and scan.JOBSPY_CORE_TERMS
+    # every US search term must be one the US title gate would admit, and post-sale ops
+    # (customer success operations) is searched in the US as well
+    for t in scan.JOBSPY_CORE_TERMS:
+        assert scan.REVOPS_CORE.search(t), t
+    assert "customer success operations" in scan.JOBSPY_CORE_TERMS
+
+
+def test_home_domain_employers_admit_customer_success_in_every_market():
+    """Plain CSM stays NL and US only, except at a home-domain employer."""
+    for loc in ["London", "Dublin, Ireland", "Brussels", "Toronto, ON"]:
+        assert scan.prefilter("Customer Success Manager", loc, "", "Clio") is None, loc
+        assert scan.prefilter("Customer Success Manager", loc, "", "Acme") is not None, loc
+    # every other gate still applies
+    assert scan.prefilter("Customer Success Manager", "Austin, TX", "", "Clio") is not None
+    assert scan.prefilter("Customer Success Manager - Contract", "London", "", "Clio")
+    assert scan.prefilter("Senior Account Executive", "London", "", "Clio")
+    # a one-word home-domain name is whole-name only
+    assert scan.prefilter("Customer Success Manager", "London", "", "Harvey Nash")
+
+
+def test_home_domain_boards_are_watched():
+    import json
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    watched = {c["name"] for c in json.load(open(os.path.join(root, "companies.json")))["companies"]}
+    for name in ["Fourthline", "ComplyAdvantage", "Trulioo", "Fieldguide", "Harvey", "DataSnipper"]:
+        assert name in watched, name
+        assert scan.home_domain_company(name), name
+
+
+def test_a_failing_company_board_is_named_not_swallowed():
+    saved = scan.FEED_ERRORS.copy()
+    scan.FEED_ERRORS.clear()
+    def fetch(c):
+        if c["name"] == "Clio":
+            raise RuntimeError("404 board not found")
+        return [{"id": c["name"]}]
+    found = []
+    try:
+        kept, fails = scan.run_company_boards(
+            [{"name": "Clio", "ats": "lever"}, {"name": "DataSnipper", "ats": "ashby"}],
+            found, fetch=fetch)
+        assert kept == 1 and found == [{"id": "DataSnipper"}]
+        assert fails == ["Clio"]
+        assert "Clio" in scan.FEED_ERRORS["ats:Clio"] and "404" in scan.FEED_ERRORS["ats:Clio"]
+        # the failure reaches the run's warnings
+        _, warnings = scan.feed_warnings({}, {}, set(), scan.FEED_ERRORS)
+        assert any("Clio" in w for w in warnings)
+    finally:
+        scan.FEED_ERRORS.clear(); scan.FEED_ERRORS.update(saved)
+
+
+def test_adzuna_us_is_not_fetched_but_keeps_its_currency():
+    """Adzuna US kept zero rows on every run back to 28 Oct 2026, so it is skipped; the
+    currency entry stays so a re-enabled US feed is still read in dollars."""
+    assert "us" in scan.ADZUNA_SKIP_COUNTRIES
+    calls = []
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"results": []}
+
+    def fetch(url, params=None):
+        calls.append(url)
+        return _R()
+    scan.fetch_adzuna("id", "key", {}, sleep=lambda s: None, fetch=fetch)
+    assert calls and not any("/jobs/us/" in u for u in calls)
+    assert any("/jobs/nl/" in u for u in calls)
 
 
 def test_every_adzuna_country_has_a_currency_because_the_api_reports_none():
@@ -3487,7 +3863,7 @@ def test_adzuna_skips_a_failed_phrase_instead_of_dropping_the_country():
 
 def test_a_jobspy_row_with_nan_cells_converts_instead_of_crashing():
     nan = float("nan")
-    target = scan.JOBSPY_TARGETS[2]          # Ireland
+    target = next(t for t in scan.JOBSPY_TARGETS if t["cc"] == "ie")
     row = {"title": "Revenue Operations Manager", "company": nan, "location": nan,
            "job_url": "https://ie.indeed.com/viewjob?jk=abc", "min_amount": nan,
            "max_amount": nan, "currency": nan, "description": nan, "date_posted": nan}
@@ -3777,7 +4153,81 @@ def test_home_domain_jumps_the_scoring_queue_and_nothing_else_moves():
     assert order[1:] == _order(jobs[:1] + jobs[2:])
 
 
-def test_home_domain_rings_whatever_it_scored(monkeypatch=None):
+def _ranked(company="Acme", title="Revenue Operations Manager", market="NL", dims=6, **kw):
+    row = {"company": company, "title": title, "market": market,
+           "dimensions": {k: dims for k in scan.RUBRIC_KEYS}, **kw}
+    return scan.rank_axes(row)
+
+
+def test_shot_adds_the_home_domain_with_a_smaller_lift_for_large_vendors():
+    assert _ranked()["shot"] == 6.0
+    assert _ranked(company="Clio")["shot"] == 8.0
+    assert _ranked(company="Workiva")["shot"] == 6.5
+    assert "home domain +2" in _ranked(company="Clio")["shot_why"]
+
+
+def test_shot_costs_each_gap_by_kind_and_by_years():
+    assert scan.gap_kind("3+ years in a dedicated Sales Ops role")[::2] == ("years", 0.3)
+    assert scan.gap_kind("8+ years of RevOps experience")[::2] == ("years", 2.0)
+    assert scan.gap_kind("Fluent Dutch required")[0] == "language"
+    assert scan.gap_kind("Advanced SQL and Tableau")[0] == "bi"
+    assert scan.gap_kind("Salesforce admin certification")[0] == "crm_owner"
+    assert scan.gap_kind("Experience managing a team of CSMs")[0] == "people_mgmt"
+    assert scan.gap_kind("Existing book of business in DACH")[0] == "book"
+    assert scan.gap_kind("Something unusual")[::2] == ("other", 0.3)
+    r = _ranked(hard_gaps=["5+ years in Sales Ops", "Advanced SQL"])
+    assert r["shot"] == round(6.0 - 0.8 - 0.5, 1)
+    assert [g["kind"] for g in r["gap_kinds"]] == ["years", "bi"]
+    # capped, so a long list cannot drive it below what four real walls cost
+    many = _ranked(hard_gaps=["Fluent Dutch", "Fluent German", "Fluent French"])
+    assert many["shot"] == 6.0 - scan.GAP_COST_CAP
+
+
+def test_shot_costs_an_unconfirmed_uk_or_nl_sponsor_only():
+    assert _ranked(sponsor_region="UK", sponsor_raw="not_found")["shot"] == 4.5
+    assert _ranked(sponsor_region="NL", sponsor_raw="possible")["shot"] == 5.5
+    assert _ranked(sponsor_region="UK", sponsor_raw="on_register")["shot"] == 6.0
+    assert _ranked(market="IE", sponsor_region="", sponsor_raw="n/a")["shot"] == 6.0
+
+
+def test_want_puts_post_sale_ops_and_revops_first_and_cs_in_nl_ahead_of_cs_elsewhere():
+    ops = _ranked(title="Customer Success Operations Manager")["want"]
+    rev = _ranked(title="Revenue Operations Manager")["want"]
+    other = _ranked(title="Sales Enablement Manager")["want"]
+    cs_nl = _ranked(title="Senior Customer Success Manager")["want"]
+    cs_uk = _ranked(title="Senior Customer Success Manager", market="UK-London")["want"]
+    assert ops == rev > cs_nl > other
+    assert cs_nl > cs_uk
+    assert "post-sale ops" in _ranked(title="Strategy & Operations, Customer Success")["want_why"]
+    # pay against the market floor
+    paid = _ranked(comp={"stated": True, "min_base": 90000, "max_base": 100000,
+                         "currency": "EUR"})
+    assert paid["want"] > rev and "\u20ac100K vs \u20ac71K floor" in paid["want_why"]
+
+
+def test_rank_is_a_weighted_geometric_mean_and_balance_moves_it():
+    assert scan.rank_of(9.0, 4.0, 0.5) == 6.0
+    assert scan.rank_of(9.0, 4.0, 1.0) == 9.0
+    assert scan.rank_of(9.0, 4.0, 0.0) == 4.0
+    assert scan.rank_of(None, 4.0) is None
+    assert _ranked()["rank"] == scan.rank_of(_ranked()["shot"], _ranked()["want"])
+    cfg = scan.rank_config()
+    assert cfg["balance"] == 0.5 and "OneTrust" in cfg["large_domain_vendors"]
+
+
+def test_cs_operations_titles_are_the_ops_track_not_the_csm_track():
+    for t in ["Customer Success Operations Manager", "Strategy & Operations, Customer Success",
+              "Revenue Operations Manager, Customer Success",
+              "Senior Strategy & RevOps Analyst (Customer Success)"]:
+        assert not scan.is_csm_title(t), t
+    for t in ["Customer Success Manager", "Senior Customer Success Manager - Legal",
+              "Manager, Customer Success"]:
+        assert scan.is_csm_title(t), t
+
+
+def test_notifications_ring_by_rank_and_the_domain_counts_through_shot():
+    """Nov 2026: the home domain no longer rings at any score. It lifts Shot, and a role
+    rings when its rank clears RANK_NOTIFY."""
     sent = []
 
     class _R:
@@ -3785,24 +4235,22 @@ def test_home_domain_rings_whatever_it_scored(monkeypatch=None):
         def post(url, data=None, **kw):
             sent.append(data.decode("utf-8"))
 
+    def row(company, title, dims):
+        return {"score": 6.0, "title": title, "company": company, "market": "NL",
+                "source": "x", "dimensions": {k: dims for k in scan.RUBRIC_KEYS}}
     real = scan.requests
     scan.requests = _R
     try:
         scan.notify_strong_matches([
-            {"score": 5.4, "title": "CSM", "company": "Clio", "market": "NL", "source": "x"},
-            {"score": 5.4, "title": "CSM", "company": "Acme", "market": "NL", "source": "x"},
-            {"score": 8.0, "title": "RevOps", "company": "Acme", "market": "NL", "source": "x"},
+            row("Clio", "Revenue Operations Manager", 5),     # 5 + domain 2 -> rings
+            row("Acme", "Revenue Operations Manager", 5),     # 5, no domain -> does not
+            row("Clio", "Customer Success Manager", 3),       # domain, but a weak role
         ])
     finally:
         scan.requests = real
     assert len(sent) == 1
     lines = sent[0].splitlines()
-    assert lines[0].startswith("[domain] 5.4") and "Clio" in lines[0]
-    assert len(lines) == 2   # the 5.4 out-of-domain row still needs the threshold
-
-
-if __name__ == "__main__":
-    sys.exit(_run())
+    assert len(lines) == 1 and lines[0].startswith("[domain]") and "Clio" in lines[0]
 
 
 def test_nl_admits_account_management_that_owns_a_book():
@@ -3823,3 +4271,7 @@ def test_nl_account_management_never_admits_hunter_or_technical_titles():
         assert scan.prefilter(t, "Amsterdam", "nl") is not None, t
     # a CS title is never caught by the hunter rule
     assert scan.prefilter("Customer Success Manager", "Amsterdam", "nl") is None
+
+
+if __name__ == "__main__":
+    sys.exit(_run())

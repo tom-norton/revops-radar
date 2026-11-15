@@ -165,7 +165,9 @@ jobs:
           # applied to or hid, kept after the row itself has aged off the dashboard.
           # kills.json is the same idea for stage-1 kills (14 days), and unkill.json is the
           # queue of ids to give a second look, which the scan empties once it has freed them.
-          git add seen.json deferred.json dealt.json kills.json unkill.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json deferred.json dealt.json kills.json unkill.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json
+          # entities.json caches each employer's legal name as its own website states it,
+          # for the sponsor check, so a company's site is read once a quarter, not every run.
+          git add seen.json deferred.json dealt.json kills.json unkill.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json entities.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json deferred.json dealt.json kills.json unkill.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json entities.json
           git add shadow/queue.json 2>/dev/null || true
           git diff --cached --quiet || git commit -m "scan: $(date -u +%F)"
           git push
