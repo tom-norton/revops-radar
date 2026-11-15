@@ -1,6 +1,6 @@
 # Subscription trial: comparison with the API
 
-_Updated 2026-11-14 14:33 UTC_
+_Updated 2026-11-15 14:33 UTC_
 
 ## The short version
 
