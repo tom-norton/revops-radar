@@ -543,9 +543,9 @@ function packetFor(j){
            ...(j.hard_gaps||[]).map(g=>"  - " + g));
   }
   if(j.verdict) L.push("Radar verdict: " + j.verdict);
-  // UK and NL only. Ireland runs permits rather than a register, and neither North
+  // UK, NL and Ireland (the permit list, a plus only). Neither North
   // American market needs sponsorship at all, so the field is noise there.
-  if(j.sponsor && /^(UK|NL)$/.test(j.sponsor_region||"")){
+  if(j.sponsor && /^(UK|NL|IE)$/.test(j.sponsor_region||"")){
     // The register entry that matched, or the legal name looked up and not found, so the
     // workflow can see which company the check was actually about.
     const ent = j.sponsor_entity ? ` (register entry: ${j.sponsor_entity})`
@@ -734,8 +734,10 @@ function card(j, reviewed){
         .join(" · ")}</div>` : "";
   let spon = "";
   if(j.sponsor){
-    const good = /sponsor/i.test(j.sponsor) && !/not on/i.test(j.sponsor)
-              && !/possible/i.test(j.sponsor);
+    // Read off sponsor_raw where the row has it: the Irish permit badge ("IE permits issued")
+    // is good news without containing the word "sponsor".
+    const good = j.sponsor_raw ? /^(on_register|likely)$/.test(j.sponsor_raw)
+      : /sponsor/i.test(j.sponsor) && !/not on/i.test(j.sponsor) && !/possible/i.test(j.sponsor);
     const cls = good ? "spon" : /possible/i.test(j.sponsor) ? "maybespon" : "nospon";
     // Which register entry matched -- the legal name, when it differs from the trading
     // name -- or which legal name was looked up and missed. A "possible" match is a loose

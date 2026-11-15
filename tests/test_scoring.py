@@ -1406,6 +1406,53 @@ def test_sponsor_fields_use_the_market_and_every_legal_name_known():
     assert f["sponsor_raw"] == "unknown" and not f["sponsor_lane"]
 
 
+def test_ireland_permit_list_is_a_plus_only():
+    import sponsors
+    xlsx = _tiny_xlsx(["Employer Name", "HubSpot Ireland Limited", "Fenergo Limited",
+                       "One Identity Software International DAC"])
+    assert sponsors.xlsx_first_column(xlsx)[1] == "HubSpot Ireland Limited"
+
+    class _R:
+        def __init__(self, text="", content=b""):
+            self.text, self.content, self.ok = text, content, True
+        def raise_for_status(self): pass
+
+    def get(url):
+        if url.endswith(".html"):
+            return _R(text='<a href="/en/publications/publication-files/employment-permits-'
+                           'issued-to-companies-2026.xlsx">x</a>')
+        return _R(content=xlsx)
+    ie = sponsors.load_ie(years=[2026], get=get)
+    assert ie.ok and not ie.trust_negatives
+    regs = {"IE": ie}
+    hit = scan.sponsor_fields({"company": "HubSpot", "market": "IE"}, regs, {}, {})
+    assert hit["sponsor_raw"] == "on_register" and hit["sponsor"].startswith("IE permits")
+    assert not hit["sponsor_lane"]
+    miss = scan.sponsor_fields({"company": "Salesforce", "market": "IE"}, regs, {}, {})
+    assert miss["sponsor_raw"] == "unknown" and miss["sponsor"] == "" and not miss["sponsor_lane"]
+    dims = {k: 6 for k in scan.RUBRIC_KEYS}
+    with_permit = scan.rank_axes({**hit, "company": "HubSpot", "market": "IE",
+                                  "title": "Revenue Operations Manager", "dimensions": dims})
+    without = scan.rank_axes({**miss, "company": "Salesforce", "market": "IE",
+                              "title": "Revenue Operations Manager", "dimensions": dims})
+    assert with_permit["shot"] == 6.0 + scan.SHOT_IE_PERMIT_BOOST and without["shot"] == 6.0
+    assert "IE permits issued" in with_permit["shot_why"]
+
+
+def _tiny_xlsx(col):
+    """A minimal .xlsx with one column of shared strings."""
+    import io, zipfile
+    from xml.sax.saxutils import escape
+    ss = "".join(f"<si><t>{escape(v)}</t></si>" for v in col)
+    rows = "".join(f'<row r="{i+1}"><c r="A{i+1}" t="s"><v>{i}</v></c></row>' for i in range(len(col)))
+    ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("xl/sharedStrings.xml", f"<sst {ns}>{ss}</sst>")
+        z.writestr("xl/worksheets/sheet1.xml", f"<worksheet {ns}><sheetData>{rows}</sheetData></worksheet>")
+    return buf.getvalue()
+
+
 def test_lane_rows_do_not_notify():
     sent = []
 
@@ -2468,6 +2515,18 @@ def test_marketing_and_growth_ops_are_out_of_the_title_gate():
         assert scan.prefilter(t, "Amsterdam") is not None, t
     assert scan.INCLUDE_TITLE.search("Sales and Marketing Operations Manager")
     assert scan.prefilter("Marketing & Revenue Operations Lead", "Amsterdam") is None
+
+
+def test_customer_success_is_searched_by_name_in_the_netherlands_only_and_capped():
+    cs = [t for t in scan.JOBSPY_TARGETS
+          if any("customer success manager" in x for x in (t["terms"] or scan.JOBSPY_TERMS))]
+    assert [t["cc"] for t in cs] == ["nl"]
+    assert cs[0]["sites"] == ["indeed"] and cs[0]["label"] == "nl-cs"   # no Google Jobs
+    queries = scan.linkedin_queries()
+    extra = [(g, p) for g, k, p in queries if "customer success manager" in k]
+    assert extra == [(scan.LINKEDIN_NL_GEO, 1)]                         # one page a run
+    assert all((g, scan.LINKEDIN_KEYWORDS, scan.LINKEDIN_PAGES) in queries
+               for g in scan.LINKEDIN_GEO_IDS)
 
 
 def test_the_north_american_source_subsets_are_filters_over_the_full_lists():
@@ -3804,7 +3863,7 @@ def test_adzuna_skips_a_failed_phrase_instead_of_dropping_the_country():
 
 def test_a_jobspy_row_with_nan_cells_converts_instead_of_crashing():
     nan = float("nan")
-    target = scan.JOBSPY_TARGETS[2]          # Ireland
+    target = next(t for t in scan.JOBSPY_TARGETS if t["cc"] == "ie")
     row = {"title": "Revenue Operations Manager", "company": nan, "location": nan,
            "job_url": "https://ie.indeed.com/viewjob?jk=abc", "min_amount": nan,
            "max_amount": nan, "currency": nan, "description": nan, "date_posted": nan}

@@ -145,6 +145,11 @@ REED_KEYWORDS = OR_KEYWORDS
 # JobSpy / Indeed for Ireland (anywhere in the country). Best-effort: never breaks the run.
 JOBSPY_TERMS = ["revenue operations", "sales operations", "gtm strategy",
                 "revenue strategy", "customer success operations"]
+# The Netherlands only (Nov 2026, Tom's call): customer success searched by name. No keyword
+# feed searched it anywhere, so Dutch CSM roles arrived only through hiring.cafe and the
+# watched boards, in the one market where a CSM role is a primary target. Not added to any
+# other market: CS search terms everywhere would swamp the ops track.
+NL_CS_TERMS = ["customer success manager"]
 # The US subset, kept as a filter over the list above so a term added there cannot be
 # silently missing here. "customer success operations" stays because it IS core RevOps
 # (REVOPS_CORE admits it in the US) and post-sale ops is the work Tom most wants; plain CSM
@@ -169,6 +174,17 @@ LINKEDIN_KEYWORDS = OR_KEYWORDS
 LINKEDIN_GEO_IDS = ["90009496", "100565514", "102890719", "103100785", "104738515",
                     "103644278", "101174742"]
 LINKEDIN_PAGES = 3       # 10 results/page per market
+# Extra (geoId, keywords) searches on top of OR_KEYWORDS in every geo: customer success in
+# the Netherlands only (see NL_CS_TERMS).
+LINKEDIN_NL_GEO = "102890719"
+# (geoId, keywords, pages). One page (10 results) a run for the Dutch CS search: the cap that
+# keeps it near $4-7 a month (see the nl-cs JobSpy target).
+LINKEDIN_EXTRA_QUERIES = [(LINKEDIN_NL_GEO, '"customer success manager"', 1)]
+
+
+def linkedin_queries():
+    return ([(g, LINKEDIN_KEYWORDS, LINKEDIN_PAGES) for g in LINKEDIN_GEO_IDS]
+            + list(LINKEDIN_EXTRA_QUERIES))
 
 INCLUDE_TITLE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
@@ -1071,6 +1087,10 @@ GAP_COST = {"language": 2.0, "book": 1.0, "people_mgmt": 1.0, "technical": 1.0,
 GAP_YEARS_COST = ((8, 2.0), (7, 1.5), (6, 1.1), (5, 0.8), (4, 0.5), (3, 0.3), (0, 0.2))
 GAP_COST_CAP = 4.0
 SHOT_SPONSOR_COST = {"not_found": 1.5, "agency": 1.5, "possible": 0.5, "unknown": 0.5}
+# Ireland has no sponsor register; an employer on the government's list of employers issued
+# employment permits in the last two years gets this much, and absence costs nothing
+# (sponsors.load_ie()). Small on purpose: past permits are evidence, not a licence.
+SHOT_IE_PERMIT_BOOST = 0.5
 WANT_TRACK = {"post_sale_ops": 10.0, "revops": 10.0, "other_ops": 7.5,
               "cs_nl": 8.0, "cs": 6.0}
 WANT_MARKET = {1: 10.0, 2: 8.0, 3: 6.5, 4: 5.0}
@@ -1175,6 +1195,9 @@ def rank_axes(job, balance=RANK_BALANCE):
     if spon:
         shot -= spon
         why.append(f"sponsor {job.get('sponsor_raw').replace('_', ' ')} -{spon:g}")
+    if job.get("sponsor_region") == "IE" and job.get("sponsor_raw") in ("on_register", "likely"):
+        shot += SHOT_IE_PERMIT_BOOST
+        why.append(f"IE permits issued +{SHOT_IE_PERMIT_BOOST:g}")
     shot = round(max(0.0, min(10.0, shot)), 1)
 
     market = job.get("market") or ""
@@ -1214,7 +1237,8 @@ def rank_config():
             "domain_boost_large": SHOT_DOMAIN_BOOST_LARGE,
             "large_domain_vendors": list(LARGE_DOMAIN_VENDORS), "gap_cost": GAP_COST,
             "gap_years_cost": [list(x) for x in GAP_YEARS_COST], "gap_cost_cap": GAP_COST_CAP,
-            "sponsor_cost": SHOT_SPONSOR_COST, "want_track": WANT_TRACK,
+            "sponsor_cost": SHOT_SPONSOR_COST, "ie_permit_boost": SHOT_IE_PERMIT_BOOST,
+            "want_track": WANT_TRACK,
             "want_market": {str(k): v for k, v in WANT_MARKET.items()},
             "want_weights": WANT_WEIGHTS, "want_pay_unstated": WANT_PAY_UNSTATED}
 
@@ -1694,7 +1718,7 @@ Alongside the dimensions, report these observations from the posting:
 
 The market (NL / BE / UK-London / IE / CA / US-Remote) has already been resolved in code and is given to you in the job details. Trust it for SCORING. Do not second-guess whether the location qualifies, and do not penalise a location that has been accepted. If the posting's own location contradicts that market, posting_location is where that goes and the only place it goes: report what the ad says there, score the market you were given, and let code reconcile the two. Do not mention the disagreement in a dimension score, in flags or in the verdict. Where it sits in Tom's preference ordering is the whole of the Location & Visa dimension -- see that dimension's guidance, and note that the ordering is about where he wants to live, not about which market is easiest to get hired in.
 
-Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution on Location & Visa (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles, and for the Netherlands specifically it is what separates the 9-10 band from the 7 band. "sponsor (possible)" is a loose name match and "agency post, employer not named" means the employer is unknown: treat both as sponsor status not confirmed. Ignore sponsor entirely for Ireland, Canada and the US: Ireland runs employment permits rather than a register, and Tom needs no sponsorship in either North American market.
+Sponsor handling: a "sponsor" field may be given. "not on register" is a -1 to -2 caution on Location & Visa (registers use legal names and miss trading names), NOT an auto-zero. "sponsor" or "sponsor (likely)" is a plus for UK/NL roles, and for the Netherlands specifically it is what separates the 9-10 band from the 7 band. "sponsor (possible)" is a loose name match and "agency post, employer not named" means the employer is unknown: treat both as sponsor status not confirmed. For Ireland, which runs employment permits rather than a register, an "IE permits issued" line means the employer was issued work permits in the last two years: a mild plus, and its absence means nothing. Ignore sponsor entirely for Canada and the US: Tom needs no sponsorship in either North American market.
 
 Salary: if not stated, do NOT penalise on salary; judge comp risk from the seniority and the company.
 
@@ -3128,6 +3152,12 @@ JOBSPY_TARGETS = [
     # 19% is NL, and it is a source gap rather than a market that has no jobs in it.
     {"cc": "nl", "location": "Netherlands", "country_indeed": "Netherlands",
      "sites": ["indeed", "google"], "currency": "EUR", "terms": None},
+    # The Dutch CS search, kept on a short leash (Tom's option b, Nov 2026): Indeed only,
+    # no Google Jobs, so it adds one scrape of up to 20 rows a run. A live check found ~13
+    # new Dutch CSM postings a day passing the title gate, many of them Dutch-language;
+    # uncapped that was an estimated $9-16 a month of deep scores, capped about $4-7.
+    {"cc": "nl", "label": "nl-cs", "location": "Netherlands", "country_indeed": "Netherlands",
+     "sites": ["indeed"], "currency": "EUR", "terms": NL_CS_TERMS},
     {"cc": "be", "location": "Belgium", "country_indeed": "Belgium",
      "sites": ["indeed", "google"], "currency": "EUR", "terms": None},
     {"cc": "ie", "location": "Ireland", "country_indeed": "Ireland",
@@ -3234,7 +3264,7 @@ def fetch_jobspy(diag=None):
                 out.append(job)
                 kept += 1
         if failed:
-            FEED_ERRORS[f"indeed:{cc}"] = (f"Indeed/JobSpy {cc.upper()}: {failed} of "
+            FEED_ERRORS[f"indeed:{target.get('label', cc)}"] = (f"Indeed/JobSpy {target.get('label', cc).upper()}: {failed} of "
                                            f"{len(terms)} searches failed ({err[:60]})")
         if diag is not None:
             line = f"raw {raw}, kept {kept}"
@@ -3242,7 +3272,7 @@ def fetch_jobspy(diag=None):
                 line += f"; {failed} of {len(terms)} searches failed ({err})"
             if bad:
                 line += f"; {bad} unreadable row(s) skipped"
-            diag[f"jobspy:{cc}"] = line
+            diag[f"jobspy:{target.get('label', cc)}"] = line
     return out
 
 # ---------------------------------------------------------------- ATS supplements (companies.json)
@@ -3428,10 +3458,10 @@ def fetch_linkedin():
     s = requests.Session()
     s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
     ep = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
-    for geo_id in LINKEDIN_GEO_IDS:
-        params = {"keywords": LINKEDIN_KEYWORDS, "geoId": geo_id, "f_TPR": "r86400"}
+    for geo_id, keywords, pages in linkedin_queries():
+        params = {"keywords": keywords, "geoId": geo_id, "f_TPR": "r86400"}
         s.get(ep, params={**params, "start": 0}, timeout=20)   # cold first call is unreliable
-        for page in range(LINKEDIN_PAGES):
+        for page in range(pages):
             cards = []
             for attempt in range(3):   # this endpoint is known to be flaky/throttly; retry before giving up
                 time.sleep(0.5 if attempt == 0 else 2)
@@ -5737,15 +5767,17 @@ def main():
 
     # 8. sponsor registers (load once)
     print("Loading sponsor registers...")
-    uk_reg, nl_reg = spon.load_uk(), spon.load_nl()
+    uk_reg, nl_reg, ie_reg = spon.load_uk(), spon.load_nl(), spon.load_ie()
     def reg_status(reg, fail_word):
         if not reg.ok:
             return f"{fail_word} - {reg.note}"
         return ("ok - " if reg.trust_negatives else "degraded - ") + reg.note
     src_status["UK sponsor register"] = reg_status(uk_reg, "FAIL")
     src_status["NL sponsor register"] = reg_status(nl_reg, "degraded")
+    src_status["IE employment permits"] = (("ok - " if ie_reg.ok else "unavailable - ")
+                                           + ie_reg.note)
 
-    sponsor_regs = {"UK": uk_reg, "NL": nl_reg}
+    sponsor_regs = {"UK": uk_reg, "NL": nl_reg, "IE": ie_reg}
     sponsor_aliases = spon.load_aliases()
     entities = spon.load_entities()
 

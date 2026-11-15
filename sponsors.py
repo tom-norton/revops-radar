@@ -44,6 +44,9 @@ _STRIP = {
     # B.V."). Each was the whole difference between a trading name and its register entry.
     "com", "io", "ai", "nl", "app", "hq", "in", "of", "and",
     "netherlands", "nederland", "benelux", "sarl", "se", "aps", "branch",
+    # Irish entity forms, for the employment-permit list ("HubSpot Ireland Limited",
+    # "One Identity Software International DAC", "... Unlimited Company", "Teoranta").
+    "ireland", "dac", "unlimited", "teoranta", "teo", "uc", "clg",
 }
 # Words a register entry may carry beyond the trading name and still be the same company
 # ("Pleo" -> "Pleo Technologies Limited", "Navan" -> "Navan Labs UK Limited"). Anything else
@@ -288,11 +291,84 @@ def load_nl():
         reg.note = "no names parsed"
     return reg
 
+# ---------------------------------------------------------------- Ireland
+# Ireland has no sponsor licence: any employer can apply for a permit when it hires. What
+# the government does publish is the list of every employer issued employment permits each
+# year (about 8,400 names a year, by legal name, as an .xlsx). Being on it is evidence the
+# employer has hired on a permit recently, so it is a small plus on Shot. Being absent means
+# nothing -- Salesforce, a large Dublin employer, is on neither the 2025 nor the 2026 list --
+# so the register never answers "not found" (trust_negatives is False) and an Irish row is
+# never moved to the no-sponsor lane. Checked against the board in Nov 2026: 23 of 51 Irish
+# employers were on the 2025-26 lists.
+IE_PUBLICATION = "https://enterprise.gov.ie/en/publications/employment-permit-statistics-{year}.html"
+IE_BASE = "https://enterprise.gov.ie"
+
+
+def xlsx_first_column(data):
+    """The first column of the first sheet of an .xlsx, as strings. Standard library only,
+    so the scan needs no spreadsheet package: an .xlsx is a zip of XML, with text cells
+    pointing into a shared-strings table."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    z = zipfile.ZipFile(io.BytesIO(data))
+    shared = []
+    if "xl/sharedStrings.xml" in z.namelist():
+        for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall("m:si", ns):
+            shared.append("".join(t.text or "" for t in si.iter(f"{{{ns['m']}}}t")))
+    sheet = sorted(n for n in z.namelist() if n.startswith("xl/worksheets/sheet"))[0]
+    out = []
+    for c in ET.fromstring(z.read(sheet)).iter(f"{{{ns['m']}}}c"):
+        if not re.fullmatch(r"A\d+", c.get("r") or ""):
+            continue
+        v = c.find("m:v", ns)
+        if c.get("t") == "s" and v is not None:
+            out.append(shared[int(v.text)])
+        elif c.get("t") == "inlineStr":
+            out.append("".join(t.text or "" for t in c.iter(f"{{{ns['m']}}}t")))
+        elif v is not None:
+            out.append(v.text or "")
+    return out
+
+
+def load_ie(years=None, get=None):
+    """Employers issued Irish employment permits in this year and last, as a Register that
+    only ever answers a hit or "unknown"."""
+    from datetime import date as _date
+    get = get or (lambda u: requests.get(u, headers=UA, timeout=60))
+    reg = Register("IE")
+    reg.trust_negatives = False
+    years = years or [_date.today().year, _date.today().year - 1]
+    got, notes = 0, []
+    for y in years:
+        try:
+            page = get(IE_PUBLICATION.format(year=y))
+            page.raise_for_status()
+            m = re.search(r'href="([^"]*(?:issued-to-companies|companies)[^"]*\.xlsx)"', page.text, re.I)
+            if not m:
+                notes.append(f"{y}: no company list on the page")
+                continue
+            url = m.group(1) if m.group(1).startswith("http") else IE_BASE + m.group(1)
+            x = get(url)
+            x.raise_for_status()
+            names = [n.strip() for n in xlsx_first_column(x.content)
+                     if n and n.strip() and n.strip() not in ("Employer Name", "Grand Total")]
+            for n in names:
+                reg.add(n)
+            got += len(names)
+            notes.append(f"{y}: {len(names)}")
+        except Exception as e:
+            notes.append(f"{y}: failed ({str(e)[:60]})")
+    reg.ok = got > 0
+    reg.note = "employers issued permits " + ", ".join(notes)
+    return reg
+
+
 # Which register applies. By MARKET, not by location text: the old text match sent
 # "London, Ontario, Canada", "Dublin or London" and "Amsterdam or London" rows to the UK
 # register (13 rows on the board in Nov 2026) and Canadian and Irish roles came back "not on
 # UK register". A row's market is already the one place its location is decided.
-MARKET_REGISTER = {"UK-London": "UK", "NL": "NL"}
+MARKET_REGISTER = {"UK-London": "UK", "NL": "NL", "IE": "IE"}
 
 
 def which_register(location="", country_code="", market=None):
@@ -307,6 +383,11 @@ def which_register(location="", country_code="", market=None):
 
 
 def status_label(raw, reg_label):
+    if reg_label == "IE":
+        # A hit is the only thing worth a badge; everything else says nothing.
+        return {"on_register": "IE permits issued (2 yrs)",
+                "likely": "IE permits issued (likely)",
+                "possible": "IE permits (possible)"}.get(raw, "")
     return {
         "on_register": f"{reg_label} sponsor",
         "likely": f"{reg_label} sponsor (likely)",

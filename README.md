@@ -61,7 +61,12 @@ Cloudflare** below.
    board: 307 London rows against 102 Dutch ones over 45 days, with Indeed, Reed, Adzuna-UK
    and LinkedIn all pointed at London while a single Adzuna feed was the whole of the Dutch
    coverage. That is a sourcing fact, not a market fact.
-4. **Company ATS feeds** — **43** named companies (`companies.json`), on **any board
+   **Customer success by name, Netherlands only** (Nov 2026): one extra Indeed search
+   ("customer success manager", Indeed only, no Google Jobs) and one extra LinkedIn search on
+   the Netherlands geo, capped at one page a run. Nowhere else: CS terms in every market
+   would swamp the ops track. Capped because a live check found ~13 new Dutch CSM postings a
+   day passing the title gate (uncapped ~$9-16 a month of scoring; capped ~$4-7).
+4. **Company ATS feeds** — **73** named companies (`companies.json`), on **any board
    `findform.BOARDS` can read**: Greenhouse, Lever and Ashby have their own fetchers here,
    while SmartRecruiters, Recruitee, Workable, Personio and Teamtailor are read through
    `findform.board_jobs()` by `fetch_board()`. The old greenhouse/lever/ashby-only rule was
@@ -748,6 +753,7 @@ Shot ("likely to screen") = experience/skills/seniority (rubric weights)
                             1.0, BI tooling / CRM ownership 0.5, other 0.3 (capped at 4)
                           - UK/NL sponsor not confirmed: 1.5 (not on register, agency),
                             0.5 (possible, register down)
+                          + Irish employer issued work permits in the last two years: 0.5
 Want                      = 0.5 track + 0.3 market + 0.2 pay
                             track: post-sale ops 10, RevOps / sales ops 10, other ops 7.5,
                                    CS in NL 8, CS elsewhere 6
@@ -1361,9 +1367,13 @@ register" rows, and 7 of 21 Dutch ones, were trading-name misses: the employer w
 register under another name. So the check (`sponsor_fields()` in `scan.py`, `resolve()` in
 `sponsors.py`) looks for the legal name first, and only then gives up:
 
-1. **Which register** comes from the row's **market** (UK-London → UK, NL → NL), not from the
-   location text. Ireland, Belgium, Canada and the US have no register check; Ireland runs
-   employment permits, so verify sponsorship there from the ad.
+1. **Which register** comes from the row's **market** (UK-London → UK, NL → NL, IE → the
+   permit list below), not from the location text. Belgium, Canada and the US have no check.
+   **Ireland** has no sponsor licence, so the scan loads the government's list of employers
+   issued employment permits this year and last (enterprise.gov.ie, ~8,400 names a year,
+   `sponsors.load_ie()`). On the list is a small plus on Shot (`SHOT_IE_PERMIT_BOOST`, 0.5) and
+   an "IE permits issued" badge; absent means nothing (Salesforce is on neither year's list),
+   so an Irish role never loses points or moves to the no-sponsor lane for it.
 2. **Legal names tried, best first:** `sponsor_aliases.json` (hand-kept, trading name → legal
    name(s)); the scorer's `employer_legal_entity`; a legal name written in the ad; the
    employer's own website (footer, privacy, terms, imprint), read once a quarter per company
