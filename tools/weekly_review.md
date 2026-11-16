@@ -131,7 +131,10 @@ section with nothing worth saying and say so in one line.
    - Last seven days (`last_7_days`): outreach emails sent, follow-ups, replies, bounces.
      Say whether he is near the cap (5 new emails a day, 12 a week) or well under it.
    - The keep checks (`keep_checks`): one line per phase with its status. Flag any that
-     reads "Over", "Below the old rate" or "Missed".
+     reads "Over", "Below the old rate", "Missed" or "No lift yet". Phase 5 is the
+     hiring-manager note on applications (`tools/hiring_manager.md`): give the two
+     interview rates, with and without a note, as counts out of applications, and say
+     plainly that they mean little before 10 notes have gone out.
    - Active companies (`active`): totals only (emailed, replied, chatted across all of
      them) and how many are flagged to drop (`drop`). Name a company only when someone
      there replied or chatted. Never name one that went silent: the repo is public, and

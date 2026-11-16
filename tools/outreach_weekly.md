@@ -8,6 +8,12 @@ weekly outreach session".
 Everything lives in the Job Search Tracker (Google Sheet). Nothing here writes to this repo,
 which is public: no names, emails or titles of people go in it.
 
+Hiring-manager notes on applications (Touches types "HM note" and "App follow-up") are
+queued by the job-application-workflow skill, not by this session; see
+`tools/hiring_manager.md`. This session only checks them for replies in step 6, like every
+other Touches row with a Sent date, and reads out Today section 8 (applications still
+waiting for a hiring-manager lookup).
+
 ## Rules
 
 - **Ask before every spend.** State how many people and the maximum credits, wait for yes.

@@ -1246,7 +1246,9 @@ read-only GETs serve it, all behind the same token:
 
 The weekly hiring-signal refresh for the same list is `tools/lamp_signals.py` (run by a
 Monday scheduled session following `tools/lamp_signals.md`), and the attended weekly
-outreach session follows `tools/outreach_weekly.md`.
+outreach session follows `tools/outreach_weekly.md`. Hiring-manager notes on applications
+(phase 5: finding the person, queueing the Day 0 note and the Day 7-10 follow-up) are
+described in `tools/hiring_manager.md`.
 
 This needs the updated `tools/tracker-append.gs` pasted in and deployed as a **New
 version**. Until then the tags are missing, the push finds nothing, and the review says
