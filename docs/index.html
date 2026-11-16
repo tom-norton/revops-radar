@@ -134,6 +134,9 @@
   .tag.domain{background:var(--teal); color:#fff; border-color:var(--teal); font-weight:650}
   .job.ref{border-color:var(--good); box-shadow:inset 3px 0 0 var(--good)}
   #ref-wrap .note{margin:-4px 0 12px}
+  .tag.out{background:transparent; color:var(--teal); border-color:var(--teal); font-weight:650}
+  .tag.out.active{background:var(--ink); color:var(--card); border-color:var(--ink)}
+  #out-wrap .note{margin:-4px 0 12px}
   .subhead{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em;
         color:var(--mut); margin:16px 0 8px; font-weight:700}
   .drop{border-bottom:1px solid var(--line); padding:8px 0; font-size:12.5px}
@@ -200,6 +203,7 @@
   </div>
 
   <div id="ref-wrap"></div>
+  <div id="out-wrap"></div>
 
   <div id="apply-wrap">
     <h2 id="apply-h">Apply — 6.5 and up</h2>
@@ -427,6 +431,56 @@ function refreshContacts(){
       if(raw === was) return;
       try { localStorage.setItem("rr_contacts", raw); } catch(e){}
       referrals = indexContacts(res.contacts);
+      renderAll();
+    })
+    .catch(()=>{});
+}
+
+// The outreach list: every company on the Companies tab of Job Search Tracker, with its
+// status and the most advanced contact there (?action=outreach, tools/tracker-append.gs).
+// Same token and same rule as the referral contacts above: fetched only on a device that
+// already holds the token, and the names stay in this browser. A role at one of these
+// companies gets a tag; a role at an Active one also gets a section at the top. The score
+// is not touched.
+function indexOutreach(list){
+  const m = new Map();
+  (Array.isArray(list) ? list : []).forEach(c=>{
+    if(!c || !c.company) return;
+    const keys = Array.isArray(c.keys) && c.keys.length ? c.keys : [c.company];
+    const entry = {company: String(c.company), active: !!c.active, signal: String(c.signal || ""),
+                   contact: String(c.contact || ""), stage: String(c.stage || ""),
+                   contacts: Number(c.contacts || 0)};
+    keys.forEach(k=>{ const key = companyKey(k); if(key && !m.has(key)) m.set(key, entry); });
+  });
+  return m;
+}
+let outreachMap = new Map();
+try { outreachMap = indexOutreach(JSON.parse(localStorage.getItem("rr_outreach") || "[]")); } catch(e){}
+function outreachOf(j){ return outreachMap.get(companyKey(j && j.company)) || null; }
+function outreachText(o){
+  const parts = [o.active ? "Active" : "On your list"];
+  if(o.signal) parts.push(o.signal);
+  parts.push(o.contact ? `${o.contact} (${o.stage || "to contact"})` : "no contact yet");
+  return parts.join(" · ");
+}
+function outreachLabel(o){
+  const who = o.contact ? `${o.contact.split(/\s+/)[0]}, ${o.stage || "to contact"}`
+                        : (o.signal || "no contact yet");
+  return (o.active ? "Outreach: " : "On list: ") + who;
+}
+function refreshOutreach(){
+  let token = "";
+  try { token = localStorage.getItem("rr_tracker_token") || ""; } catch(e){}
+  if(!TRACKER_URL || !token) return;
+  fetch(TRACKER_URL + "?action=outreach&token=" + encodeURIComponent(token))
+    .then(r=>r.json())
+    .then(res=>{
+      if(!res || !res.ok || !Array.isArray(res.companies)) return;
+      const raw = JSON.stringify(res.companies);
+      let was = null; try { was = localStorage.getItem("rr_outreach"); } catch(e){}
+      if(raw === was) return;
+      try { localStorage.setItem("rr_outreach", raw); } catch(e){}
+      outreachMap = indexOutreach(res.companies);
       renderAll();
     })
     .catch(()=>{});
@@ -809,6 +863,12 @@ function card(j, reviewed){
        >&#9733; Referral: ${esc((names => names.length > 2 ? `${names[0]}, ${names[1]} +${names.length - 2}`
                                                : names.join(", "))(refs.map(r=>r.name || "contact")))}</span>`
     : "";
+  // The outreach list, next to the referral tag: who Tom is talking to there, and how far.
+  const outr = outreachOf(j);
+  const outTag = outr
+    ? `<span class="tag out${outr.active ? " active" : ""}" title="Outreach list (Companies tab): ${esc(outreachText(outr))}"
+       >&#9993; ${esc(outreachLabel(outr))}</span>`
+    : "";
   // Next to the referral tag and for the same reason: it is about Tom's history with the
   // buyer, not about the ad, and it is why a 5.8 can be sitting in Apply.
   const domainTag = inDomain(j)
@@ -916,7 +976,7 @@ function card(j, reviewed){
       </div>
     </div>
     ${j.verdict?`<div class="verdict">${esc(j.verdict)}</div>`:""}
-    <div class="tags">${refTag}${domainTag}${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${spon}${rawNote}${caps}${flags}</div>
+    <div class="tags">${refTag}${outTag}${domainTag}${marketTag}${payTag}${gapTags}${conflictTag}${transferTag}${spon}${rawNote}${caps}${flags}</div>
     ${deadEnd}
     ${(axes || watch || dims) ? `<details class="more"><summary>Details</summary>
       ${axes}${watch}${dims}</details>` : ""}
@@ -1110,6 +1170,24 @@ function renderAll(){
     refJobs.forEach(j=>refWrap.appendChild(card(j, false)));
   }
 
+  // Roles at the companies Tom is actively working (Active on the Companies tab): the
+  // moment one posts is the moment his contact there is worth the most. Same filters as
+  // the referral section above, and each role also stays in its usual section.
+  const outJobs = jobs.filter(j=>{ const o = outreachOf(j); return o && o.active; })
+      .filter(j=>(filters.market === "all" || marketOf(j) === filters.market)
+              && (filters.track === "all" || onTrack(j, filters.track))).sort(byScore);
+  const outWrap = document.getElementById("out-wrap");
+  outWrap.innerHTML = "";
+  if(outJobs.length){
+    const h = document.createElement("h2");
+    h.textContent = `Outreach companies — ${outJobs.length}`;
+    const note = document.createElement("div"); note.className = "note";
+    note.textContent = "Roles at the companies you are actively contacting (Companies tab, Active). "
+      + "Score unchanged; each also appears in its usual section below.";
+    outWrap.append(h, note);
+    outJobs.forEach(j=>outWrap.appendChild(card(j, false)));
+  }
+
   const newCount = jobs.filter(isNew).length;
   // An unscored row has no Shot, and filtering it out would hide the rows that need his
   // eyes most. They are kept and land in their own section as always.
@@ -1152,6 +1230,7 @@ function renderAll(){
   document.getElementById("meta").textContent =
       (newCount ? `${newCount} new since ${since}  ·  ` : "")
       + (refJobs.length ? `${refJobs.length} at referral companies  ·  ` : "")
+      + (outJobs.length ? `${outJobs.length} at outreach companies  ·  ` : "")
       + `${apply.length} to apply, ${border.length} borderline`
       + (noSpon.length ? `, ${noSpon.length} no sponsor` : "")
       + (setAside.length ? `, ${setAside.length} unscored` : "")
@@ -1368,6 +1447,7 @@ Promise.all([
   document.getElementById("apply-h").textContent = `Apply — rank ${RANK.gate.toFixed(1)} and up`;
   renderAll();
   refreshContacts();
+  refreshOutreach();
 
   // A feed that failed, or came back far smaller than it usually does, last run. Up here
   // rather than in the grey footer, where two weeks of Adzuna 503s went unnoticed.

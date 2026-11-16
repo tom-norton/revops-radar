@@ -1,36 +1,38 @@
 {
- "last_run": "2026-11-14T14:16:31.133860+00:00",
- "new_this_run": 1,
+ "last_run": "2026-11-16T13:22:27.008918+00:00",
+ "new_this_run": 7,
  "sources": {
-  "Adzuna (NL+UK+CA+US)": "ok (raw 1403 -> kept 46) | nl=raw 167, kept 12; 2 of 9 phrases failed (HTTP 503: <!DOCTYPE html>\n<html>\n<!-- This file is managed by Chef -->\n    <head>\n        <meta charset=\"UTF-8); gb=raw 516, kept 18; ca=raw 360, kept 16; us=raw 360, kept 0",
-  "Reed (UK)": "ok (raw 100 -> kept 9)",
-  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 340 -> kept 13) | nl=raw 49, kept 0; be=raw 19, kept 0; ie=raw 92, kept 1; ca=raw 100, kept 12; us=raw 80, kept 0",
-  "Company ATS (43 watched)": "ok (raw 6815 -> kept 64)",
-  "hiring.cafe (Apify)": "ok (raw 4 -> kept 4) | revops=charged 0 (new 0, updated 0); cs-eu-ca=charged 0 (new 0, updated 0); cs-nl=charged 2 (new 2, updated 0); am-nl=charged 0 (new 0, updated 0); us-revops=charged 2 (new 2, updated 0); us-cs=charged 0 (new 0, updated 0)",
-  "LinkedIn": "ok (raw 180 -> kept 32)",
-  "revopsroles.com": "ok (raw 39 -> kept 28) | email1=kept 6; email2=kept 3; email3=kept 2; email4=kept 9; email5=kept 8; emails=5 emails, 26 row(s) with a salary",
-  "age filter": "dropped 54 older than 7d; 4 had no usable date (kept)",
-  "dedupe": "89 duplicates collapsed (dashboard + this run's fetches)",
-  "remembered kills": "5 re-listing(s) of roles already killed dropped without a screen; 192 kills remembered from the last 14 days",
-  "re-posts": "0 re-post(s) of roles already applied to or hidden dropped; 620 remembered from the last 120 days",
+  "Adzuna (NL+UK+CA)": "ok (raw 1052 -> kept 50) | nl=raw 174, kept 12; gb=raw 518, kept 13; ca=raw 360, kept 25",
+  "Reed (UK)": "ok (raw 100 -> kept 8)",
+  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 381 -> kept 30) | nl=raw 48, kept 8; nl-cs=raw 20, kept 4; be=raw 21, kept 0; ie=raw 92, kept 1; ca=raw 100, kept 14; us=raw 100, kept 3",
+  "Company ATS (73 watched)": "ok (raw 8253 -> kept 83) | 3 board(s) failed: Amplitude, Mendix, Deliverect",
+  "hiring.cafe (Apify)": "ok (raw 2 -> kept 2) | revops=charged 0 (new 0, updated 0); cs-eu-ca=charged 0 (new 0, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 1 (new 1, updated 0); us-revops=charged 0 (new 0, updated 0); us-cs=charged 1 (new 1, updated 0)",
+  "LinkedIn": "ok (raw 180 -> kept 33)",
+  "revopsroles.com": "ok (raw 28 -> kept 21) | email1=kept 2; email2=kept 9; email3=kept 8; email4=kept 1; email5=kept 1; emails=5 emails, 21 row(s) with a salary",
+  "age filter": "dropped 75 older than 7d; 5 had no usable date (kept)",
+  "dedupe": "75 duplicates collapsed (dashboard + this run's fetches)",
+  "remembered kills": "2 re-listing(s) of roles already killed dropped without a screen; 185 kills remembered from the last 14 days",
+  "re-posts": "1 re-post(s) of roles already applied to or hidden dropped; 623 remembered from the last 120 days",
   "UK sponsor register": "ok - 142998 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-11-12.csv",
-  "NL sponsor register": "ok - 12836 names (IND + override)",
-  "board lookup": "85 rows with no known board, 14 resolved; 1 companies newly cached, 489 known",
-  "apply links": "aggregator only 611, auto-fillable 132, company ATS 243",
-  "screening": "stage1 kept 1 (0 kill(s) overruled), killed 8; stage2 scored 1",
-  "set aside": "1 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
-  "jd rescue": "1 stub row(s) looked for their real posting, 0 recovered",
+  "NL sponsor register": "ok - 13082 names (IND + override)",
+  "IE employment permits": "ok - employers issued permits 2026: 8412, 2025: 8330",
+  "sponsor check": "98 row(s) in the no-sponsor lane; 1 employer website(s) checked, 36 cached; 45 alias(es)",
+  "board lookup": "90 rows with no known board, 14 resolved; 0 companies newly cached, 497 known",
+  "apply links": "aggregator only 598, auto-fillable 126, company ATS 229",
+  "screening": "stage1 kept 8 (1 kill(s) overruled), killed 7; stage2 scored 7",
+  "set aside": "6 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
+  "jd rescue": "8 stub row(s) looked for their real posting, 0 recovered",
   "queue": "empty; every screened role was scored this run",
-  "tokens": "in 29872, out 1027, cache read 0, written 12018",
-  "dropped": "age 54, dedupe 89, kill-repeat 5, prefilter:location 269, prefilter:title 8399, stage1-kill 8"
+  "tokens": "in 59862, out 6588, cache read 78612, written 26204; 7 scored by batch at half price",
+  "dropped": "age 75, dedupe 75, eu-contract 1, kill-repeat 2, language-required 8, no-sponsorship 1, prefilter:location 334, prefilter:title 9421, repost 1, stage1-kill 7, us-comp-unstated 1"
  },
  "warnings": [
-  "Adzuna NL: 2 of 9 searches failed after retries (HTTP 503: <!DOCTYPE html>\n<html>\n<!-- This file is managed b)"
+  "Company board Amplitude (greenhouse) failed: 404 Client Error: Not Found for url: https://boards-api.greenhouse.io/v1/boards/",
+  "Company board Mendix (lever) failed: 500 Server Error: Internal Server Error for url: https://api.lever.co/v0/posting",
+  "Company board Deliverect (lever) failed: 504 Server Error: Gateway Time-out for url: https://api.lever.co/v0/postings/del"
  ],
  "raw_history": {
   "adzuna:nl": [
-   194,
-   195,
    180,
    188,
    191,
@@ -58,11 +60,11 @@
    156,
    191,
    106,
-   167
+   167,
+   174,
+   174
   ],
   "adzuna:gb": [
-   503,
-   509,
    501,
    509,
    512,
@@ -90,7 +92,9 @@
    521,
    521,
    513,
-   516
+   516,
+   519,
+   518
   ],
   "adzuna:ca": [
    360,
@@ -189,8 +193,6 @@
    100
   ],
   "linkedin": [
-   180,
-   130,
    202,
    180,
    180,
@@ -218,11 +220,11 @@
    160,
    180,
    152,
+   180,
+   183,
    180
   ],
   "ats": [
-   6737,
-   6753,
    6778,
    6800,
    6811,
@@ -250,11 +252,11 @@
    6819,
    6815,
    6816,
-   6815
+   6815,
+   8316,
+   8253
   ],
   "indeed:nl": [
-   45,
-   44,
    45,
    45,
    41,
@@ -282,11 +284,11 @@
    55,
    50,
    47,
-   49
+   49,
+   70,
+   68
   ],
   "indeed:be": [
-   37,
-   39,
    41,
    42,
    43,
@@ -314,11 +316,11 @@
    23,
    19,
    18,
-   19
+   19,
+   20,
+   21
   ],
   "indeed:ie": [
-   90,
-   89,
    89,
    89,
    89,
@@ -344,6 +346,8 @@
    91,
    92,
    91,
+   92,
+   92,
    92,
    92,
    92
@@ -409,8 +413,8 @@
    80,
    80,
    80,
-   80,
-   80
+   100,
+   100
   ]
  },
  "gate": 6.5,
@@ -445,5 +449,85 @@
    "location_visa": 12,
    "trajectory": 8
   }
+ },
+ "rank": {
+  "balance": 0.5,
+  "domain_boost": 2.0,
+  "domain_boost_large": 0.5,
+  "large_domain_vendors": [
+   "OneTrust",
+   "Workiva",
+   "Wolters Kluwer",
+   "Diligent"
+  ],
+  "gap_cost": {
+   "language": 2.0,
+   "book": 1.0,
+   "people_mgmt": 1.0,
+   "technical": 1.0,
+   "bi": 0.5,
+   "crm_owner": 0.5,
+   "other": 0.3
+  },
+  "gap_years_cost": [
+   [
+    8,
+    2.0
+   ],
+   [
+    7,
+    1.5
+   ],
+   [
+    6,
+    1.1
+   ],
+   [
+    5,
+    0.8
+   ],
+   [
+    4,
+    0.5
+   ],
+   [
+    3,
+    0.3
+   ],
+   [
+    0,
+    0.2
+   ]
+  ],
+  "gap_cost_cap": 4.0,
+  "sponsor_cost": {
+   "not_found": 1.5,
+   "agency": 1.5,
+   "possible": 0.5,
+   "unknown": 0.5
+  },
+  "ie_permit_boost": 0.5,
+  "want_track": {
+   "post_sale_ops": 10.0,
+   "revops": 10.0,
+   "other_ops": 7.5,
+   "cs_nl": 8.0,
+   "cs": 6.0
+  },
+  "want_market": {
+   "1": 10.0,
+   "2": 8.0,
+   "3": 6.5,
+   "4": 5.0
+  },
+  "want_weights": {
+   "track": 0.5,
+   "market": 0.3,
+   "pay": 0.2
+  },
+  "want_pay_unstated": 7.0,
+  "gate": 6.8,
+  "floor": 6.4,
+  "notify": 7.5
  }
 }

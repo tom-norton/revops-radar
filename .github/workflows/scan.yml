@@ -135,6 +135,9 @@ jobs:
           APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          # Reads the outreach list (company names only) from the tracker web app, for the
+          # push when a listed company posts a role. Unset, the push is skipped.
+          TRACKER_TOKEN: ${{ secrets.TRACKER_TOKEN }}
           # Subscription-scoring trial: also write the roles this run screens to
           # shadow/queue.json for shadow.py to score side by side. Delete this line (or set
           # it to "0") to stop the trial; nothing else in the scan depends on it.

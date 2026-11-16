@@ -125,6 +125,20 @@ section with nothing worth saying and say so in one line.
    - This repo is public. Give outcomes as counts and rates, and name a company only for
      an interview or a pending application. Never list which companies rejected him or
      ignored him; the stale-row line gives company and date only, not an outcome.
+4b. **Outreach funnel**: from `outreach_funnel` (or quote `outreach_funnel_error` in one
+   line and move on). This is the 2-Hour Job Search side of the search: Tom emails people
+   at the companies on his outreach list before a role is posted.
+   - Last seven days (`last_7_days`): outreach emails sent, follow-ups, replies, bounces.
+     Say whether he is near the cap (5 new emails a day, 12 a week) or well under it.
+   - The keep checks (`keep_checks`): one line per phase with its status. Flag any that
+     reads "Over", "Below the old rate" or "Missed".
+   - Active companies (`active`): totals only (emailed, replied, chatted across all of
+     them) and how many are flagged to drop (`drop`). Name a company only when someone
+     there replied or chatted. Never name one that went silent: the repo is public, and
+     that is the same rule as rejections.
+   - One coaching line, tied to the numbers: send the queued emails, fill a dropped slot,
+     or follow up where a reply is waiting.
+   - Never a person's name. The funnel carries none; do not look them up.
 5. **What your hide notes say**: tally the reasons, and what they point at. Map each
    pattern to the specific thing that would fix it: a title filter in `scan.py`, the
    market gate, a line in `profile.md`, the Haiku screen prompt, a source to add or drop.
