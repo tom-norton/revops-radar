@@ -1,39 +1,37 @@
 {
- "last_run": "2026-11-16T13:22:27.008918+00:00",
- "new_this_run": 7,
+ "last_run": "2026-11-16T17:47:31.768775+00:00",
+ "new_this_run": 5,
  "sources": {
-  "Adzuna (NL+UK+CA)": "ok (raw 1052 -> kept 50) | nl=raw 174, kept 12; gb=raw 518, kept 13; ca=raw 360, kept 25",
+  "Adzuna (NL+UK+CA)": "ok (raw 1058 -> kept 50) | nl=raw 179, kept 14; gb=raw 519, kept 11; ca=raw 360, kept 25",
   "Reed (UK)": "ok (raw 100 -> kept 8)",
-  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 381 -> kept 30) | nl=raw 48, kept 8; nl-cs=raw 20, kept 4; be=raw 21, kept 0; ie=raw 92, kept 1; ca=raw 100, kept 14; us=raw 100, kept 3",
-  "Company ATS (73 watched)": "ok (raw 8253 -> kept 83) | 3 board(s) failed: Amplitude, Mendix, Deliverect",
-  "hiring.cafe (Apify)": "ok (raw 2 -> kept 2) | revops=charged 0 (new 0, updated 0); cs-eu-ca=charged 0 (new 0, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 1 (new 1, updated 0); us-revops=charged 0 (new 0, updated 0); us-cs=charged 1 (new 1, updated 0)",
-  "LinkedIn": "ok (raw 180 -> kept 33)",
+  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 377 -> kept 24) | nl=raw 45, kept 8; nl-cs=raw 20, kept 1; be=raw 21, kept 0; ie=raw 91, kept 1; ca=raw 100, kept 12; us=raw 100, kept 2",
+  "Company ATS (73 watched)": "ok (raw 8282 -> kept 85) | 2 board(s) failed: Amplitude, Smarsh",
+  "hiring.cafe (Apify)": "ok (raw 2 -> kept 2) | revops=charged 0 (new 0, updated 0); cs-eu-ca=charged 0 (new 0, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 0 (new 0, updated 0); us-revops=charged 0 (new 0, updated 0); us-cs=charged 2 (new 2, updated 0)",
+  "LinkedIn": "ok (raw 169 -> kept 42)",
   "revopsroles.com": "ok (raw 28 -> kept 21) | email1=kept 2; email2=kept 9; email3=kept 8; email4=kept 1; email5=kept 1; emails=5 emails, 21 row(s) with a salary",
-  "age filter": "dropped 75 older than 7d; 5 had no usable date (kept)",
-  "dedupe": "75 duplicates collapsed (dashboard + this run's fetches)",
-  "remembered kills": "2 re-listing(s) of roles already killed dropped without a screen; 185 kills remembered from the last 14 days",
+  "age filter": "dropped 71 older than 7d; 5 had no usable date (kept)",
+  "dedupe": "85 duplicates collapsed (dashboard + this run's fetches)",
+  "remembered kills": "1 re-listing(s) of roles already killed dropped without a screen; 192 kills remembered from the last 14 days",
   "re-posts": "1 re-post(s) of roles already applied to or hidden dropped; 623 remembered from the last 120 days",
   "UK sponsor register": "ok - 142998 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-11-12.csv",
   "NL sponsor register": "ok - 13082 names (IND + override)",
   "IE employment permits": "ok - employers issued permits 2026: 8412, 2025: 8330",
-  "sponsor check": "98 row(s) in the no-sponsor lane; 1 employer website(s) checked, 36 cached; 45 alias(es)",
-  "board lookup": "90 rows with no known board, 14 resolved; 0 companies newly cached, 497 known",
-  "apply links": "aggregator only 598, auto-fillable 126, company ATS 229",
-  "screening": "stage1 kept 8 (1 kill(s) overruled), killed 7; stage2 scored 7",
-  "set aside": "6 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
-  "jd rescue": "8 stub row(s) looked for their real posting, 0 recovered",
+  "sponsor check": "98 row(s) in the no-sponsor lane; 0 employer website(s) checked, 36 cached; 45 alias(es)",
+  "board lookup": "85 rows with no known board, 12 resolved; 0 companies newly cached, 500 known",
+  "apply links": "aggregator only 599, auto-fillable 127, company ATS 224",
+  "screening": "stage1 kept 9 (0 kill(s) overruled), killed 2; stage2 scored 5",
+  "set aside": "2 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
+  "jd rescue": "3 stub row(s) looked for their real posting, 0 recovered",
   "queue": "empty; every screened role was scored this run",
-  "tokens": "in 59862, out 6588, cache read 78612, written 26204; 7 scored by batch at half price",
-  "dropped": "age 75, dedupe 75, eu-contract 1, kill-repeat 2, language-required 8, no-sponsorship 1, prefilter:location 334, prefilter:title 9421, repost 1, stage1-kill 7, us-comp-unstated 1"
+  "tokens": "in 45720, out 7057, cache read 91714, written 26204; 8 scored by batch at half price",
+  "dropped": "age 71, below-comp-floor 1, dedupe 85, eu-contract 3, kill-repeat 1, language-required 4, no-sponsorship 1, prefilter:location 335, prefilter:title 9436, repost 1, stage1-kill 2, us-comp-unstated 1"
  },
  "warnings": [
   "Company board Amplitude (greenhouse) failed: 404 Client Error: Not Found for url: https://boards-api.greenhouse.io/v1/boards/",
-  "Company board Mendix (lever) failed: 500 Server Error: Internal Server Error for url: https://api.lever.co/v0/posting",
-  "Company board Deliverect (lever) failed: 504 Server Error: Gateway Time-out for url: https://api.lever.co/v0/postings/del"
+  "Company board Smarsh (lever) failed: 500 Server Error: Internal Server Error for url: https://api.lever.co/v0/posting"
  ],
  "raw_history": {
   "adzuna:nl": [
-   180,
    188,
    191,
    174,
@@ -62,10 +60,10 @@
    106,
    167,
    174,
-   174
+   174,
+   179
   ],
   "adzuna:gb": [
-   501,
    509,
    512,
    502,
@@ -94,7 +92,8 @@
    513,
    516,
    519,
-   518
+   518,
+   519
   ],
   "adzuna:ca": [
    360,
@@ -193,7 +192,6 @@
    100
   ],
   "linkedin": [
-   202,
    180,
    180,
    180,
@@ -222,10 +220,10 @@
    152,
    180,
    183,
-   180
+   180,
+   169
   ],
   "ats": [
-   6778,
    6800,
    6811,
    6802,
@@ -254,10 +252,10 @@
    6816,
    6815,
    8316,
-   8253
+   8253,
+   8282
   ],
   "indeed:nl": [
-   45,
    45,
    41,
    37,
@@ -286,10 +284,10 @@
    47,
    49,
    70,
-   68
+   68,
+   65
   ],
   "indeed:be": [
-   41,
    42,
    43,
    40,
@@ -318,10 +316,10 @@
    18,
    19,
    20,
+   21,
    21
   ],
   "indeed:ie": [
-   89,
    89,
    89,
    88,
@@ -350,7 +348,8 @@
    92,
    92,
    92,
-   92
+   92,
+   91
   ],
   "indeed:ca": [
    100,
@@ -412,7 +411,7 @@
    80,
    80,
    80,
-   80,
+   100,
    100,
    100
   ]
