@@ -1,23 +1,23 @@
 # Subscription trial: comparison with the API
 
-_Updated 2026-11-17 01:49 UTC_
+_Updated 2026-11-17 13:47 UTC_
 
 ## The short version
 
-- **163 roles scored by both.** On average the trial scored **-0.00** against the API, and was off by **0.24** either way.
-- 145 of 163 were within half a point; 163 of 163 within one point.
+- **168 roles scored by both.** On average the trial scored **-0.00** against the API, and was off by **0.23** either way.
+- 150 of 168 were within half a point; 168 of 168 within one point.
 - 16 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
 - **0 role(s) still waiting** for the trial to reach them.
-- 3 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
+- 4 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
 
 ## Screen (keep or kill)
 
 | | Roles |
 |---|---|
-| both kept | 180 |
-| both killed | 8 |
+| both kept | 184 |
+| both killed | 10 |
 | API kept, trial killed | 0 |
-| API killed, trial kept | 94 |
+| API killed, trial kept | 99 |
 
 ## Biggest disagreements
 
@@ -69,4 +69,4 @@ None.
 | 2026-11-13 | 43 | 42 |
 | 2026-11-14 | 41 | 40 |
 | 2026-11-16 | 29 | 27 |
-| 2026-11-17 | 25 | 24 |
+| 2026-11-17 | 37 | 34 |
