@@ -132,7 +132,7 @@ section with nothing worth saying and say so in one line.
      Say whether he is near the cap (5 new emails a day, 12 a week) or well under it.
    - The keep checks (`keep_checks`): one line per phase with its status. Flag any that
      reads "Over", "Below the old rate", "Missed" or "No lift yet". Phase 5 is the
-     hiring-manager note on applications (`tools/hiring_manager.md`): give the two
+     hiring-manager note on applications (`tools/application_followup.md`): give the two
      interview rates, with and without a note, as counts out of applications, and say
      plainly that they mean little before 10 notes have gone out.
    - Active companies (`active`): totals only (emailed, replied, chatted across all of

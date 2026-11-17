@@ -8,11 +8,11 @@ weekly outreach session".
 Everything lives in the Job Search Tracker (Google Sheet). Nothing here writes to this repo,
 which is public: no names, emails or titles of people go in it.
 
-Hiring-manager notes on applications (Touches types "HM note" and "App follow-up") are
-queued by the job-application-workflow skill, not by this session; see
-`tools/hiring_manager.md`. This session only checks them for replies in step 6, like every
-other Touches row with a Sent date, and reads out Today section 8 (applications still
-waiting for a hiring-manager lookup).
+Application follow-ups (Touches types "HM note" and "App follow-up", channel "Proton")
+are queued by the application-followup skill, not by this session; see
+`tools/application_followup.md`. They go out from Proton, so the Outlook reply search in step
+6 won't find their replies: Tom logs those himself. This session reads out Today section 8
+(roles scored 7.5+ still waiting for a follow-up note) and skips Proton rows in step 6.
 
 ## Rules
 
