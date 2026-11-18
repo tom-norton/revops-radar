@@ -1,37 +1,36 @@
 {
- "last_run": "2026-11-18T13:24:57.557090+00:00",
- "new_this_run": 14,
+ "last_run": "2026-11-18T17:55:45.782437+00:00",
+ "new_this_run": 11,
  "sources": {
-  "Adzuna (NL+UK+CA)": "ok (raw 1064 -> kept 44) | nl=raw 180, kept 15; gb=raw 524, kept 8; ca=raw 360, kept 21",
+  "Adzuna (NL+UK+CA)": "ok (raw 1077 -> kept 47) | nl=raw 194, kept 19; gb=raw 523, kept 7; ca=raw 360, kept 21",
   "Reed (UK)": "ok (raw 100 -> kept 6)",
-  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 378 -> kept 38) | nl=raw 46, kept 7; nl-cs=raw 20, kept 2; be=raw 25, kept 0; ie=raw 87, kept 2; ca=raw 100, kept 21; us=raw 100, kept 6",
-  "Company ATS (73 watched)": "ok (raw 8278 -> kept 85) | 1 board(s) failed: Amplitude",
-  "hiring.cafe (Apify)": "ok (raw 9 -> kept 7) | revops=charged 1 (new 1, updated 0); cs-eu-ca=charged 2 (new 2, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 0 (new 0, updated 0); us-revops=charged 2 (new 2, updated 0); us-cs=charged 4 (new 4, updated 0)",
-  "LinkedIn": "ok (raw 150 -> kept 45)",
+  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 369 -> kept 34) | nl=raw 43, kept 8; nl-cs=raw 20, kept 2; be=raw 17, kept 0; ie=raw 89, kept 2; ca=raw 100, kept 19; us=raw 100, kept 3",
+  "Company ATS (73 watched)": "ok (raw 8293 -> kept 85) | 1 board(s) failed: Amplitude",
+  "hiring.cafe (Apify)": "ok (raw 7 -> kept 5) | revops=charged 2 (new 1, updated 1); cs-eu-ca=charged 3 (new 3, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 0 (new 0, updated 0); us-revops=charged 0 (new 0, updated 0); us-cs=charged 2 (new 2, updated 0)",
+  "LinkedIn": "ok (raw 160 -> kept 49)",
   "revopsroles.com": "ok (raw 33 -> kept 21) | email1=kept 8; email2=kept 1; email3=kept 1; email4=kept 7; email5=kept 4; emails=5 emails, 26 row(s) with a salary",
-  "age filter": "dropped 68 older than 7d; 4 had no usable date (kept)",
-  "dedupe": "83 duplicates collapsed (dashboard + this run's fetches)",
-  "remembered kills": "0 re-listing(s) of roles already killed dropped without a screen; 197 kills remembered from the last 14 days",
-  "re-posts": "0 re-post(s) of roles already applied to or hidden dropped; 635 remembered from the last 120 days",
+  "age filter": "dropped 67 older than 7d; 4 had no usable date (kept)",
+  "dedupe": "95 duplicates collapsed (dashboard + this run's fetches)",
+  "remembered kills": "3 re-listing(s) of roles already killed dropped without a screen; 201 kills remembered from the last 14 days",
+  "re-posts": "1 re-post(s) of roles already applied to or hidden dropped; 635 remembered from the last 120 days",
   "UK sponsor register": "ok - 142988 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-11-18.csv",
   "NL sponsor register": "ok - 13082 names (IND + override)",
   "IE employment permits": "ok - employers issued permits 2026: 8412, 2025: 8330",
-  "sponsor check": "102 row(s) in the no-sponsor lane; 0 employer website(s) checked, 40 cached; 45 alias(es)",
-  "board lookup": "88 rows with no known board, 12 resolved; 3 companies newly cached, 519 known",
-  "apply links": "aggregator only 608, auto-fillable 128, company ATS 242",
-  "screening": "stage1 kept 15 (0 kill(s) overruled), killed 4; stage2 scored 14",
-  "set aside": "4 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
-  "jd rescue": "4 stub row(s) looked for their real posting, 0 recovered",
+  "sponsor check": "105 row(s) in the no-sponsor lane; 1 employer website(s) checked, 41 cached; 45 alias(es)",
+  "board lookup": "87 rows with no known board, 11 resolved; 2 companies newly cached, 521 known",
+  "apply links": "aggregator only 617, auto-fillable 129, company ATS 243",
+  "screening": "stage1 kept 11 (1 kill(s) overruled), killed 5; stage2 scored 11",
+  "set aside": "1 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
+  "jd rescue": "1 stub row(s) looked for their real posting, 0 recovered",
   "queue": "empty; every screened role was scored this run",
-  "tokens": "in 87445, out 12142, cache read 170326, written 26204; 14 scored by batch at half price",
-  "dropped": "age 68, dedupe 83, eu-remote 1, language-required 5, no-sponsorship 3, prefilter:location 333, prefilter:title 9416, stage1-kill 4"
+  "tokens": "in 69219, out 11182, cache read 117918, written 26204; 10 scored by batch at half price",
+  "dropped": "age 67, dedupe 95, kill-repeat 3, language-required 3, prefilter:location 313, prefilter:title 9459, repost 1, stage1-kill 5"
  },
  "warnings": [
   "Company board Amplitude (greenhouse) failed: 404 Client Error: Not Found for url: https://boards-api.greenhouse.io/v1/boards/"
  ],
  "raw_history": {
   "adzuna:nl": [
-   167,
    205,
    205,
    211,
@@ -60,10 +59,10 @@
    186,
    182,
    172,
-   180
+   180,
+   194
   ],
   "adzuna:gb": [
-   502,
    520,
    520,
    511,
@@ -92,7 +91,8 @@
    517,
    517,
    518,
-   524
+   524,
+   523
   ],
   "adzuna:ca": [
    360,
@@ -191,7 +191,6 @@
    100
   ],
   "linkedin": [
-   160,
    180,
    181,
    180,
@@ -220,10 +219,10 @@
    190,
    162,
    190,
-   150
+   150,
+   160
   ],
   "ats": [
-   6848,
    6847,
    6837,
    6852,
@@ -252,10 +251,10 @@
    8297,
    8299,
    8288,
-   8278
+   8278,
+   8293
   ],
   "indeed:nl": [
-   44,
    43,
    51,
    54,
@@ -284,10 +283,10 @@
    69,
    68,
    68,
-   66
+   66,
+   63
   ],
   "indeed:be": [
-   41,
    41,
    36,
    36,
@@ -316,10 +315,10 @@
    28,
    22,
    23,
-   25
+   25,
+   17
   ],
   "indeed:ie": [
-   85,
    84,
    85,
    84,
@@ -348,7 +347,8 @@
    87,
    87,
    86,
-   87
+   87,
+   89
   ],
   "indeed:ca": [
    100,
@@ -404,7 +404,7 @@
    80,
    80,
    80,
-   80,
+   100,
    100,
    100,
    100,
