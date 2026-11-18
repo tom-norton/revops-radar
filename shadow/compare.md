@@ -1,23 +1,23 @@
 # Subscription trial: comparison with the API
 
-_Updated 2026-11-17 13:47 UTC_
+_Updated 2026-11-18 01:52 UTC_
 
 ## The short version
 
-- **168 roles scored by both.** On average the trial scored **-0.00** against the API, and was off by **0.23** either way.
-- 150 of 168 were within half a point; 168 of 168 within one point.
-- 16 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
+- **193 roles scored by both.** On average the trial scored **+0.00** against the API, and was off by **0.24** either way.
+- 171 of 193 were within half a point; 193 of 193 within one point.
+- 18 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
 - **0 role(s) still waiting** for the trial to reach them.
-- 4 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
+- 10 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
 
 ## Screen (keep or kill)
 
 | | Roles |
 |---|---|
-| both kept | 184 |
-| both killed | 10 |
+| both kept | 208 |
+| both killed | 11 |
 | API kept, trial killed | 0 |
-| API killed, trial kept | 99 |
+| API killed, trial kept | 110 |
 
 ## Biggest disagreements
 
@@ -31,8 +31,8 @@ _Updated 2026-11-17 13:47 UTC_
 | Revenue Operations Regional Director @ monday.com (UK-London) | 4.7 | 5.4 | -0.7 |
 | Customer Success Manager @ Two Six Technologies (US-Remote) | 4.3 | 5.0 | -0.7 |
 | Commercial Operations Specialist @ CloudClevr Ltd (UK-London) | 5.2 | 4.5 | +0.7 |
+| Commercial Operations Analyst @ Laka (NL) | 4.8 | 5.5 | -0.7 |
 | Head of Go-To-Market @ Enlivio Health (UK-London) | 4.1 | 4.8 | -0.7 |
-| GTM Lead - AI @ FinPro. (UK-London) | 5.6 | 4.9 | +0.7 |
 
 ## Different side of the 6.5 apply line
 
@@ -44,6 +44,7 @@ _Updated 2026-11-17 13:47 UTC_
 | Senior Manager, Sales Strategy & Operations @ Microsoft (US-Remote) | 6.2 | 6.5 | -0.3 |
 | Senior Program Manager, Revenue Operations @ AlphaSense (US-Remote) | 6.7 | 6.2 | +0.5 |
 | Post-Sales Enablement Manager @ Backblaze (US-Remote) | 6.3 | 6.9 | -0.6 |
+| Senior II Revenue Operations Business Partner @ Coveo (CA) | 5.9 | 6.6 | -0.7 |
 | GTM Strategy & Program Manager @ Extend (US-Remote) | 6.0 | 6.5 | -0.5 |
 | Enterprise Customer Success Manager (EST/CST Remote) @ Suki (US-Remote) | 6.4 | 6.5 | -0.1 |
 | Enterprise Customer Success Manager @ IMPLAN Group LLC (US-Remote) | 6.5 | 6.4 | +0.1 |
@@ -54,6 +55,7 @@ _Updated 2026-11-17 13:47 UTC_
 | Sales Operations Manager @ Haystack (CA) | 6.3 | 6.7 | -0.4 |
 | Customer Success Operations Manager @ Jobgether (CA) | 6.4 | 6.6 | -0.2 |
 | Revenue Operations Manager @ Software of Excellence (CA) | 6.4 | 6.7 | -0.3 |
+| Senior Revenue Operations Analyst @ Epsilon (UK-London) | 6.5 | 6.1 | +0.4 |
 
 ## Different side of 7.5
 
@@ -70,3 +72,4 @@ None.
 | 2026-11-14 | 41 | 40 |
 | 2026-11-16 | 29 | 27 |
 | 2026-11-17 | 37 | 34 |
+| 2026-11-18 | 42 | 41 |
