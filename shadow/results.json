@@ -8913,6 +8913,36 @@
   "stage": "language-required",
   "title": "Customer Success Manager \u2013 Cybersecurity (SaaS)"
  },
+ "li-4491186740": {
+  "at": "2026-11-18T01:51:43.769992+00:00",
+  "captured_at": "2026-11-17T17:56:27.307778+00:00",
+  "company": "Epsilon",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 8.0,
+   "seniority": 6.0,
+   "skills": 6.0,
+   "trajectory": 8.0
+  },
+  "flags": [
+   "title band: analyst -- check the JD for actual scope and comp",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is dashboard and revenue-reporting heavy across Finance; BI depth beyond Excel will likely be probed despite Power BI being only preferred.",
+   "Senior Analyst band in London adtech may price close to the GBP 70,000 Skilled Worker floor."
+  ],
+  "id": "li-4491186740",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 6.5,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue operations analyst title names core RevOps function; keep for deep scori",
+  "shot": 6.0,
+  "title": "Senior Revenue Operations Analyst",
+  "verdict": "Credible London RevOps entry with a sponsor and Salesforce-owner remit, but the reporting-analyst slant and no dedicated RevOps years cap it.",
+  "want": 7.7
+ },
  "li-4491294598": {
   "at": "2026-11-16T13:49:50.721205+00:00",
   "captured_at": "2026-11-16T13:14:48.911127+00:00",
@@ -8942,6 +8972,20 @@
   "verdict": "Good skills match on HubSpot, Clay and Claude builds in Amsterdam, but junior framing and unconfirmed sponsorship make it borderline.",
   "want": 7.2
  },
+ "li-4491400150": {
+  "at": "2026-11-18T01:51:43.770106+00:00",
+  "captured_at": "2026-11-17T17:56:30.091337+00:00",
+  "company": "Xero",
+  "id": "li-4491400150",
+  "market": "UK-London",
+  "outcome": "dropped",
+  "reason": "deep score: the posting describes a fully remote role, which is too weak a basis for a European work permit",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales Operations leadership: commercial ops, title names target function.",
+  "stage": "eu-remote",
+  "title": "Head of Sales Operations UK/EMEA"
+ },
  "li-4491519024": {
   "at": "2026-11-16T13:49:50.721261+00:00",
   "captured_at": "2026-11-16T13:15:21.225947+00:00",
@@ -8955,6 +8999,152 @@
   "screen_reason": "Business operations role with commercial revenue ownership; keep for scoring.",
   "stage": "below-visa-floor",
   "title": "Business Operations Manager"
+ },
+ "li-4491567610": {
+  "at": "2026-11-18T01:51:43.770183+00:00",
+  "captured_at": "2026-11-17T17:56:22.506324+00:00",
+  "company": "CERRIX",
+  "id": "li-4491567610",
+  "market": "NL",
+  "outcome": "dropped",
+  "reason": "deep score: posting requires non-English fluency (missed by the wording-based check)",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success Manager at B2B GRC software; in scope, keep.",
+  "stage": "language-required",
+  "title": "Scaled Customer Success Manager"
+ },
+ "li-4491577394": {
+  "at": "2026-11-18T01:51:43.770241+00:00",
+  "captured_at": "2026-11-17T17:56:32.274535+00:00",
+  "company": "Adecco",
+  "id": "li-4491577394",
+  "market": "UK-London",
+  "outcome": "dropped",
+  "reason": "deep score: the posting describes a contract role, which rarely carries European sponsorship",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Business strategy role; in-scope function, keep for scoring.",
+  "stage": "eu-contract",
+  "title": "Business Strategy Manager"
+ },
+ "li-4491589849": {
+  "at": "2026-11-18T01:52:09.655280+00:00",
+  "captured_at": "2026-11-17T17:56:26.243831+00:00",
+  "company": "Pixi Inc.",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 3.0,
+   "location_visa": 8.0,
+   "seniority": 6.0,
+   "skills": 3.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is retail demand planning and stock management for a cosmetics brand, not SaaS revenue operations.",
+   "Requires NetSuite and key-account retail planning with Boots, Sephora, M&S, which Tom has never done."
+  ],
+  "id": "li-4491589849",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 4.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales Operations Manager: commercial forecasting, planning and key-account ops",
+  "shot": 3.8,
+  "title": "Sales Operations Manager - EMEA",
+  "verdict": "Sales Ops in title only: CPG stock and volume forecasting for beauty retail, far from Tom's SaaS post-sale strengths; skip.",
+  "want": 5.3
+ },
+ "li-4491597818": {
+  "at": "2026-11-18T01:52:09.655521+00:00",
+  "captured_at": "2026-11-17T17:56:28.700069+00:00",
+  "company": "Healthtech 1",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 6.0,
+   "seniority": 4.0,
+   "skills": 7.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Listed as entry level; an associate band at a YC-stage startup may struggle to clear the Skilled Worker threshold.",
+   "High-intensity startup culture with late office working implied; heavy hands-on tooling and data-scraping execution."
+  ],
+  "id": "li-4491597818",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 6.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM operations role: commercial operations, within target function",
+  "shot": 5.8,
+  "title": "GTM Operations Associate",
+  "verdict": "Genuine GTM ops ownership in London with a sponsor, but entry-level pitch makes overqualification and pay the real risks.",
+  "want": 6.3
+ },
+ "li-4491738228": {
+  "at": "2026-11-18T01:52:09.655705+00:00",
+  "captured_at": "2026-11-18T01:25:06.063591+00:00",
+  "company": "Alderson James",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 4.0,
+   "location_visa": 6.0,
+   "seniority": 6.0,
+   "skills": 4.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role centres on new-business AE prospecting and deal coaching, far from Tom's post-sale CS and renewals evidence.",
+   "First enablement hire building the programme from scratch, a build-from-zero track record he cannot show.",
+   "Agency post with the client unnamed, so sponsorship capability cannot be checked against the UK register."
+  ],
+  "id": "li-4491738228",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 4.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement is an in-scope commercial operations function",
+  "shot": 4.5,
+  "title": "Global Sales Enablement Lead",
+  "verdict": "New-logo sales enablement wanting 5+ years in sales seats; Tom's post-sale background won't clear the screen.",
+  "want": 5.4
+ },
+ "li-4491741953": {
+  "at": "2026-11-18T01:52:09.655820+00:00",
+  "captured_at": "2026-11-18T01:25:27.105969+00:00",
+  "company": "Salesforce",
+  "dimensions": {
+   "domain": 3.0,
+   "experience": 3.0,
+   "location_visa": 4.0,
+   "seniority": 3.0,
+   "skills": 3.0,
+   "trajectory": 2.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "title band: analyst -- check the JD for actual scope and comp",
+   "Role sits in Quote to Cash operations under Finance, not GTM strategy despite the title.",
+   "Execution-only support duties with 1+ years wanted; heavy overqualification screen risk for 11 years plus MBA."
+  ],
+  "id": "li-4491741953",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 3.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM Strategy and Operations title names a target function; keep",
+  "shot": 3.0,
+  "title": "GTM Strategy and Operations Associate Analyst",
+  "verdict": "Junior Quote-to-Cash support job mislabelled GTM Strategy; off-target function, CPQ gap, and Canada market make it a skip.",
+  "want": 3.1
  },
  "reed-57554986": {
   "at": "2026-11-11T01:52:18.790743+00:00",
