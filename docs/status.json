@@ -1,38 +1,38 @@
 {
- "last_run": "2026-11-19T01:21:36.114794+00:00",
- "new_this_run": 17,
+ "last_run": "2026-11-19T13:21:06.280054+00:00",
+ "new_this_run": 10,
  "sources": {
-  "Adzuna (NL+UK+CA)": "ok (raw 1029 -> kept 45) | nl=raw 153, kept 15; 2 of 9 phrases failed (HTTP 503: <!DOCTYPE html>\n<html>\n<!-- This file is managed by Chef -->\n    <head>\n        <meta charset=\"UTF-8); gb=raw 516, kept 9; ca=raw 360, kept 21",
-  "Reed (UK)": "ok (raw 100 -> kept 7)",
-  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 377 -> kept 37) | nl=raw 43, kept 8; nl-cs=raw 20, kept 2; be=raw 26, kept 0; ie=raw 88, kept 3; ca=raw 100, kept 21; us=raw 100, kept 3",
-  "Company ATS (73 watched)": "ok (raw 8285 -> kept 85) | 1 board(s) failed: Amplitude",
-  "hiring.cafe (Apify)": "ok (raw 16 -> kept 15) | revops=charged 3 (new 3, updated 0); cs-eu-ca=charged 2 (new 2, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 0 (new 0, updated 0); us-revops=charged 4 (new 4, updated 0); us-cs=charged 7 (new 7, updated 0)",
-  "LinkedIn": "ok (raw 190 -> kept 48)",
-  "revopsroles.com": "ok (raw 21 -> kept 13) | email1=kept 1; email2=kept 1; email3=kept 7; email4=kept 4; emails=4 emails, 15 row(s) with a salary",
-  "age filter": "dropped 66 older than 7d; 4 had no usable date (kept)",
-  "dedupe": "89 duplicates collapsed (dashboard + this run's fetches)",
-  "remembered kills": "1 re-listing(s) of roles already killed dropped without a screen; 192 kills remembered from the last 14 days",
-  "re-posts": "0 re-post(s) of roles already applied to or hidden dropped; 628 remembered from the last 120 days",
-  "UK sponsor register": "ok - 142988 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-11-18.csv",
+  "Adzuna (NL+UK+CA)": "ok (raw 1072 -> kept 62) | nl=raw 188, kept 20; gb=raw 524, kept 15; ca=raw 360, kept 27",
+  "Reed (UK)": "ok (raw 100 -> kept 6)",
+  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 373 -> kept 43) | nl=raw 41, kept 9; nl-cs=raw 20, kept 2; be=raw 25, kept 0; ie=raw 87, kept 3; ca=raw 100, kept 21; us=raw 100, kept 8",
+  "Company ATS (73 watched)": "ok (raw 8261 -> kept 84) | 2 board(s) failed: Amplitude, Mendix",
+  "hiring.cafe (Apify)": "ok (raw 3 -> kept 3) | revops=charged 1 (new 1, updated 0); cs-eu-ca=charged 2 (new 2, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 0 (new 0, updated 0); us-revops=charged 0 (new 0, updated 0); us-cs=charged 0 (new 0, updated 0)",
+  "LinkedIn": "ok (raw 180 -> kept 50)",
+  "revopsroles.com": "ok (raw 32 -> kept 22) | email1=kept 1; email2=kept 1; email3=kept 7; email4=kept 4; email5=kept 9; emails=5 emails, 24 row(s) with a salary",
+  "age filter": "dropped 64 older than 7d; 4 had no usable date (kept)",
+  "dedupe": "104 duplicates collapsed (dashboard + this run's fetches)",
+  "remembered kills": "2 re-listing(s) of roles already killed dropped without a screen; 196 kills remembered from the last 14 days",
+  "re-posts": "2 re-post(s) of roles already applied to or hidden dropped; 633 remembered from the last 120 days",
+  "UK sponsor register": "ok - 142945 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-11-19.csv",
   "NL sponsor register": "ok - 13082 names (IND + override)",
   "IE employment permits": "ok - employers issued permits 2026: 8412, 2025: 8330",
-  "sponsor check": "107 row(s) in the no-sponsor lane; 1 employer website(s) checked, 42 cached; 45 alias(es)",
-  "board lookup": "86 rows with no known board, 11 resolved; 0 companies newly cached, 525 known",
-  "apply links": "aggregator only 622, auto-fillable 134, company ATS 248",
-  "screening": "stage1 kept 18 (1 kill(s) overruled), killed 4; stage2 scored 17",
-  "set aside": "1 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
-  "jd rescue": "4 stub row(s) looked for their real posting, 0 recovered",
+  "sponsor check": "105 row(s) in the no-sponsor lane; 0 employer website(s) checked, 42 cached; 45 alias(es)",
+  "board lookup": "88 rows with no known board, 11 resolved; 1 companies newly cached, 530 known",
+  "apply links": "aggregator only 623, auto-fillable 135, company ATS 248",
+  "screening": "stage1 kept 12 (1 kill(s) overruled), killed 2; stage2 scored 10",
+  "set aside": "6 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
+  "jd from duplicates": "2 thin row(s) asked the copies dedupe folded away, 2 recovered",
+  "jd rescue": "8 stub row(s) looked for their real posting, 1 recovered",
   "queue": "empty; every screened role was scored this run",
-  "tokens": "in 100707, out 15561, cache read 209632, written 26204; 17 scored by batch at half price",
-  "dropped": "age 66, dedupe 89, eu-contract 1, kill-repeat 1, language-required 2, no-sponsorship 3, prefilter:location 340, prefilter:title 9403, stage1-kill 4"
+  "tokens": "in 64888, out 10676, cache read 131020, written 26204; 11 scored by batch at half price",
+  "dropped": "age 64, dedupe 104, eu-remote 2, kill-repeat 2, language-required 4, no-sponsorship 3, prefilter:location 324, prefilter:title 9396, repost 2, stage1-kill 2, us-comp-unstated 1"
  },
  "warnings": [
-  "Adzuna NL: 2 of 9 searches failed after retries (HTTP 503: <!DOCTYPE html>\n<html>\n<!-- This file is managed b)",
-  "Company board Amplitude (greenhouse) failed: 404 Client Error: Not Found for url: https://boards-api.greenhouse.io/v1/boards/"
+  "Company board Amplitude (greenhouse) failed: 404 Client Error: Not Found for url: https://boards-api.greenhouse.io/v1/boards/",
+  "Company board Mendix (lever) failed: HTTPSConnectionPool(host='api.lever.co', port=443): Read timed out. (read timeou"
  ],
  "raw_history": {
   "adzuna:nl": [
-   205,
    211,
    164,
    192,
@@ -61,10 +61,10 @@
    172,
    180,
    194,
-   153
+   153,
+   188
   ],
   "adzuna:gb": [
-   520,
    511,
    518,
    519,
@@ -93,7 +93,8 @@
    518,
    524,
    523,
-   516
+   516,
+   524
   ],
   "adzuna:ca": [
    360,
@@ -192,7 +193,6 @@
    100
   ],
   "linkedin": [
-   181,
    180,
    160,
    140,
@@ -221,10 +221,10 @@
    190,
    150,
    160,
-   190
+   190,
+   180
   ],
   "ats": [
-   6837,
    6852,
    6854,
    6853,
@@ -253,10 +253,10 @@
    8288,
    8278,
    8293,
-   8285
+   8285,
+   8261
   ],
   "indeed:nl": [
-   51,
    54,
    53,
    53,
@@ -285,10 +285,10 @@
    68,
    66,
    63,
-   63
+   63,
+   61
   ],
   "indeed:be": [
-   36,
    36,
    36,
    36,
@@ -317,10 +317,10 @@
    23,
    25,
    17,
-   26
+   26,
+   25
   ],
   "indeed:ie": [
-   85,
    84,
    84,
    84,
@@ -349,7 +349,8 @@
    86,
    87,
    89,
-   88
+   88,
+   87
   ],
   "indeed:ca": [
    100,
@@ -403,7 +404,7 @@
    80,
    80,
    80,
-   80,
+   100,
    100,
    100,
    100,
