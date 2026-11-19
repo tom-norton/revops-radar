@@ -1,38 +1,37 @@
 {
- "last_run": "2026-11-18T13:24:57.557090+00:00",
- "new_this_run": 14,
+ "last_run": "2026-11-19T01:21:36.114794+00:00",
+ "new_this_run": 17,
  "sources": {
-  "Adzuna (NL+UK+CA)": "ok (raw 1064 -> kept 44) | nl=raw 180, kept 15; gb=raw 524, kept 8; ca=raw 360, kept 21",
-  "Reed (UK)": "ok (raw 100 -> kept 6)",
-  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 378 -> kept 38) | nl=raw 46, kept 7; nl-cs=raw 20, kept 2; be=raw 25, kept 0; ie=raw 87, kept 2; ca=raw 100, kept 21; us=raw 100, kept 6",
-  "Company ATS (73 watched)": "ok (raw 8278 -> kept 85) | 1 board(s) failed: Amplitude",
-  "hiring.cafe (Apify)": "ok (raw 9 -> kept 7) | revops=charged 1 (new 1, updated 0); cs-eu-ca=charged 2 (new 2, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 0 (new 0, updated 0); us-revops=charged 2 (new 2, updated 0); us-cs=charged 4 (new 4, updated 0)",
-  "LinkedIn": "ok (raw 150 -> kept 45)",
-  "revopsroles.com": "ok (raw 33 -> kept 21) | email1=kept 8; email2=kept 1; email3=kept 1; email4=kept 7; email5=kept 4; emails=5 emails, 26 row(s) with a salary",
-  "age filter": "dropped 68 older than 7d; 4 had no usable date (kept)",
-  "dedupe": "83 duplicates collapsed (dashboard + this run's fetches)",
-  "remembered kills": "0 re-listing(s) of roles already killed dropped without a screen; 197 kills remembered from the last 14 days",
-  "re-posts": "0 re-post(s) of roles already applied to or hidden dropped; 635 remembered from the last 120 days",
+  "Adzuna (NL+UK+CA)": "ok (raw 1029 -> kept 45) | nl=raw 153, kept 15; 2 of 9 phrases failed (HTTP 503: <!DOCTYPE html>\n<html>\n<!-- This file is managed by Chef -->\n    <head>\n        <meta charset=\"UTF-8); gb=raw 516, kept 9; ca=raw 360, kept 21",
+  "Reed (UK)": "ok (raw 100 -> kept 7)",
+  "Indeed/JobSpy (NL+BE+IE+CA+US)": "ok (raw 377 -> kept 37) | nl=raw 43, kept 8; nl-cs=raw 20, kept 2; be=raw 26, kept 0; ie=raw 88, kept 3; ca=raw 100, kept 21; us=raw 100, kept 3",
+  "Company ATS (73 watched)": "ok (raw 8285 -> kept 85) | 1 board(s) failed: Amplitude",
+  "hiring.cafe (Apify)": "ok (raw 16 -> kept 15) | revops=charged 3 (new 3, updated 0); cs-eu-ca=charged 2 (new 2, updated 0); cs-nl=charged 0 (new 0, updated 0); am-nl=charged 0 (new 0, updated 0); us-revops=charged 4 (new 4, updated 0); us-cs=charged 7 (new 7, updated 0)",
+  "LinkedIn": "ok (raw 190 -> kept 48)",
+  "revopsroles.com": "ok (raw 21 -> kept 13) | email1=kept 1; email2=kept 1; email3=kept 7; email4=kept 4; emails=4 emails, 15 row(s) with a salary",
+  "age filter": "dropped 66 older than 7d; 4 had no usable date (kept)",
+  "dedupe": "89 duplicates collapsed (dashboard + this run's fetches)",
+  "remembered kills": "1 re-listing(s) of roles already killed dropped without a screen; 192 kills remembered from the last 14 days",
+  "re-posts": "0 re-post(s) of roles already applied to or hidden dropped; 628 remembered from the last 120 days",
   "UK sponsor register": "ok - 142988 sponsors from SP_-_Worker_and_Temporary_Worker_Web_Register_-_2026-11-18.csv",
   "NL sponsor register": "ok - 13082 names (IND + override)",
   "IE employment permits": "ok - employers issued permits 2026: 8412, 2025: 8330",
-  "sponsor check": "102 row(s) in the no-sponsor lane; 0 employer website(s) checked, 40 cached; 45 alias(es)",
-  "board lookup": "88 rows with no known board, 12 resolved; 3 companies newly cached, 519 known",
-  "apply links": "aggregator only 608, auto-fillable 128, company ATS 242",
-  "screening": "stage1 kept 15 (0 kill(s) overruled), killed 4; stage2 scored 14",
-  "set aside": "4 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
+  "sponsor check": "107 row(s) in the no-sponsor lane; 1 employer website(s) checked, 42 cached; 45 alias(es)",
+  "board lookup": "86 rows with no known board, 11 resolved; 0 companies newly cached, 525 known",
+  "apply links": "aggregator only 622, auto-fillable 134, company ATS 248",
+  "screening": "stage1 kept 18 (1 kill(s) overruled), killed 4; stage2 scored 17",
+  "set aside": "1 row(s) had no posting text after every recovery route and were not scored; they are on the dashboard for you to judge",
   "jd rescue": "4 stub row(s) looked for their real posting, 0 recovered",
   "queue": "empty; every screened role was scored this run",
-  "tokens": "in 87445, out 12142, cache read 170326, written 26204; 14 scored by batch at half price",
-  "dropped": "age 68, dedupe 83, eu-remote 1, language-required 5, no-sponsorship 3, prefilter:location 333, prefilter:title 9416, stage1-kill 4"
+  "tokens": "in 100707, out 15561, cache read 209632, written 26204; 17 scored by batch at half price",
+  "dropped": "age 66, dedupe 89, eu-contract 1, kill-repeat 1, language-required 2, no-sponsorship 3, prefilter:location 340, prefilter:title 9403, stage1-kill 4"
  },
  "warnings": [
+  "Adzuna NL: 2 of 9 searches failed after retries (HTTP 503: <!DOCTYPE html>\n<html>\n<!-- This file is managed b)",
   "Company board Amplitude (greenhouse) failed: 404 Client Error: Not Found for url: https://boards-api.greenhouse.io/v1/boards/"
  ],
  "raw_history": {
   "adzuna:nl": [
-   167,
-   205,
    205,
    211,
    164,
@@ -60,11 +59,11 @@
    186,
    182,
    172,
-   180
+   180,
+   194,
+   153
   ],
   "adzuna:gb": [
-   502,
-   520,
    520,
    511,
    518,
@@ -92,7 +91,9 @@
    517,
    517,
    518,
-   524
+   524,
+   523,
+   516
   ],
   "adzuna:ca": [
    360,
@@ -191,8 +192,6 @@
    100
   ],
   "linkedin": [
-   160,
-   180,
    181,
    180,
    160,
@@ -220,11 +219,11 @@
    190,
    162,
    190,
-   150
+   150,
+   160,
+   190
   ],
   "ats": [
-   6848,
-   6847,
    6837,
    6852,
    6854,
@@ -252,11 +251,11 @@
    8297,
    8299,
    8288,
-   8278
+   8278,
+   8293,
+   8285
   ],
   "indeed:nl": [
-   44,
-   43,
    51,
    54,
    53,
@@ -284,11 +283,11 @@
    69,
    68,
    68,
-   66
+   66,
+   63,
+   63
   ],
   "indeed:be": [
-   41,
-   41,
    36,
    36,
    36,
@@ -316,11 +315,11 @@
    28,
    22,
    23,
-   25
+   25,
+   17,
+   26
   ],
   "indeed:ie": [
-   85,
-   84,
    85,
    84,
    84,
@@ -348,7 +347,9 @@
    87,
    87,
    86,
-   87
+   87,
+   89,
+   88
   ],
   "indeed:ca": [
    100,
@@ -403,8 +404,8 @@
    80,
    80,
    80,
-   80,
-   80,
+   100,
+   100,
    100,
    100,
    100,
