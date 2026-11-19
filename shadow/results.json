@@ -1655,6 +1655,66 @@
   "verdict": "Founder-led new-logo sales for an unnamed AI startup; wrong function, missing startup GTM track record, and Canada ranks low.",
   "want": 3.6
  },
+ "az-ca-5970105254": {
+  "at": "2026-11-19T13:46:21.885092+00:00",
+  "captured_at": "2026-11-19T13:19:24.414281+00:00",
+  "company": "Jobgether",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 7.0,
+   "location_visa": 3.0,
+   "seniority": 7.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Player-coach role mentoring CSMs; expect leadership questions he cannot fully back with formal people management.",
+   "Heavy implementation and launch ownership for enterprise healthcare clients, outside his GRC and legal buyer base.",
+   "Requirements list is truncated mid-sentence, so further must-haves may be hidden.",
+   "Agency post via Jobgether with the hiring company unnamed; employer quality and stability unknown."
+  ],
+  "id": "az-ca-5970105254",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 6.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer success and operations lead; in-scope CS function, keep for scoring.",
+  "shot": 6.7,
+  "title": "Customer Success & Operations Lead",
+  "verdict": "Solid CS-plus-ops fit on paper, but Canada's weak preference and an unnamed healthcare employer make this marginal.",
+  "want": 5.1
+ },
+ "az-ca-5970108453": {
+  "at": "2026-11-19T13:46:21.885224+00:00",
+  "captured_at": "2026-11-19T13:19:17.014990+00:00",
+  "company": "Make it Click",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 4.0,
+   "location_visa": 3.0,
+   "seniority": 6.0,
+   "skills": 5.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "Role is payment operations (payroll, international payouts), closer to billing/finance ops than RevOps or GTM strategy.",
+   "Early-stage startup leading a payments team; mentoring analysts and owning team output implies informal people leadership."
+  ],
+  "id": "az-ca-5970108453",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 4.5,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Strategy & Operations title, commercial operations function; keep for scoring",
+  "shot": 4.8,
+  "title": "Strategy & Operations Manager (Payments)",
+  "verdict": "Payments ops at an early-stage Toronto startup sits off his RevOps/CS lane and in his weakest market; skip.",
+  "want": 3.7
+ },
  "az-ca-5970621608": {
   "at": "2026-11-19T01:48:24.724399+00:00",
   "captured_at": "2026-11-18T17:47:42.267899+00:00",
@@ -2503,6 +2563,20 @@
   "stage": "below-visa-floor",
   "title": "Strategic Customer Success Manager"
  },
+ "az-gb-5971461369": {
+  "at": "2026-11-19T13:46:21.885277+00:00",
+  "captured_at": "2026-11-19T13:19:07.210817+00:00",
+  "company": "Xero",
+  "id": "az-gb-5971461369",
+  "market": "UK-London",
+  "outcome": "dropped",
+  "reason": "deep score: the posting describes a fully remote role, which is too weak a basis for a European work permit",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales Operations leadership, a commercial function; keep for deep scoring.",
+  "stage": "eu-remote",
+  "title": "Head of Sales Operations UK/EMEA"
+ },
  "az-nl-5961926126": {
   "at": "2026-11-12T01:48:06.848308+00:00",
   "captured_at": "2026-11-11T17:55:53.234420+00:00",
@@ -3238,6 +3312,35 @@
   "title": "Sales Enablement Specialist, Enterprise",
   "verdict": "Training-delivery enablement role under a Director; healthcare AI is appealing but it barely advances the RevOps pivot.",
   "want": 5.3
+ },
+ "hc-ashby___coreplan___4c3fd46d-2ce4-4a6f-b36c-570feb4dd45c": {
+  "at": "2026-11-19T13:46:21.885395+00:00",
+  "captured_at": "2026-11-19T13:19:17.834624+00:00",
+  "company": "CorePlan",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 4.0,
+   "location_visa": 3.0,
+   "seniority": 6.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Builds enablement from scratch solo for a global team; no dedicated enablement tenure to point to.",
+   "Mining-tech vertical SaaS with Perth HQ; Vancouver is the smaller office, so check where the CRO sits."
+  ],
+  "id": "hc-ashby___coreplan___4c3fd46d-2ce4-4a6f-b36c-570feb4dd45c",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 5.1,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement is an in-scope commercial function; keeping for scoring.",
+  "shot": 5.1,
+  "title": "Sales Enablement Lead",
+  "verdict": "Enablement-from-scratch Lead in Canada wanting 3+ dedicated enablement years he lacks; weak market, weak screen odds, skip unless pipeline thin.",
+  "want": 5.1
  },
  "hc-ashby___cyberhaven___0e0f95ac-639f-432d-b210-396a8a34b25e": {
   "at": "2026-11-16T13:48:34.821214+00:00",
@@ -7135,6 +7238,17 @@
   "verdict": "Strong HubSpot, Clay and Zapier toolkit match for a hands-on RevOps Manager; production admin tenure and Canada preference hold it back.",
   "want": 6.4
  },
+ "js-https-ca-indeed-com-viewjob-jk-df37aeae40ff9115": {
+  "at": "2026-11-19T13:45:01.528581+00:00",
+  "captured_at": "2026-11-19T13:19:21.800432+00:00",
+  "company": "Autodesk",
+  "id": "js-https-ca-indeed-com-viewjob-jk-df37aeae40ff9115",
+  "market": "CA",
+  "outcome": "killed",
+  "screen_model": "haiku",
+  "screen_reason": "HR or People Ops: full-cycle talent acquisition recruiter role, not commercial o",
+  "title": "Recruiter, AMER Go-To-Market (6-month contract)"
+ },
  "js-https-ca-indeed-com-viewjob-jk-e5161d1a2143727a": {
   "at": "2026-11-17T13:46:39.298921+00:00",
   "captured_at": "2026-11-17T13:22:28.586280+00:00",
@@ -7302,6 +7416,36 @@
   "title": "Revenue Operations Manager",
   "verdict": "Strong tool overlap with HubSpot, Clay and Zapier in a hands-on RevOps seat; production admin depth and US comp are the risks.",
   "want": 6.1
+ },
+ "js-https-www-indeed-com-viewjob-jk-486223843440e38c": {
+  "at": "2026-11-19T13:46:21.885528+00:00",
+  "captured_at": "2026-11-19T13:19:10.707650+00:00",
+  "company": "Marsh Agency",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 6.0,
+   "location_visa": 4.0,
+   "seniority": 7.0,
+   "skills": 5.0,
+   "trajectory": 8.0
+  },
+  "flags": [
+   "band 91000-127600 USD starts below your 100000 USD RevOps floor -- only the top half clears it",
+   "Role is BI-dashboard heavy; Tableau and Power BI are core daily tools Tom deliberately does not claim.",
+   "Employer identity and industry unclear; 'Marsh Agency' may be an insurance brokerage rather than B2B SaaS.",
+   "Generic posting text gives no team size, reporting line or years-of-experience band to judge scope."
+  ],
+  "id": "js-https-www-indeed-com-viewjob-jk-486223843440e38c",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 5.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue operations role; title names core RevOps function, keep for scoring.",
+  "shot": 5.9,
+  "title": "Revenue Operations Manager",
+  "verdict": "Core RevOps title with clearing pay top, but a reporting-and-BI seat in an unclear, likely non-SaaS employer; modest fit.",
+  "want": 5.4
  },
  "js-https-www-indeed-com-viewjob-jk-5e836b853d693dec": {
   "at": "2026-11-18T13:48:28.112951+00:00",
@@ -7525,6 +7669,20 @@
   "verdict": "Canadian coordinator role mixing new-logo prospecting with sales ops at a medical device maker; below target scope, skip.",
   "want": 3.9
  },
+ "li-4476311952": {
+  "at": "2026-11-19T13:46:21.885574+00:00",
+  "captured_at": "2026-11-19T13:19:02.911583+00:00",
+  "company": "Atlassian",
+  "id": "li-4476311952",
+  "market": "UK-London",
+  "outcome": "dropped",
+  "reason": "deep score: the posting describes a fully remote role, which is too weak a basis for a European work permit",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales strategy and operations title is a core commercial operations function; ke",
+  "stage": "eu-remote",
+  "title": "Principal Analyst, Sales Strategy & Operations - EMEA Sales"
+ },
  "li-4477702649": {
   "at": "2026-11-10T13:37:55.801505+00:00",
   "captured_at": "2026-11-10T13:27:04.701899+00:00",
@@ -7583,6 +7741,34 @@
   "title": "Senior Director, Product & Business Operations",
   "verdict": "Senior Director hardware BizOps wanting 15+ years leadership; far too senior and off his RevOps lane. Skip.",
   "want": 4.0
+ },
+ "li-4483030745": {
+  "at": "2026-11-19T13:46:21.885661+00:00",
+  "captured_at": "2026-11-19T13:19:21.051880+00:00",
+  "company": "Thermo Fisher Scientific",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 5.0,
+   "location_visa": 4.0,
+   "seniority": 7.0,
+   "skills": 4.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "Stated salary band is a Pennsylvania USD estimate, not a Toronto CAD figure, so real Canadian comp is unknown.",
+   "Global process-harmonization facilitation role in life-science instrument services, far from SaaS RevOps and his post-sale strengths."
+  ],
+  "id": "li-4483030745",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 5.1,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Commercial operations process excellence; commercial operations is an in-scope f",
+  "shot": 5.2,
+  "title": "Commercial Operations Process Excellence Manager",
+  "verdict": "Process-excellence facilitation in life-science services with Lean, SAP and seven-year gaps; weak fit in a low-preference market, skip.",
+  "want": 4.9
  },
  "li-4487302845": {
   "at": "2026-11-11T01:49:52.213426+00:00",
@@ -10337,6 +10523,36 @@
   "title": "GTM Operations Associate",
   "verdict": "Genuine GTM ops ownership in London with a sponsor, but entry-level pitch makes overqualification and pay the real risks.",
   "want": 6.3
+ },
+ "li-4491616339": {
+  "at": "2026-11-19T13:46:21.885820+00:00",
+  "captured_at": "2026-11-19T13:19:09.816327+00:00",
+  "company": "FactSet",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 5.0,
+   "location_visa": 8.0,
+   "seniority": 6.0,
+   "skills": 5.0,
+   "trajectory": 7.0
+  },
+  "flags": [
+   "title band: director_plus -- check the JD for actual scope and comp",
+   "Required qualifications section is truncated, so must-haves and years requirements are unverified.",
+   "Role expects Wealth Management subject-matter expertise; Tom has no wealth or investment-industry background.",
+   "Leans product marketing and launch commercialization rather than RevOps systems, weakening the post-sale ops differentiator."
+  ],
+  "id": "li-4491616339",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 5.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM strategy and commercialization, a target commercial-ops function",
+  "shot": 5.3,
+  "title": "Associate Director, Wealth GTM",
+  "verdict": "Strong brand, sponsor and pay, but a wealth-segment product-GTM role where Tom lacks the domain and product marketing record.",
+  "want": 7.1
  },
  "li-4491738228": {
   "at": "2026-11-18T01:52:09.655705+00:00",
