@@ -1,23 +1,23 @@
 # Subscription trial: comparison with the API
 
-_Updated 2026-11-19 01:52 UTC_
+_Updated 2026-11-19 13:47 UTC_
 
 ## The short version
 
-- **233 roles scored by both.** On average the trial scored **+0.03** against the API, and was off by **0.25** either way.
-- 203 of 233 were within half a point; 232 of 233 within one point.
-- 21 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
+- **243 roles scored by both.** On average the trial scored **+0.03** against the API, and was off by **0.25** either way.
+- 210 of 243 were within half a point; 242 of 243 within one point.
+- 22 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
 - **0 role(s) still waiting** for the trial to reach them.
-- 13 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
+- 14 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
 
 ## Screen (keep or kill)
 
 | | Roles |
 |---|---|
-| both kept | 249 |
-| both killed | 12 |
+| both kept | 260 |
+| both killed | 13 |
 | API kept, trial killed | 0 |
-| API killed, trial kept | 122 |
+| API killed, trial kept | 123 |
 
 ## Biggest disagreements
 
@@ -59,6 +59,7 @@ _Updated 2026-11-19 01:52 UTC_
 | Senior Revenue Operations Analyst @ Epsilon (UK-London) | 6.5 | 6.1 | +0.4 |
 | Revenue Operations Specialist @ Nebul (NL) | 6.6 | 6.0 | +0.6 |
 | Senior Revenue Operations Manager @ Climate X (UK-London) | 6.3 | 6.5 | -0.2 |
+| Senior Revenue Strategy Analyst @ Monta (UK-London) | 6.9 | 6.3 | +0.6 |
 
 ## Different side of 7.5
 
@@ -76,4 +77,4 @@ None.
 | 2026-11-16 | 29 | 27 |
 | 2026-11-17 | 37 | 34 |
 | 2026-11-18 | 60 | 58 |
-| 2026-11-19 | 39 | 39 |
+| 2026-11-19 | 53 | 52 |
