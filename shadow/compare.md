@@ -1,38 +1,38 @@
 # Subscription trial: comparison with the API
 
-_Updated 2026-11-18 13:48 UTC_
+_Updated 2026-11-19 01:52 UTC_
 
 ## The short version
 
-- **206 roles scored by both.** On average the trial scored **+0.01** against the API, and was off by **0.25** either way.
-- 181 of 206 were within half a point; 205 of 206 within one point.
+- **233 roles scored by both.** On average the trial scored **+0.03** against the API, and was off by **0.25** either way.
+- 203 of 233 were within half a point; 232 of 233 within one point.
 - 21 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
-- **1 role(s) still waiting** for the trial to reach them.
-- 10 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
+- **0 role(s) still waiting** for the trial to reach them.
+- 13 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
 
 ## Screen (keep or kill)
 
 | | Roles |
 |---|---|
-| both kept | 222 |
+| both kept | 249 |
 | both killed | 12 |
 | API kept, trial killed | 0 |
-| API killed, trial kept | 113 |
+| API killed, trial kept | 122 |
 
 ## Biggest disagreements
 
 | Role | Trial | API | Gap |
 |---|---|---|---|
 | Sales Operations Program Administrator @ Superior Glove Works Ltd (CA) | 4.2 | 3.0 | +1.2 |
+| Revenue Operations Executive @ TRYBE (UK-London) | 5.5 | 4.5 | +1.0 |
 | GTM Strategy & Ops EMEA (London) @ Clay (UK-London) | 5.6 | 6.4 | -0.8 |
 | GTM Analytics Manager @ Marqeta (CA) | 4.7 | 3.9 | +0.8 |
 | GTM Engineer @ Escalon Corp. (CA) | 5.6 | 4.8 | +0.8 |
+| Technical Customer Success Manager @ Honorlock (US-Remote) | 5.1 | 4.3 | +0.8 |
 | Senior Manager, Customer Success @ Vera Whole Health (US-Remote) | 5.9 | 6.7 | -0.8 |
 | ECH - Coordinator, Sales Operations @ Empire Homes (CA) | 3.8 | 3.0 | +0.8 |
-| Revenue Operations Regional Director @ monday.com (UK-London) | 4.7 | 5.4 | -0.7 |
-| Customer Success Manager @ Two Six Technologies (US-Remote) | 4.3 | 5.0 | -0.7 |
-| Commercial Operations Specialist @ CloudClevr Ltd (UK-London) | 5.2 | 4.5 | +0.7 |
-| Commercial Operations Analyst @ Laka (NL) | 4.8 | 5.5 | -0.7 |
+| Director, Revenue Enablement @ Tailscale (CA) | 4.5 | 3.7 | +0.8 |
+| Founding Go-to-Market Lead @ Jobgether (CA) | 3.6 | 2.9 | +0.7 |
 
 ## Different side of the 6.5 apply line
 
@@ -76,3 +76,4 @@ None.
 | 2026-11-16 | 29 | 27 |
 | 2026-11-17 | 37 | 34 |
 | 2026-11-18 | 60 | 58 |
+| 2026-11-19 | 39 | 39 |
