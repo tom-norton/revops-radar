@@ -47,8 +47,19 @@ public: no names, emails, titles or LinkedIn URLs of people go in it.
    alias can't be selected, there is no draft. The Day 7-10 message waits until it is due.
    Then "draft my due follow-ups" drafts every due one: as a reply in the Day 0 thread when
    it goes to the same person, as a new message to the recruiter otherwise.
-10. **Tom sends** each one, then types the Sent date in Touches column S. He logs Proton
-    replies himself (Reply date and Status), since no connector can read Proton.
+10. **Tom sends** each one from Proton. That's all: since 20 Nov 2026 the skill's
+    "Logging sends and replies" step runs first on every later run (or on "log my
+    touches"). Through Claude in Chrome it searches Proton's Sent folder for each queued
+    subject and fills Sent date (S), then searches for mail from each contact's address or
+    domain and fills Reply date and Status (Replied, Chat booked or Bounced; auto-replies
+    don't count). The searches are read-only and scoped to Touches contacts; no other
+    Proton mail is opened. The weekly outreach session does the same for the Outlook rows.
+    Tom can still type these cells; a filled cell is never overwritten.
+
+The Touches tab hides its formula and helper columns (D-L, O-Q, V) so Tom sees Contact ID,
+Type, Channel, Subject, Text, Send, Sent date, Reply date and Status. Two saved filter views
+narrow it further: "To send" (no Sent date) and "Awaiting reply" (sent, no reply yet). The
+scripts find columns by header, so hiding them changes nothing for code.
 
 ## In the tracker
 

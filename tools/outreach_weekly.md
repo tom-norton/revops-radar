@@ -10,9 +10,14 @@ which is public: no names, emails or titles of people go in it.
 
 Application follow-ups (Touches types "HM note" and "App follow-up", channel "Proton")
 are queued by the application-followup skill, not by this session; see
-`tools/application_followup.md`. They go out from Proton, so the Outlook reply search in step
-6 won't find their replies: Tom logs those himself. This session reads out Today section 8
-(roles scored 7.5+ still waiting for a follow-up note) and skips Proton rows in step 6.
+`tools/application_followup.md`. They go out from Proton, which the Outlook connector can't
+read, so the application-followup skill logs their sends and replies itself (its "Logging
+sends and replies" step, via Claude in Chrome). This session reads out Today section 8
+(roles scored 7.5+ still waiting for a follow-up note) and skips Proton rows in steps 0 and 6.
+
+Tom does not type Sent date, Reply date or Status on Touches any more (20 Nov 2026): step 0
+logs sends and step 6 logs replies. He can still type them by hand; a filled cell is never
+overwritten.
 
 ## Rules
 
@@ -30,6 +35,15 @@ are queued by the application-followup skill, not by this session; see
 
 ## Steps
 
+0. **Log sends.** Before reading the week, so the counts and due dates are right. With the
+   Microsoft 365 connector (read-only), for each Touches row with Channel "Email", an Email
+   (column Q) and no Sent date (S):
+   - `outlook_email_search` with `recipient` = that Email and no `folderName` or `order`.
+     Keep hits whose sender is Tom (his ESADE address, or a sender starting with `/O=`)
+     and whose subject matches the row's Subject (M). Take the earliest such hit.
+   - Write its date to S as a date (no time). No hit → leave S empty; it hasn't gone.
+   - Report "Logged [n] sends" in one line. Without the connector, say logging was skipped;
+     don't ask Tom to type dates.
 1. **Read the week.** Today tab sections 2, 3 and 7; the Keep checks tab; the signals push.
 2. **Free slots.** A slot is free when an Active company shows "Drop: next company moves up"
    on the Companies tab (two silent contacts), or Tom ends it. Set that company's Active to
@@ -67,7 +81,9 @@ are queued by the application-followup skill, not by this session; see
    - Fill Reply date and Status on the Touches row (Replied, Chat booked, or Bounced). A
      calendar acceptance counts as Chat booked; put the chat date in the contact's Chat
      Date. A bounce: set the contact's Email status to "bounced" and move to the backup.
+   - An out-of-office or auto-reply is not a reply: leave Reply date empty.
+   - Never overwrite a Reply date or Status Tom already typed.
    - Read only. Never use the connector's send, draft, delete or label tools.
-   Without the connector, ask Tom which replies came in.
+   Without the connector, say reply logging was skipped this week.
 7. **Close.** Read out the Keep checks tab (credits per contact, bounces per 20, chat rate)
    and what is due this week.
