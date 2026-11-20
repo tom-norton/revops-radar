@@ -82,7 +82,7 @@ def now_iso():
 
 def screen_prompt(job, answer_path):
     return (f"{ANSWER_RULE}\n\nANSWER FILE: {answer_path}\n\n"
-            f"===== SYSTEM =====\n{scan.SCREEN_SYSTEM}\n\n"
+            f"===== SYSTEM =====\n{scan.SCREEN_SYSTEM_SUBSCRIPTION}\n\n"
             f"===== USER =====\n{scan.job_message(job)}\n")
 
 

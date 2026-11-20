@@ -292,6 +292,35 @@ EXCLUDE_TITLE = re.compile(
     r"|intern\b|internship|working student|apprentice|graduate scheme"
     r"|\bvp\b|vice president|chief |\bsvp\b|\bevp\b", re.I)
 
+# Off-function words that a target keyword in the same title ("GTM", "Sales Enablement",
+# "Business Operations") lets through the include gate. Measured on the subscription
+# trial of 10-20 Nov 2026, where Opus deep-scored every role the screen let through:
+# 25 marketing titles topped out at 5.1, 7 engineer titles (other than GTM engineer) at
+# 5.9 and 5 gig-style evaluator / expert / hourly postings at 5.6; none was ever applied to.
+# Each still paid a screen and, more often than not, an Opus score. A title that also names
+# core RevOps keeps its place, as does any GTM engineer (Tom's call, 20 Nov 2026: they score
+# up to 6.5 and he wants to see them).
+OFF_FUNCTION_TITLE = re.compile(
+    r"\bmarketing\b|\bengineer(?:ing)?\b|\bevaluator\b|\bexpert\b"
+    r"|/\s?h(?:ou)?r\b|\bper hour\b", re.I)
+OFF_FUNCTION_ESCAPE = re.compile(
+    r"revenue operations|\brevops\b|\brev ops\b|sales operations|sales ops\b"
+    r"|sales (?:&|and) marketing operations"
+    # Strategy & Operations inside a marketing org is still S&O (the screen prompt says so).
+    r"|strateg\w*[ ,&]{1,3}(?:and[ ,&]{1,3})?(?:planning[ ,&]{1,3})?op(?:eration)?s\b"
+    r"|\bs ?& ?o\b", re.I)
+GTM_ENGINEER_TITLE = re.compile(r"\b(?:gtm|go[- ]to[- ]market)\b.*\bengineer", re.I)
+
+def off_function_title(title):
+    """The off-function word that drops this title, or "" if it stays."""
+    t = title or ""
+    m = OFF_FUNCTION_TITLE.search(t)
+    if not m or OFF_FUNCTION_ESCAPE.search(t):
+        return ""
+    if m.group(0).lower().startswith("engineer") and GTM_ENGINEER_TITLE.search(t):
+        return ""
+    return m.group(0).strip()
+
 # Europe is where Tom needs a work permit, and two kinds of role cannot realistically give
 # him one: a fully remote role, which his own hide note calls "too much of a long shot for
 # sponsorship to be a real thing", and a contract, fixed-term or interim role, which rarely
@@ -1682,6 +1711,29 @@ Be lenient - when unsure, KEEP. A wrong keep costs one cheap scoring call. A wro
 
 Reply with ONLY this JSON: {{"keep": true or false, "reason": "<max 12 words>"}}"""
 
+# The screen for the subscription (Claude Code's current Haiku). SCREEN_SYSTEM was tuned
+# against claude-haiku-4-5, which over-killed, so most of it is about what NOT to kill. The
+# newer Haiku reads all of that literally: in the subscription trial of 10-20 Nov 2026 it
+# killed 13 of 463 roles where the API's Haiku 4.5 killed 140, nearly always reasoning "the
+# title names a target function". Opus then scored the 127 roles only the API had killed at
+# 6.5 at most (median 4.3), about 28% of the trial's Opus calls. This adds the function
+# kills a target word in the title does not rule out, each one taken from those 127, and
+# leaves every protection above in force.
+SCREEN_SUBSCRIPTION_EXTRA = """A TARGET WORD IN THE TITLE IS NOT THE WHOLE ANSWER. Everything above stands: never kill on location, seniority, industry, employer, pay, skills or a retention target, and a core RevOps or Customer Success role is a KEEP. But a word like "Commercial Operations", "Business Operations", "GTM", "Go-to-Market", "Strategy" or "Customer Success" in the title does not by itself make the job commercial operations. Read what the job actually does. Kill on FUNCTION, even with a target word in the title, when the posting plainly shows one of these:
+
+- Non-commercial operations at a goods business. The work is running stores, boutiques, showrooms, stock, inventory, fleets, plants, sites or distribution for a retailer, luxury house, consumer-goods brand, manufacturer or distributor. Examples: a luxury jeweller's "Commercial Operations Project Manager" running boutique operations; a "General Manager - Sales & Commercial Operations" running a manufacturing site; a "Sales Operations Manager" whose duties are stock levels and supply chain.
+- Client-delivery consulting. The job is advising or delivering projects for the employer's clients (management, strategy, finance, sourcing or transformation consulting), not running the employer's own go-to-market. Examples: a Big Four "Go-to-Market Leader - Consulting Director"; a consultancy's "Business Strategy, Senior Principal"; a sourcing advisory "Principal Consultant of Business Operations".
+- A sales seat under a GTM or business title. The candidate carries their own revenue, bookings or new-logo number: "GTM Specialist" or "Business Developer" seats at cloud vendors, a "Head of GTM" or "GTM Director" who closes the deals personally. This is not the same as retention: a Customer Success Manager or account manager measured on NRR, renewals or expansion of an existing book is still a KEEP.
+- A support desk or service delivery under a CS or ops title. Ticket queues, member or patient service, technical troubleshooting, or delivering research to clients, rather than owning commercial outcomes with business accounts.
+- Gig work. AI-training, evaluation, annotation or "expert" review contracts, usually paid by the hour, whatever function they name.
+
+When one of these is plain from the posting, kill it, and name it in the reason ("retail store operations", "client consulting", "quota-carrying sales seat", "support desk", "gig evaluation work"). When the posting is mixed or you are unsure, KEEP.
+
+"""
+SCREEN_SYSTEM_SUBSCRIPTION = SCREEN_SYSTEM.replace(
+    "Reply with ONLY this JSON:", SCREEN_SUBSCRIPTION_EXTRA + "Reply with ONLY this JSON:")
+assert SCREEN_SYSTEM_SUBSCRIPTION != SCREEN_SYSTEM
+
 
 def score_system():
     dims = "\n\n".join(f"- {label} ({w}%): {guide}" for _, label, w, guide in RUBRIC)
@@ -3027,6 +3079,9 @@ def prefilter(title, location, country="", company=""):
     m = EXCLUDE_TITLE.search(t)
     if m:
         return f"title: excluded term '{m.group(0).strip()}'"
+    m = off_function_title(t)
+    if m:
+        return f"title: off-function term '{m}'"
     if market is None:
         return f"location: outside target markets ({location or 'unspecified'})"
     if market in EUROPE_MARKETS:

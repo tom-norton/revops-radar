@@ -4275,3 +4275,33 @@ def test_nl_account_management_never_admits_hunter_or_technical_titles():
 
 if __name__ == "__main__":
     sys.exit(_run())
+
+
+def test_off_function_titles_are_cut_before_the_screen():
+    """Subscription trial, 10-20 Nov 2026: Opus scored every role the screen let through,
+    and these titles topped out at 5.9 with none ever applied to."""
+    for t in ["Marketing Operations Manager", "GTM Product Marketing Manager EMEA",
+              "Senior Product Marketing Manager, Sales Enablement (AI & Research)",
+              "Director, Global Marketing & Sales Enablement",
+              "Business Operations Manager, Experiential Marketing",
+              "Customer Success Engineer", "Staff Software Engineer, Revenue Systems",
+              "Business Intelligence Engineer, ASP Ops - WWSO Sales & Ops",
+              "Solutions Engineer / Customer Success Manager - Law",
+              "Customer Success Operations Evaluator", "GTM Strategy Expert - Marketing",
+              "GTM Analyst - Fully Remote | Upto $160/hr"]:
+        assert scan.off_function_title(t), t
+        assert scan.prefilter(t, "London", "gb") is not None, t
+
+
+def test_off_function_cut_spares_core_titles_and_gtm_engineers():
+    """GTM engineers stay (Tom's call, 20 Nov 2026), and a title that also names core RevOps
+    or Strategy & Operations is not an off-function role."""
+    for t in ["GTM Engineer", "Go-to-market engineer GroundIQ", "GTM Engineering - ShareGate",
+              "Senior GTM AI Engineer: Revenue Automation & Insights",
+              "Sales Operations Engineer", "Marketing & Revenue Operations Lead",
+              "Sales and Marketing Operations Manager", "Global Marketing Revenue Operations Lead",
+              "Senior Strategy & Operations Manager, Prime Video Global Marketing",
+              "Revenue Operations Manager", "Senior Customer Success Manager",
+              "Key Account Manager"]:
+        assert not scan.off_function_title(t), t
+    assert scan.prefilter("GTM Engineer", "Amsterdam", "nl") is None
