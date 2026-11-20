@@ -1012,7 +1012,16 @@ RUBRIC = [
      "expedite with no fallback if it is refused. He no longer expects that route to work "
      "in time. Use 4 when the employer is large enough to absorb a delayed start or the "
      "posting signals a flexible start date; 3 when it signals urgency (immediate start, "
-     "backfill, ASAP)."),
+     "backfill, ASAP).\n"
+     "  * Outside the US, a posting that offers the role as remote -- remote-first, \"remote "
+     "or hybrid\", \"remote or Dublin office\", work from anywhere in the country -- scores 2 "
+     "below its market's band above, and never above 6. A remote hire competes with "
+     "everyone already in the country and gives the employer no reason to relocate or "
+     "sponsor anyone, and Tom has hidden every such role he was shown (Busuu NL, Kinaxis "
+     "CA, HubSpot IE, Oct-Nov 2026). A fully remote European role is dropped in code before "
+     "you see it, so this is for the mixed offers there and for any remote role in Canada. "
+     "An office-based hybrid role with the odd home day or \"flexible working\" is not a "
+     "remote offer."),
     ("trajectory", "Career Trajectory", 8,
      "Does the role advance the RevOps/GTM pivot? Pure CS maintenance is a penalty -- except "
      "in the Netherlands, where a Customer Success Manager role at any seniority, or an "
@@ -1708,7 +1717,7 @@ Nothing else is grounds for a kill. Specifically, and these are all real kills y
 - NOT the pay, or that no pay is stated.
 - NOT a skills, tooling or technical gap. A Sales Operations role that asks for AI/ML, SQL, a CRM certification or a technical background is still Sales Operations: whether the candidate has the skill is the deep scorer's Skills Match question, never a function kill. Decide the function from what the role DOES, and when a title names a target function ("Sales Operations", "Revenue Strategy", "GTM", "Monetization Strategy & Operations") and the posting is ambiguous about the rest, KEEP.
 - NOT deal desk, quote-to-cash, billing or order management duties inside a role whose TITLE names a target function. A deal desk kill needs the title to say deal desk (or quote-to-cash, billing, order management). "Revenue Operations Specialist", "Revenue Operations Analyst", "Head of Revenue Operations" and "Sales Operations Manager" are KEEPS even when the posting lists quoting, CPQ, contracts, order forms or billing among the duties: plenty of RevOps teams own the deal desk, and that is part of the job, not a different job. You killed Diligent's Revenue Operations Specialist six times, Cpl's Revenue Operations Analyst and Oliver Wyman's Regional Head of Revenue Operations this way.
-- NOT a retention target. Net revenue retention (NRR), gross retention, renewal rates, churn and expansion targets are how customer success and RevOps are measured; they are not a sales quota. A Customer Success Manager who "drives NRR through upsell" or owns renewals and expansion is a KEEP, not quota-carrying sales. A quota kill needs the posting to put the candidate on a new-business or bookings number of their own, in a role whose title is a sales seat. You killed Trulioo's Senior Customer Success Manager as "quota-carrying sales: drives net revenue retention through upsell" the same week Tom applied to Trulioo's Strategic CSM.
+- NOT a retention target. Net revenue retention (NRR), gross retention, renewal rates, churn and expansion targets are how customer success and RevOps are measured; they are not a sales quota. A Customer Success Manager who "drives NRR through upsell" or owns renewals and expansion is a KEEP, not quota-carrying sales. A quota kill needs the posting to put the candidate on a new-business or bookings number of their own, in a role whose title is a sales seat. You killed Trulioo's Senior Customer Success Manager as "quota-carrying sales: drives net revenue retention through upsell" the same week Tom applied to Trulioo's Strategic CSM. The same goes for pay: a commission plan, incentive or variable bonus on a Customer Success role is how it is paid, not a quota. You killed ServiceChannel's Customer Success Manager as "quota-carrying sales: sales incentives/commissions structure".
 - NOT "function unclear". When the TITLE says Sales Operations, Revenue Operations, RevOps or Revenue Strategy, the title has settled the function: a kill needs the posting to show plainly that the work is something else, and a reason like "function unclear", "ambiguous", or a reading of the employer's business ("advertising services") is a KEEP. You killed Epsilon's Senior Revenue Operations Analyst as "function unclear: advertising services" and LSEG's Sales Operations Lead as a "data engineering role", both on titles that name core RevOps.
 - NOT "technical" customer success. A Customer Success Manager at a B2B software or hardware-plus-software company is in scope even when the posting calls the role technical, mentions APIs, integrations, IoT or onboarding engineers, or asks for a technical background. That is a Skills Match question for the deep scorer. Kill a customer success role only when it is really support-desk ticket handling or field engineering under a CS name.
 
@@ -4996,6 +5005,14 @@ _KILL_QUOTA = re.compile(r"quota", re.I)
 _KILL_RETENTION = re.compile(r"\bn?nrr\b|net (?:revenue|dollar) retention|\bretention\b"
                              r"|\brenewals?\b|\bchurn\b", re.I)
 _KILL_SALES = re.compile(r"quota|\bsales\b|upsell|bookings|commission", re.I)
+# Review of 16 Nov 2026: ServiceChannel's Customer Success Manager killed as "quota-carrying
+# sales: sales incentives/commissions structure". Plenty of CSM plans pay commission or a
+# variable bonus on renewals and expansion; that is pay, not a new-business number.
+_KILL_PAY = re.compile(r"commission|incentive|variable (?:pay|comp)|\bote\b"
+                       r"|on[- ]target earnings|\bbonus", re.I)
+_KILL_NEW_BUSINESS = re.compile(r"new[- ]?(?:logo|business|customer acquisition)|\bhunt"
+                                r"|prospect|cold|outbound|pipeline gen|bookings|close deals"
+                                r"|closing deals|\bacquisition", re.I)
 _KILL_UNCLEAR = re.compile(r"unclear|ambiguous|not clear|uncertain|vague", re.I)
 # The only seniority kill the prompt allows.
 _EARLY_CAREER_TITLE = re.compile(r"\bintern(?:ship)?\b|graduate|apprentice|working student"
@@ -5016,6 +5033,12 @@ def overrule_kill(title, reason):
     if ((is_csm_title(title) or revops_core_title(title))
             and _KILL_RETENTION.search(reason) and _KILL_SALES.search(reason)):
         return "sales kill on a retention target, but retention and NRR are not a quota"
+    # Same misread, on pay: commission or incentive pay on a CS title is not a quota unless
+    # the reason itself names new-business selling. CS titles only; a sales seat that pays
+    # commission is a sales seat.
+    if (is_csm_title(title) and _KILL_PAY.search(reason)
+            and not _KILL_NEW_BUSINESS.search(reason)):
+        return "sales kill on commission or incentive pay, but a CS pay plan is not a quota"
     # The function rules only bind where the title names a core target function, which is
     # how the prompt words them. "Head of GTM" or "Renewals Representative" killed as a
     # quota-carrying seat is a function call the screen is allowed to make.
