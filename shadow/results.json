@@ -2649,6 +2649,66 @@
   "stage": "below-visa-floor",
   "title": "Sales Operations Coordinator"
  },
+ "az-gb-5972709461": {
+  "at": "2026-11-20T13:46:47.284481+00:00",
+  "captured_at": "2026-11-20T13:21:30.054368+00:00",
+  "company": "Ashbury",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 3.0,
+   "location_visa": 6.0,
+   "seniority": 1.0,
+   "skills": 4.0,
+   "trajectory": 2.0
+  },
+  "flags": [
+   "model read the function as off-target",
+   "title band: specialist -- check the JD for actual scope and comp",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Posting explicitly targets recent graduates; 11 years plus MBA will likely be screened out as overqualified.",
+   "Duties are training, finance and IT administration, not RevOps or GTM ownership."
+  ],
+  "id": "az-gb-5972709461",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 3.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Business operations coordinator with sales support and account management duties",
+  "shot": 2.8,
+  "title": "Business Operations Coordinator",
+  "verdict": "Graduate admin generalist role at a small training firm; junior, off-target and nowhere near Tom's level. Skip.",
+  "want": 4.3
+ },
+ "az-gb-5972737293": {
+  "at": "2026-11-20T13:46:47.284626+00:00",
+  "captured_at": "2026-11-20T13:21:28.730840+00:00",
+  "company": "WTW",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 4.0,
+   "location_visa": 6.0,
+   "seniority": 6.0,
+   "skills": 4.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is internal risk, controls and business continuity operations in consulting, not revenue or GTM operations.",
+   "WTW is a large sponsor under other legal entities; the register miss is likely a naming issue."
+  ],
+  "id": "az-gb-5972737293",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 4.6,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Business operations management role; title names an in-scope business operations",
+  "shot": 4.5,
+  "title": "Global Business Operations Manager - Consulting",
+  "verdict": "Risk, controls and continuity ops in a consulting firm; off the RevOps pivot and light on matching experience. Skip.",
+  "want": 4.9
+ },
  "az-nl-5961926126": {
   "at": "2026-11-12T01:48:06.848308+00:00",
   "captured_at": "2026-11-11T17:55:53.234420+00:00",
@@ -3009,6 +3069,36 @@
   "verdict": "Strong brand and pay, but this is a revenue-systems product-owner seat; his tool ownership is personal projects, not production stacks.",
   "want": 7.0
  },
+ "gh-klaviyo-8040122003": {
+  "at": "2026-11-20T13:46:47.284742+00:00",
+  "captured_at": "2026-11-20T13:21:30.840430+00:00",
+  "company": "Klaviyo",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 7.0,
+   "seniority": 5.0,
+   "skills": 5.0,
+   "trajectory": 3.0
+  },
+  "flags": [
+   "band 56000-84000 GBP starts below your 70000 GBP floor -- only the top half clears it",
+   "Role is martech advisory on email/SMS revenue strategy; Tom's GRC/legal post-sale background lacks hands-on marketing execution.",
+   "2+ years ask against 11 years plus MBA signals a mid-level seat and overqualification screening risk.",
+   "Band straddles the GBP 70,000 Skilled Worker floor; an offer must land in the upper half."
+  ],
+  "id": "gh-klaviyo-8040122003",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 5.6,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success Manager at B2B SaaS: commercial customer success function, in s",
+  "shot": 5.4,
+  "title": "Customer Success Manager - Mid/ Large Enterprise",
+  "verdict": "Strong brand and sponsor, but a mid-level lateral martech CSM seat that does nothing for the RevOps pivot.",
+  "want": 5.9
+ },
  "gh-logicgate-4750561005": {
   "at": "2026-11-20T01:46:03.334646+00:00",
   "captured_at": "2026-11-20T01:17:42.350791+00:00",
@@ -3155,6 +3245,35 @@
   "title": "Customer Success Manager, Canada Strategic Account Services",
   "verdict": "Lateral, non-SaaS seller account management in Canada at a mid-level band; strong brand, but it does nothing for the RevOps pivot.",
   "want": 4.1
+ },
+ "hc-adhoc___amazon___10609974": {
+  "at": "2026-11-20T13:46:47.284841+00:00",
+  "captured_at": "2026-11-20T13:21:44.626994+00:00",
+  "company": "Amazon Advertising Canada Inc.",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 4.0,
+   "location_visa": 4.0,
+   "seniority": 6.0,
+   "skills": 4.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "Basic qualifications look copy-pasted from an AWS role; the real screen is likely ad-tech and video sponsorship experience.",
+   "Role is sponsorship program and campaign management for Prime Video, closer to ad ops than RevOps.",
+   "Owning senior review mechanisms like CPRs and WBRs is an operating-rhythm role Tom has only contributed to."
+  ],
+  "id": "hc-adhoc___amazon___10609974",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 4.5,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement and GTM operations role; in target function.",
+  "shot": 4.5,
+  "title": "Sales Enablement, Brand Partnership Video Strategy and GTM",
+  "verdict": "Ad-tech sponsorship program ops at Amazon Toronto; video ads and adtech sales requirements he lacks make this a weak Canada long shot.",
+  "want": 4.6
  },
  "hc-adhoc___atlassian___26313": {
   "at": "2026-11-19T01:49:29.389791+00:00",
