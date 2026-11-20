@@ -5758,6 +5758,36 @@
   "verdict": "Renewal and QBR work matches NAVEX well, but the warehouse-industry prerequisite and 60% travel make this a weak runway bet.",
   "want": 4.5
  },
+ "hc-lever___zocks___2fb04501-b32e-4a30-85ec-85b9c821bbfe": {
+  "at": "2026-11-20T01:49:56.264872+00:00",
+  "captured_at": "2026-11-20T01:18:00.634418+00:00",
+  "company": "Zocks",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 8.0,
+   "location_visa": 5.0,
+   "seniority": 7.0,
+   "skills": 7.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "CSM in US-Remote at a non-standout company",
+   "Remote only for residents of listed states; Tom must reside in one of them at hire.",
+   "Venture-backed startup selling to wealth managers; enterprise bank exposure at NAVEX helps but wealthtech experience is the stated plus.",
+   "$40K variable target means meaningful pay at risk on adoption and expansion outcomes."
+  ],
+  "id": "hc-lever___zocks___2fb04501-b32e-4a30-85ec-85b9c821bbfe",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 6.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Enterprise customer success at B2B SaaS, in-scope CS function",
+  "shot": 7.4,
+  "title": "Enterprise Customer Success Manager",
+  "verdict": "Solid US runway CSM role clearing the CS floor comfortably; enterprise bank accounts map well, but it is lateral with no pivot value.",
+  "want": 5.7
+ },
  "hc-oraclecloud___edel.fa.us2___24954": {
   "at": "2026-11-16T13:46:35.857568+00:00",
   "captured_at": "2026-11-16T13:14:47.423841+00:00",
@@ -7784,6 +7814,65 @@
   "screen_reason": "quota-carrying sales: sales representative with prospecting and new-business tar",
   "title": "Renewal Sales Representative (German and English speaking)"
  },
+ "js-https-ie-indeed-com-viewjob-jk-9dd7aca264a0ff17": {
+  "at": "2026-11-20T01:49:56.265150+00:00",
+  "captured_at": "2026-11-19T17:43:48.748396+00:00",
+  "company": "ServiceNow",
+  "dimensions": {
+   "domain": 9.0,
+   "experience": 6.0,
+   "location_visa": 8.0,
+   "seniority": 5.0,
+   "skills": 6.0,
+   "trajectory": 8.0
+  },
+  "flags": [
+   "title band: analyst -- check the JD for actual scope and comp",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Owning the international sales forecasting process exceeds his contributor-only forecasting scope; expect probing in interview.",
+   "Role is the go-to resource for BI tools; he claims no BI tooling beyond Excel and basic SQL."
+  ],
+  "id": "js-https-ie-indeed-com-viewjob-jk-9dd7aca264a0ff17",
+  "market": "IE",
+  "outcome": "scored",
+  "score": 6.5,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales Operations title, core RevOps function; keep for scoring",
+  "shot": 5.7,
+  "title": "Senior Sales Operations Analyst",
+  "verdict": "Tier-1 SaaS Sales Ops seat in Dublin, but no dedicated Sales Ops tenure and analyst-level scope make screening uncertain.",
+  "want": 8.3
+ },
+ "js-https-nl-indeed-com-viewjob-jk-1d691e5a3e1de9c2": {
+  "at": "2026-11-20T01:49:56.265455+00:00",
+  "captured_at": "2026-11-19T17:43:41.813158+00:00",
+  "company": "Ayvens",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 4.0,
+   "location_visa": 6.0,
+   "seniority": 4.0,
+   "skills": 4.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "band 52800-74400 EUR starts below your 71304 EUR floor -- only the top half clears it",
+   "Car leasing and fleet supply business, not B2B SaaS; post-sale SaaS experience transfers only partly.",
+   "Monthly salary band of 4,400-6,200 converted to annual base; lower half sits below the HSM floor."
+  ],
+  "id": "js-https-nl-indeed-com-viewjob-jk-1d691e5a3e1de9c2",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 4.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Commercial account management and propositions leadership; title names account m",
+  "shot": 4.0,
+  "title": "Manager Supply Account Management",
+  "verdict": "People-manager role running fleet, supply and pricing at a leasing company; off his SaaS lane with a 12-person team gap.",
+  "want": 4.8
+ },
  "js-https-nl-indeed-com-viewjob-jk-3790ed963b910db4": {
   "at": "2026-11-17T13:45:25.726800+00:00",
   "captured_at": "2026-11-17T13:22:01.758819+00:00",
@@ -7854,6 +7943,20 @@
   "title": "Revenue Operations Manager",
   "verdict": "Strong tool overlap with HubSpot, Clay and Zapier in a hands-on RevOps seat; production admin depth and US comp are the risks.",
   "want": 6.1
+ },
+ "js-https-www-indeed-com-viewjob-jk-43239c4fa7cccfc2": {
+  "at": "2026-11-20T01:49:56.265541+00:00",
+  "captured_at": "2026-11-20T01:17:54.995279+00:00",
+  "company": "Argyle",
+  "id": "js-https-www-indeed-com-viewjob-jk-43239c4fa7cccfc2",
+  "market": "US-Remote",
+  "outcome": "dropped",
+  "reason": "stated salary 80000-90000 USD entirely below the 100000 USD RevOps floor for taking a US-Remote role at all",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue Operations Analyst: title names core RevOps function, keep",
+  "stage": "below-comp-floor",
+  "title": "Revenue Operations Analyst"
  },
  "js-https-www-indeed-com-viewjob-jk-486223843440e38c": {
   "at": "2026-11-19T13:46:21.885528+00:00",
@@ -8106,6 +8209,36 @@
   "title": "Sales & Revenue Operations Coordinator",
   "verdict": "Canadian coordinator role mixing new-logo prospecting with sales ops at a medical device maker; below target scope, skip.",
   "want": 3.9
+ },
+ "li-4475471025": {
+  "at": "2026-11-20T01:49:56.265768+00:00",
+  "captured_at": "2026-11-19T17:43:51.659040+00:00",
+  "company": "Momentus Technologies",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 6.0,
+   "location_visa": 6.0,
+   "seniority": 3.0,
+   "skills": 6.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "title band: analyst -- check the JD for actual scope and comp",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Junior execution-heavy support role; a 1-2 year experience bar makes an 11-year MBA candidate an overqualification screen risk.",
+   "Large share of the role is quote building and deal review, closer to deal desk than strategic RevOps."
+  ],
+  "id": "li-4475471025",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 5.4,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales Operations title names a target function; CRM and sales tooling work. Keep",
+  "shot": 5.2,
+  "title": "Sales Operations Analyst",
+  "verdict": "Junior sales-ops support seat with deal-desk duties; real foot in the door, but comp almost certainly misses the visa floor.",
+  "want": 5.7
  },
  "li-4476311952": {
   "at": "2026-11-19T13:46:21.885574+00:00",
@@ -10990,6 +11123,97 @@
   "shot": 5.3,
   "title": "Associate Director, Wealth GTM",
   "verdict": "Strong brand, sponsor and pay, but a wealth-segment product-GTM role where Tom lacks the domain and product marketing record.",
+  "want": 7.1
+ },
+ "li-4491624514": {
+  "at": "2026-11-20T01:49:56.265966+00:00",
+  "captured_at": "2026-11-19T17:43:45.991469+00:00",
+  "company": "Ayvens",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 3.0,
+   "location_visa": 6.0,
+   "seniority": 3.0,
+   "skills": 4.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "band 52800-74400 EUR starts below your 71304 EUR floor -- only the top half clears it",
+   "Role spans fleet, supply and pricing operations in vehicle leasing, far from SaaS post-sale work.",
+   "Posting is written entirely in Dutch, so day-to-day Dutch use is likely even though not stated."
+  ],
+  "id": "li-4491624514",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 3.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Commercial account management and pricing manager role; keep for scoring.",
+  "shot": 3.3,
+  "title": "Manager Supply Account Management",
+  "verdict": "A 12-person people-management role in vehicle leasing wanting five years of leadership; a clear mismatch, skip.",
+  "want": 4.8
+ },
+ "li-4491648003": {
+  "at": "2026-11-20T01:49:56.266172+00:00",
+  "captured_at": "2026-11-19T17:43:39.295093+00:00",
+  "company": "Checkout.com",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 9.0,
+   "seniority": 5.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "title band: specialist -- check the JD for actual scope and comp",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is heavy on training delivery, video and e-learning content production, and event support, which goes beyond Tom's process and analytics evidence.",
+   "Supports Enablement leads with ad hoc requests, so ownership is partial and the 3+ years bar invites an overqualification screen.",
+   "Payments knowledge (acquiring, issuing, schemes) is desired; Tom has no payments background."
+  ],
+  "id": "li-4491648003",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 6.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue enablement is an in-scope function; keep for deep scoring.",
+  "shot": 5.7,
+  "title": "EEA Revenue Enablement Senior Specialist",
+  "verdict": "Strong-brand NL sponsor in a RevOps-adjacent enablement seat, but junior-leaning and content-heavy; worth applying, not a bullseye.",
+  "want": 7.5
+ },
+ "li-4491662475": {
+  "at": "2026-11-20T01:49:56.266437+00:00",
+  "captured_at": "2026-11-20T01:17:51.679326+00:00",
+  "company": "Datasite",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 8.0,
+   "seniority": 6.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "title band: specialist -- check the JD for actual scope and comp",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Enablement here centres on new-logo AE and BDR onboarding and call coaching, away from his post-sale differentiator.",
+   "No Seismic experience, and the role owns Seismic governance and content management.",
+   "Role sits in Grata Intelligence, a fast-growing acquired unit, with up to 20% travel."
+  ],
+  "id": "li-4491662475",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 6.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement function, a named target track; keep for deep scoring.",
+  "shot": 6.0,
+  "title": "Senior Sales Enablement Specialist",
+  "verdict": "Plausible London enablement stretch with a real sponsor; his training and playbook work fits, but no dedicated enablement or sales tenure.",
   "want": 7.1
  },
  "li-4491738228": {
