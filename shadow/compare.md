@@ -1,23 +1,23 @@
 # Subscription trial: comparison with the API
 
-_Updated 2026-11-20 01:51 UTC_
+_Updated 2026-11-20 13:49 UTC_
 
 ## The short version
 
-- **266 roles scored by both.** On average the trial scored **+0.04** against the API, and was off by **0.25** either way.
-- 231 of 266 were within half a point; 265 of 266 within one point.
-- 25 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
-- **0 role(s) still waiting** for the trial to reach them.
-- 15 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
+- **287 roles scored by both.** On average the trial scored **+0.04** against the API, and was off by **0.25** either way.
+- 250 of 287 were within half a point; 286 of 287 within one point.
+- 27 landed on different sides of the 6.5 apply line; 0 on different sides of 7.5.
+- **1 role(s) still waiting** for the trial to reach them.
+- 16 trial result(s) have no API outcome to compare against (the API has not reached them yet, or its record has aged out).
 
 ## Screen (keep or kill)
 
 | | Roles |
 |---|---|
-| both kept | 286 |
+| both kept | 307 |
 | both killed | 13 |
 | API kept, trial killed | 0 |
-| API killed, trial kept | 126 |
+| API killed, trial kept | 127 |
 
 ## Biggest disagreements
 
@@ -31,8 +31,8 @@ _Updated 2026-11-20 01:51 UTC_
 | Technical Customer Success Manager @ Honorlock (US-Remote) | 5.1 | 4.3 | +0.8 |
 | Senior Manager, Customer Success @ Vera Whole Health (US-Remote) | 5.9 | 6.7 | -0.8 |
 | ECH - Coordinator, Sales Operations @ Empire Homes (CA) | 3.8 | 3.0 | +0.8 |
+| Program Manager Operations - Risk Adj-Customer Success @ Cotiviti (US-Remote) | 4.6 | 3.8 | +0.8 |
 | Director, Revenue Enablement @ Tailscale (CA) | 4.5 | 3.7 | +0.8 |
-| Founding Go-to-Market Lead @ Jobgether (CA) | 3.6 | 2.9 | +0.7 |
 
 ## Different side of the 6.5 apply line
 
@@ -54,6 +54,7 @@ _Updated 2026-11-20 01:51 UTC_
 | Revenue Operations Manager @ Henry Schein One (CA) | 6.3 | 6.6 | -0.3 |
 | Senior Sales Operations Analyst @ ServiceNow (IE) | 6.5 | 6.4 | +0.1 |
 | Revenue Operations Manager @ Snappy Kraken (US-Remote) | 6.4 | 6.7 | -0.3 |
+| Strategy and Operations Analyst II, Revenue Operations Strategy @ Qualtrics (UK-London) | 6.6 | 6.3 | +0.3 |
 | Sales Operations Manager @ ivee (UK-London) | 6.4 | 6.9 | -0.5 |
 | Sales Operations Manager @ Haystack (CA) | 6.3 | 6.7 | -0.4 |
 | Customer Success Operations Manager @ Jobgether (CA) | 6.4 | 6.6 | -0.2 |
@@ -63,6 +64,7 @@ _Updated 2026-11-20 01:51 UTC_
 | Senior Revenue Operations Manager @ Climate X (UK-London) | 6.3 | 6.5 | -0.2 |
 | Senior Revenue Strategy Analyst @ Monta (UK-London) | 6.9 | 6.3 | +0.6 |
 | Sales Operations Lead @ Watershed (UK-London) | 6.4 | 6.6 | -0.2 |
+| Sales Operations Specialist @ Jobgether (IE) | 6.4 | 6.7 | -0.3 |
 
 ## Different side of 7.5
 
@@ -81,4 +83,4 @@ None.
 | 2026-11-17 | 37 | 34 |
 | 2026-11-18 | 60 | 58 |
 | 2026-11-19 | 53 | 52 |
-| 2026-11-20 | 30 | 30 |
+| 2026-11-20 | 53 | 53 |
