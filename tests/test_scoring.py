@@ -2284,6 +2284,17 @@ def test_the_location_dimension_states_a_band_for_every_market():
     assert "preference" in guide
 
 
+def test_a_remote_offer_outside_the_us_loses_location_points():
+    """Review of 16 Nov 2026: Tom hid Busuu (NL), Kinaxis (CA) and HubSpot (IE) as "remote",
+    and the scorer had flagged HubSpot as "remote or Dublin hybrid" and still given Location
+    & Visa 8. The rubric has to mark a remote offer down outside the US, and the profile
+    must no longer call a remote Canadian role as good as an on-site one."""
+    guide = dict((k, g) for k, _l, _w, g in scan.RUBRIC)["location_visa"]
+    assert "offers the role as remote" in guide
+    assert "never above 6" in guide
+    assert "remote or on-site" not in scan.load_profile()
+
+
 def test_the_us_transfer_case_is_reachable_from_the_prompt():
     """The rubric promises a "Transfer" field for the US 4-5 band. If job_message() stops
     emitting it under that name, the band becomes unreachable and every US role floors at
@@ -3994,6 +4005,10 @@ def test_code_overrules_the_kills_the_screen_prompt_forbids():
         ("Senior Customer Success Manager", "quota-carrying sales: drives net revenue "
                                             "retention through upsell"),
         ("Senior Revenue Operations Analyst", "function unclear: advertising services"),
+        # Review of 16 Nov 2026: ServiceChannel. A commission plan is not a new-business quota.
+        ("Customer Success Manager", "quota-carrying sales: sales incentives/commissions "
+                                     "structure"),
+        ("Senior Customer Success Manager", "Quota-carrying role with variable incentive pay"),
     ]
     for title, reason in overruled:
         assert scan.overrule_kill(title, reason), title
@@ -4011,6 +4026,11 @@ def test_code_overrules_the_kills_the_screen_prompt_forbids():
         ("Operations Manager", "Function unclear: likely warehouse operations"),
         # A CSM killed on something other than a sales reading is the screen's call.
         ("Customer Success Manager", "Support desk ticket handling, not retention"),
+        # Commission on a CSM stands when the reason names new-business selling, and the
+        # commission guard never reaches a sales-seat title.
+        ("Customer Success Manager", "Quota-carrying: commission on new logo bookings"),
+        ("Customer Success Manager", "Hunting role, prospecting with commission plan"),
+        ("Account Executive", "Quota-carrying sales with a commission plan"),
     ]
     for title, reason in stands:
         assert not scan.overrule_kill(title, reason), title

@@ -178,10 +178,16 @@ these are the facts behind them.
   hires in the Netherlands, Ireland or London, because an internal transfer later is a
   route to Europe without changing employer and sponsorship is a lighter ask once they
   know you.
-- Canada: anywhere in the country, remote or on-site. No sponsorship needed (citizen), but
+- Canada: anywhere in the country, on-site or hybrid. No sponsorship needed (citizen), but
   the certificate is unproven and the expedite is discretionary, and Tom no longer expects
   that route to work in time. Below the US now. Score 3-4, and only a genuinely strong fit
   is worth his time.
+
+Remote offers outside the US (review of 16 Nov 2026): a role offered as remote in Europe or
+Canada, "remote or hybrid" and "remote or [city] office" included, is a weaker basis for a
+move or a permit than an office job, and Tom has hidden every one he was shown (Busuu NL,
+Kinaxis CA, HubSpot IE). Fully remote European roles are dropped before scoring. The mixed
+offers, and remote Canadian roles, lose two points on Location & Visa and never score above 6.
 
 Reject entirely: Germany, Spain, other UK cities, on-site or hybrid US roles,
 remote-from-anywhere, and remote-EMEA roles.
