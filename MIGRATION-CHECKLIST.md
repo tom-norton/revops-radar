@@ -12,7 +12,7 @@ plus your own notes on how much of your weekly Pro limit it used. Then you decid
 
 ## Before the trial (about 5 minutes)
 
-### ☐ 1. Merge the pull request
+### ☑ 1. Merge the pull request
 This turns on one small addition: each scan now also saves the roles it's about to score,
 for the trial to pick up. Nothing else about the radar changes.
 
@@ -22,17 +22,34 @@ On your phone (GitHub app) or PC (github.com):
 3. Scroll to the bottom and tap **Merge pull request**, then **Confirm merge**.
 4. If it asks you to delete the branch, tap **Delete branch**. That's safe.
 
-### ☐ 2. Tell Claude it's merged
-Go back to the Claude Code session where this was built and say **"merged"**. Claude will:
-- create the scheduled task, twice a day at about 9:47am and 9:17pm Eastern
-- run it once straight away to check everything works, including whether your Pro plan can
-  use the Opus model for scoring (if it can't, Claude stops and tells you rather than
-  quietly using a different model)
+### ☑ 2. Tell Claude it's merged
+✅ Done 10 Nov. (You told Claude "merged".) Claude has:
+- created the scheduled tasks: **8:30am and 8:30pm on weekdays, 9:30am on weekends**
+  (Eastern). The 8:30am run picks up the 8am scan. The evening scan sometimes isn't finished
+  by 8:30pm; when that happens, its roles are scored the next morning. Nothing is missed.
+- run two tests to check the plumbing. They found one problem, which step 2b fixes. The
+  trial runs can read the repo but aren't allowed to save their results to it.
 
-If the app asks you to **approve** creating a scheduled task, tap **Allow**.
+### ☑ 2b. Attach the repo to the two trial tasks (about 1 minute)
+✅ Done 10 Nov. A test run then saved its results to GitHub, and the weekday task is back on.
+The first real scoring run is 8:30am on 10 Nov.
 
-### ☐ 3. Check the first run worked
-Claude will tell you, but if you want to see it yourself:
+On claude.ai/code (phone browser or PC). The labels may differ slightly:
+1. Open **Scheduled tasks** (it may be called **Routines**).
+2. Open **RevOps Radar trial (weekdays)** and tap **Edit**.
+3. Under **Repository**, choose **tom-norton/revops-radar**, then tap **Save**.
+4. Do the same for **RevOps Radar trial (weekends)**.
+5. Go back to the Claude Code session where this was built and say **"attached"**. Claude
+   then checks it worked, switches the weekday task back on, and runs it once to confirm.
+   That first run also shows whether your Pro plan can use the Opus model for scoring. If it
+   can't, the trial stops and says so rather than quietly using a different model.
+
+### ☑ 3. Check the first run worked
+✅ 10 Nov, 8:30am run: it screened and deep-scored 15 roles in about 4 minutes, with Opus
+available on Pro, no usage limit hit, and nothing left waiting. On the 9 roles both sides
+scored, the trial was within half a point of the API every time.
+
+To look at a run yourself:
 - In the Claude app, open **Code**. The trial runs show up as sessions. Open the newest one
   and scroll to the bottom for its three-line summary.
 
