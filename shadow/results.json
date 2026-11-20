@@ -1,4 +1,33 @@
 {
+ "as-harvey-29d8945b-dbc8-48d1-b7fe-5a9f0b7517ed": {
+  "at": "2026-11-20T01:46:03.333857+00:00",
+  "captured_at": "2026-11-19T17:43:37.048588+00:00",
+  "company": "Harvey",
+  "dimensions": {
+   "domain": 10.0,
+   "experience": 7.0,
+   "location_visa": 8.0,
+   "seniority": 8.0,
+   "skills": 7.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Posting expects demonstrable AI-native daily working; lead with the Claude-powered GTM diagnostic tool as evidence.",
+   "Portfolio spans UK, European and international firms, so expect frequent in-person executive meetings and travel."
+  ],
+  "id": "as-harvey-29d8945b-dbc8-48d1-b7fe-5a9f0b7517ed",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 7.4,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success Manager role at B2B software company; in-scope customer success",
+  "shot": 7.3,
+  "title": "Customer Success Manager, Enterprise, Law Firms, EMEA",
+  "verdict": "Strong legal-tech CSM fit at a tier-1 London sponsor; law-firm versus corporate-legal experience is the screening risk.",
+  "want": 7.9
+ },
  "as-notion-20490f51-73af-402e-b25c-47ee10b9b055": {
   "at": "2026-11-13T15:00:27.715283+00:00",
   "captured_at": "2026-11-13T13:25:02.634450+00:00",
@@ -28,6 +57,35 @@
   "title": "Sales Strategy and Operations Manager, EMEA",
   "verdict": "Tier-1 SaaS field strategy role in Dublin that builds the pivot; the dedicated ops-tenure screen is the real hurdle.",
   "want": 8.6
+ },
+ "as-vanta-94ffa2d9-5d03-4b5d-8952-d421e080cbd2": {
+  "at": "2026-11-20T01:46:03.334063+00:00",
+  "captured_at": "2026-11-19T17:43:37.045838+00:00",
+  "company": "Vanta",
+  "dimensions": {
+   "domain": 10.0,
+   "experience": 5.0,
+   "location_visa": 8.0,
+   "seniority": 6.0,
+   "skills": 5.0,
+   "trajectory": 7.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Enablement is a pre-sale, sales-methodology function; his enablement evidence is CS-side (QBR format, playbooks, SME briefings), not sales training.",
+   "Senior title with dedicated enablement tenure expected; a screener may read CS/AM history as no enablement seat at all."
+  ],
+  "id": "as-vanta-94ffa2d9-5d03-4b5d-8952-d421e080cbd2",
+  "market": "IE",
+  "outcome": "scored",
+  "score": 6.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue enablement management is an in-scope target function",
+  "shot": 5.3,
+  "title": "Senior Revenue Enablement Manager, EMEA",
+  "verdict": "Home-domain tier-1 employer in Dublin, but no dedicated sales enablement tenure or EMEA field experience; a long-shot stretch.",
+  "want": 8.4
  },
  "az-ca-5959235378": {
   "at": "2026-11-11T13:44:58.102447+00:00",
@@ -2577,6 +2635,20 @@
   "stage": "eu-remote",
   "title": "Head of Sales Operations UK/EMEA"
  },
+ "az-gb-5972085245": {
+  "at": "2026-11-20T01:46:03.334137+00:00",
+  "captured_at": "2026-11-20T01:17:50.181664+00:00",
+  "company": "Avolites Ltd",
+  "id": "az-gb-5972085245",
+  "market": "UK-London",
+  "outcome": "dropped",
+  "reason": "stated salary 32000-37000 GBP entirely below the UK-London visa floor (70000 GBP)",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales operations: distributor orders, forecasting and CRM upkeep",
+  "stage": "below-visa-floor",
+  "title": "Sales Operations Coordinator"
+ },
  "az-nl-5961926126": {
   "at": "2026-11-12T01:48:06.848308+00:00",
   "captured_at": "2026-11-11T17:55:53.234420+00:00",
@@ -2749,6 +2821,49 @@
   "verdict": "NL sales-enablement role at a staffing giant; weak domain and SME fit, apply only if pipeline is thin.",
   "want": 6.3
  },
+ "az-nl-5971906224": {
+  "at": "2026-11-20T01:46:03.334187+00:00",
+  "captured_at": "2026-11-19T17:43:47.185136+00:00",
+  "company": "Jobgether",
+  "id": "az-nl-5971906224",
+  "market": "NL",
+  "outcome": "dropped",
+  "reason": "deep score: the posting describes a fully remote role, which is too weak a basis for a European work permit",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success leadership; commercial retention and expansion ownership, in-sc",
+  "stage": "eu-remote",
+  "title": "Customer Success Director"
+ },
+ "az-nl-5971907590": {
+  "at": "2026-11-20T01:46:03.334300+00:00",
+  "captured_at": "2026-11-19T17:43:44.485655+00:00",
+  "company": "Cato Networks",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 3.0,
+   "location_visa": 9.0,
+   "seniority": 6.0,
+   "skills": 4.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Product marketing role with heavy technical messaging; sits closer to marketing than RevOps despite the GTM framing.",
+   "Right-hand to VP Sales EMEA implies seasoned field-facing enablement credibility Tom has not built in cybersecurity."
+  ],
+  "id": "az-nl-5971907590",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 4.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "GTM title with sales enablement and pipeline duties; target function",
+  "shot": 4.1,
+  "title": "GTM Product Marketing Manager EMEA",
+  "verdict": "Cybersecurity product marketing needing five years of security GTM and SASE depth; Tom's CS background and the NL sponsor cannot bridge that.",
+  "want": 6.6
+ },
  "bd-re-lansweeper-weeper-com-o-gtm-applications-specialist-c-new": {
   "at": "2026-11-11T01:46:05.399659+00:00",
   "captured_at": "2026-11-10T17:41:21.017399+00:00",
@@ -2865,6 +2980,65 @@
   "title": "Customer Success Engineer",
   "verdict": "Technical DevSecOps consulting role at a strong brand; Tom lacks the engineering depth and it does nothing for the RevOps pivot.",
   "want": 4.8
+ },
+ "gh-gitlab-8945942002": {
+  "at": "2026-11-20T01:46:03.334482+00:00",
+  "captured_at": "2026-11-20T01:17:59.757442+00:00",
+  "company": "GitLab",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 5.0,
+   "location_visa": 5.5,
+   "seniority": 7.0,
+   "skills": 5.0,
+   "trajectory": 8.0
+  },
+  "flags": [
+   "Body describes a Revenue Technology Manager: an internal product-owner role running roadmaps and requirements with Engineering, not classic RevOps.",
+   "Consumption-metrics focus echoes his usage reconciliation work at NAVEX, a talking point worth leading with."
+  ],
+  "id": "gh-gitlab-8945942002",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 6.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue operations manager role; title names core RevOps function",
+  "shot": 5.5,
+  "title": "Revenue Operations Manager",
+  "verdict": "Strong brand and pay, but this is a revenue-systems product-owner seat; his tool ownership is personal projects, not production stacks.",
+  "want": 7.0
+ },
+ "gh-logicgate-4750561005": {
+  "at": "2026-11-20T01:46:03.334646+00:00",
+  "captured_at": "2026-11-20T01:17:42.350791+00:00",
+  "company": "LogicGate",
+  "dimensions": {
+   "domain": 10.0,
+   "experience": 8.0,
+   "location_visa": 8.0,
+   "seniority": 6.0,
+   "skills": 7.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "CSM in UK-London at a non-standout company",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Location requirement is truncated at 'Based in and legally...'; it may require existing UK work authorization.",
+   "Posting expects hands-on EMEA regulatory expertise (GDPR, NIS2, DORA, ISO 27001) beyond his US-centric GRC book.",
+   "Plain CSM title with a 3+ year bar; risk of being screened as overqualified or levelled low."
+  ],
+  "id": "gh-logicgate-4750561005",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 7.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success Manager at B2B software company; in scope.",
+  "shot": 7.2,
+  "title": "Customer Success Manger | EMEA",
+  "verdict": "Home-domain GRC CSM in London with a sponsor, but a lateral move hinging on European account experience and work authorization.",
+  "want": 7.6
  },
  "gh-mongodb-8383215": {
   "at": "2026-11-14T01:46:50.546728+00:00",
@@ -3190,6 +3364,36 @@
   "title": "Customer Success Manager, Enterprise Strategic",
   "verdict": "Strong-brand senior strategic CSM in London with QBR fit, but lateral, off-domain and EMEA-heavy; borderline apply.",
   "want": 5.7
+ },
+ "hc-adhoc___uber___304700": {
+  "at": "2026-11-20T01:46:03.334787+00:00",
+  "captured_at": "2026-11-20T01:17:44.589868+00:00",
+  "company": "Uber",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 5.0,
+   "location_visa": 9.0,
+   "seniority": 7.0,
+   "skills": 5.0,
+   "trajectory": 5.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role trains new-logo acquisition AEs; Tom has never carried a hunting quota, so seller credibility will be questioned.",
+   "Requirements section is truncated in the text provided; unseen must-haves such as years in sales enablement may exist.",
+   "Enablement here is learning-program design and facilitation, closer to L&D than the RevOps systems narrative."
+  ],
+  "id": "hc-adhoc___uber___304700",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 5.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue enablement for acquisition sellers; in-scope commercial enablement funct",
+  "shot": 5.5,
+  "title": "Sr Sales Enablement Lead EMEA, Acquisition",
+  "verdict": "Strong brand and Amsterdam sponsor, but acquisition-seller enablement sits outside Tom's post-sale story; borderline, apply only if pipeline is thin.",
+  "want": 6.9
  },
  "hc-adhoc___zata___557cae29853398e8875c3bd1": {
   "at": "2026-11-13T01:46:30.140632+00:00",
