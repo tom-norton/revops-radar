@@ -186,6 +186,20 @@ def linkedin_queries():
     return ([(g, LINKEDIN_KEYWORDS, LINKEDIN_PAGES) for g in LINKEDIN_GEO_IDS]
             + list(LINKEDIN_EXTRA_QUERIES))
 
+# Enablement in every wording the market uses for the revenue side of it. Until Nov 2026 only
+# "sales enablement" and "revenue enablement" (plus GTM enablement in the US gate) got past
+# the title gate, so "Enablement Manager", "Field Enablement Lead", "Partner Enablement" and
+# "CS Enablement" were dropped for free. Tom's call, 20 Nov 2026, after an interview for
+# Moss's Revenue Enablement Specialist (which sits in RevOps): enablement is a real route
+# into RevOps, so it is a target, not a fallback. The screen still kills IT or digital
+# "enablement" that has nothing to do with revenue teams.
+ENABLEMENT_TITLE = (r"(?:sales|revenue|gtm|go[- ]to[- ]market|field|partner|channel|seller"
+                    r"|commercial|customer success|cs|post[- ]sales?|product)\s+enablement"
+                    r"|\benablement\s+(?:manager|lead|leader|specialist|partner|program"
+                    r"|programme|director|strategist|analyst)"
+                    r"|^\s*(?:senior |sr\.? |lead |principal )?enablement\b"
+                    r"|(?:operations|ops|strategy)\s*(?:&|and)\s*enablement")
+
 INCLUDE_TITLE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
     r"|gtm|go[- ]to[- ]market"
@@ -204,11 +218,12 @@ INCLUDE_TITLE = re.compile(
     r"(op(eration)?s|planning|analytics)\b"
     r"|strategic operations|\bs ?& ?o\b|business strategy"
     r"|business operations|commercial operations|biz ?ops"
-    r"|sales strategy|revenue strategy|revenue enablement|sales enablement"
-    # Comp, quota and territory design are core RevOps work the filter had no words for --
-    # 5 of 5 sales-compensation roles on the watched boards were being dropped. "territory"
-    # is deliberately narrow so quota-carrying "Territory Sales Director" titles stay out.
-    r"|sales compensation|incentive compensation|quota"
+    r"|sales strategy|revenue strategy|" + ENABLEMENT_TITLE +
+    # Quota and territory design are core RevOps work the filter had no words for.
+    # "territory" is deliberately narrow so quota-carrying "Territory Sales Director" titles
+    # stay out. Sales and incentive compensation sat here until 20 Nov 2026, when Tom
+    # dropped them as a target: he had hidden every one the radar showed him.
+    r"|quota"
     r"|territory (planning|design|management|operations)"
     r"|revenue analytics|revenue systems|revenue technology"
     # Renewals: adjacent to the RevOps pivot, but a direct match for the renewal-forecasting
@@ -272,7 +287,7 @@ REVOPS_CORE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
     r"|cs operations|customer success operations"
     r"|revenue strategy|sales strategy|revenue analytics|revenue systems"
-    r"|revenue technology|revenue enablement|sales enablement|commercial operations"
+    r"|revenue technology|commercial operations|" + ENABLEMENT_TITLE +
     # GTM needs an operations/strategy noun beside it, in either word order. A bare \bgtm\b
     # admitted "GTM Recruiter, AMER" and "Staff, Analytics Engineer, GTM Data Science" on
     # the first US run -- a recruiting role and an engineering role. Both would have died
@@ -281,7 +296,6 @@ REVOPS_CORE = re.compile(
     r"|(gtm|go[- ]to[- ]market)[ ,&-]{1,3}(strategy|operations|ops|enablement|analytics"
     r"|systems|planning)"
     r"|(strategy|operations|ops|enablement|analytics|systems)[ ,&-]{1,3}(gtm|go[- ]to[- ]market)"
-    r"|sales compensation|incentive compensation"
     r"|territory (planning|design|management|operations)"
     r"|strategy[ ,&]{1,3}(and[ ,&]{1,3})?(planning|business|revenue|sales|commercial)?[ ,&]{0,3}"
     r"(op(eration)?s)\b"
@@ -290,7 +304,9 @@ REVOPS_CORE = re.compile(
 EXCLUDE_TITLE = re.compile(
     r"deal desk|quote[- ]to[- ]cash|order management|billing specialist"
     r"|intern\b|internship|working student|apprentice|graduate scheme"
-    r"|\bvp\b|vice president|chief |\bsvp\b|\bevp\b", re.I)
+    r"|\bvp\b|vice president|chief |\bsvp\b|\bevp\b"
+    # Sales and incentive compensation, dropped as a target 20 Nov 2026.
+    r"|\bcompensation\b|\bcomp (?:analyst|manager|partner|lead|design)", re.I)
 
 # Off-function words that a target keyword in the same title ("GTM", "Sales Enablement",
 # "Business Operations") lets through the include gate. Measured on the subscription
@@ -306,6 +322,9 @@ OFF_FUNCTION_TITLE = re.compile(
 OFF_FUNCTION_ESCAPE = re.compile(
     r"revenue operations|\brevops\b|\brev ops\b|sales operations|sales ops\b"
     r"|sales (?:&|and) marketing operations"
+    # Enablement is a target (Tom, 20 Nov 2026), even in "Product Marketing Manager, Sales
+    # Enablement" or "Revenue Enablement Specialist - Sales Engineering".
+    r"|enablement"
     # Strategy & Operations inside a marketing org is still S&O (the screen prompt says so).
     r"|strateg\w*[ ,&]{1,3}(?:and[ ,&]{1,3})?(?:planning[ ,&]{1,3})?op(?:eration)?s\b"
     r"|\bs ?& ?o\b", re.I)
@@ -1700,8 +1719,9 @@ IN SCOPE - never kill these on function. A title filter in code has already deci
 - Sales strategy, revenue strategy, GTM strategy, business strategy, commercial strategy
 - ANY "Strategy & Operations" or "Strategy and Operations" or "Strategy, Planning & Operations" or "S&O" role, including partner-scoped, field-scoped, segment-scoped, regional and international variants. These are core target roles, not generalist strategy jobs. Do not kill one because it sits inside a partner, product, marketing or regional org - the deep scorer takes the domain into account.
 - GTM systems, RevOps systems, revenue systems, revenue technology, RevOps architecture, CRM and GTM tool-stack ownership. Systems ownership is a target track, not "tool administration".
-- Revenue analytics, sales/incentive compensation, quota and territory design
-- Renewals and renewal management, sales enablement, revenue enablement
+- Revenue analytics, quota and territory design
+- Renewals and renewal management
+- Enablement for revenue teams in any wording: sales, revenue, GTM, field, partner, post-sales or customer success enablement, including onboarding, sales training, playbooks and coaching programmes. This is a direct route into RevOps for this candidate, above all when the role sits in or reports to RevOps.
 - Senior / Principal / Enterprise / Strategic Customer Success, and Customer Success Manager at a B2B company, technical or not
 - In the Netherlands only: Account Manager, Client Manager or Customer Manager roles that own an existing customer book (renewals, retention, upsell and expansion). Kill one only when the posting is plainly new-logo hunting (prospecting, cold outreach, new business targets) -- that is quota-carrying sales.
 
@@ -1757,7 +1777,7 @@ Thin evidence: some rows arrive with no retrievable posting text at all, and tho
 A title band (analyst / specialist / director_plus / normal) is given to you in the job details. It is a signal to read the posting carefully, not a verdict. Do not mark a role down merely because its title contains "Analyst", "Specialist", "Associate" or "Coordinator" -- score what the posting actually describes.
 
 Alongside the dimensions, report these observations from the posting:
-- function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those, including a Netherlands account management role that owns renewals and expansion of an existing book. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
+- function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy / revenue, sales or GTM enablement, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those, including a Netherlands account management role that owns renewals and expansion of an existing book. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
 - home_domain: true when the EMPLOYER's product is sold to governance, risk and compliance (GRC), ethics and compliance, legal or legal tech, KYC / AML / financial crime / identity verification, or audit and assurance buyers -- the buyers Tom served at NAVEX and LexisNexis. Judge the business unit the role sits in, not the parent: a tax or health division of a legal-information company is false. False when compliance is only a requirement of the job, or the company is merely in a regulated industry (a bank, a payments company, a healthtech) and sells something else. A "Home domain list: yes" line in the job details means Tom has listed the employer; treat it as a strong hint, not a verdict. This lifts the role on the dashboard and never lowers anything, so report it honestly either way.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
