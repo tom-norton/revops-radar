@@ -53,9 +53,42 @@ If you see either, tell Claude.
 
 ## Stage 2: the dashboard becomes a private Claude page
 
-Steps will be added here once stage 1 is running. You'll be asked to open the new page on
-your phone browser, in the Claude app and on your PC, and to say whether anything looks
-wrong. The old dashboard stays up until you're happy.
+**What changes for you:** the dashboard lives at a new address, a private page only you
+can open: **https://claude.ai/artifact/5bdcqQY39voaY3CZWt7TFr**. It looks and works like
+the old one, with three differences:
+- New roles appear after each scoring run (9:30am / 9:30pm weekdays, 10:30am weekends),
+  not after each scan.
+- **Mark applied** still adds the role to Job Search Tracker, but on the next scoring run
+  rather than instantly. The message at the bottom of the screen says "Queued".
+- Referral and outreach tags come from the tracker as it stood at the last scoring run.
+
+Your Hide and Applied history (548 hidden, 113 applied, 129 reasons) is already copied
+over.
+
+### ☐ 1. Open the new page on each device and check it
+1. **PC:** open the link above in your browser. Sign in to Claude if it asks.
+2. **Phone browser:** open the same link. Sign in to claude.ai if it asks.
+3. **Claude phone app:** open the link from your phone (paste it into a note and tap it, or
+   send it to yourself). It should open in the app.
+4. On each one, check you see roles, and that the bottom of the list says "Board copied to
+   this page" with today's date.
+5. **Sync test:** on your phone, tap **Hide** on any role, then **Skip**. Within a few
+   seconds it should move to "Hidden" on your PC too. Then tap **Restore** on the PC.
+
+Tell Claude what you saw, and anything that looks wrong.
+
+### ☐ 2. Merge the pull request
+Same as stage 1: open the pull request called **"Move the dashboard into a private Claude
+page"** and tap **Merge pull request**, then **Confirm merge**. After this the old
+dashboard turns read-only, with a link to the new page.
+
+### ☐ 3. Tell Claude it's merged
+Claude copies over any marks you made on the old page in the meantime, runs one scoring
+session straight away, and checks that the new page updated and that a Mark applied
+reached the tracker.
+
+### ☐ 4. Swap your bookmarks
+Replace any bookmark or home-screen icon for the old dashboard with the new link.
 
 ---
 

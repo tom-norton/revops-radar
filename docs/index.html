@@ -188,6 +188,12 @@
 </head>
 <body>
   <h1><span>RevOps</span> Radar</h1>
+  <!-- Retired Nov 2026: the dashboard is a private Claude page now (dashboard/index.html).
+       This copy stays readable until the repo goes private, but its marks would no longer
+       reach anything, so the buttons that make them are switched off below. -->
+  <div class="feedwarn" style="font-size:13.5px">This dashboard has moved to a private Claude page:
+    <a href="https://claude.ai/artifact/5bdcqQY39voaY3CZWt7TFr">open the new RevOps Radar</a>.
+    This copy is read-only and stops updating soon. Hide and Mark applied work only on the new page.</div>
   <div class="meta" id="meta">Loading…</div>
   <div class="feedwarn" id="feedwarn" hidden></div>
   <div class="note" id="synclabel">Hide / Mark applied are saved in this browser only — they won't follow you to another device.</div>
@@ -1375,6 +1381,9 @@ document.body.addEventListener("click", (e)=>{
   const btn = e.target.closest("button[data-act]");
   if(!btn) return;
   const id = btn.dataset.id, act = btn.dataset.act;
+  // Retired: the new page's storage is the record, and the scoring session copies it over
+  // Firebase twice a day, so a mark made here would be wiped. Copy for Claude still works.
+  if(act !== "copy"){ toast("Read-only now: use the new RevOps Radar page in Claude", "bad"); return; }
   if(act === "hide"){
     unmarked.delete(id);
     hiddenIds.add(id); hiddenAt[id] = new Date().toISOString();

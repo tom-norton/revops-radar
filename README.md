@@ -1318,8 +1318,13 @@ Repository secrets (Settings → Secrets and variables → Actions):
 - `BULLET_BANK_PAT` — fine-grained PAT, read/write contents on `tom-bullet-bank` only
 - `TRACKER_TOKEN` — the same value as the `TOKEN` script property on Job Search Tracker; lets the scan read the outreach list (company names only) for its push
 
-Pages: Settings → Pages → Deploy from a branch → `main` / `/docs`.
-Dashboard: `https://tom-norton.github.io/revops-radar/`.
+Dashboard: a private Claude page, `https://claude.ai/artifact/5bdcqQY39voaY3CZWt7TFr`,
+published from `dashboard/index.html` (Nov 2026). The scoring session fills it after every
+run with `tools/dashboard_sync.py` (scoring/ROUTINE.md step 8): the board copy, the
+tracker's contacts and outreach list, queued Mark applied rows to the tracker, and the
+Hide / Mark applied marks back to Firebase, where scan.py and the weekly review read them.
+The old GitHub Pages copy (`docs/index.html`, `https://tom-norton.github.io/revops-radar/`)
+is read-only and goes when the repo is made private.
 Bot commits: Settings → Actions → General → Workflow permissions → "Read and write".
 Run it manually any time: Actions → "Daily job scan" → Run workflow.
 

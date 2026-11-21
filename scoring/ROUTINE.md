@@ -20,6 +20,8 @@ how a fresh API call works, and it keeps your context from building up.
 
 - **Never commit or push to `main`.** Everything you write goes to `claude/scores`.
 - Never edit `scan.py`, `profile.md`, the prompts, or any file outside `scoring/`.
+- The dashboard step (8) writes only to the dashboard page's storage, Firebase and Job
+  Search Tracker, and only through `tools/dashboard_sync.py` and the plan it writes.
 - **No cap.** Work through every waiting role, best first, until none are left or the
   usage limit stops you. Whatever is left waits for the next run. Nothing is skipped.
 - **Model.** Screens use the `haiku` model and deep scores use the `opus` model with
@@ -74,5 +76,37 @@ how a fresh API call works, and it keeps your context from building up.
    ```
    If the push fails because the branch moved, run `git pull --rebase origin claude/scores`
    and push again.
-8. Finish with a three-line summary: roles done this run, roles still waiting, and anything
-   that went wrong.
+8. **Update the dashboard.** Do this on every run, even one with nothing to score or one
+   the usage limit cut short. The dashboard is a private Claude page,
+   https://claude.ai/artifact/5bdcqQY39voaY3CZWt7TFr. It cannot reach any other website,
+   so this step carries everything in and out of it. `tools/dashboard_sync.py` does the
+   work; you make the `ArtifactData` calls, because only you can. Use the page's URL above
+   in every call. **Never publish the page itself** (no `Artifact` publish): you only write
+   its data.
+
+   a. Save what the page holds, using absolute paths. Here `$W` is
+      `$(pwd)/scoring/work/dash`; start with `rm -rf scoring/work/dash`.
+      - `ArtifactData` `get`, collection `board`, doc_id `meta`, out_dir `$W/db`. Note
+        the version the result prints. If the document does not exist, the version is 0.
+      - `ArtifactData` `get`, collection `state`, doc_id `marks`, out_dir `$W/db`.
+      - `ArtifactData` `list`, collection `outbox`, query `{"limit": 1000}`, out_dir
+        `$W/db`. It is often empty.
+   b. Run `python tools/dashboard_sync.py plan --work scoring/work/dash --meta-version <N>`,
+      with N from step a. The script:
+      - waits, up to 15 minutes, until main has applied this run's answers;
+      - posts the queued Mark applied rows to Job Search Tracker;
+      - copies the marks to Firebase;
+      - reads the tracker's contacts and outreach list;
+      - writes the new board copy and `scoring/work/dash/plan.json`.
+      It needs `TRACKER_TOKEN` from the environment. Never print the token.
+   c. Make every batch in `plan.json`, in order: one `ArtifactData` `batch` call per entry
+      of `batches`, with that entry as `writes`, exactly as written. Don't open the piece
+      files; the batches point at them by path. If a batch is refused, stop this step and
+      report it. The page keeps showing the previous copy, and the next run rebuilds
+      everything.
+9. Finish with a four-line summary:
+   - roles done this run
+   - roles still waiting
+   - the dashboard step: done, or where it stopped
+   - anything that went wrong, including every line `dashboard_sync.py` printed as
+     WARNING or "not added"
