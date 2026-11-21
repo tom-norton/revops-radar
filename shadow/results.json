@@ -3198,6 +3198,35 @@
   "verdict": "Tier-1 brand and strong pay, but 7+ years dedicated S&O and SI fluency make this a long-shot stretch.",
   "want": 6.5
  },
+ "gh-datadog-8173964": {
+  "at": "2026-11-21T01:48:51.108476+00:00",
+  "captured_at": "2026-11-21T01:25:11.465336+00:00",
+  "company": "Datadog",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 3.0,
+   "location_visa": 9.0,
+   "seniority": 4.0,
+   "skills": 4.0,
+   "trajectory": 7.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Manager-of-enablement-managers role; screeners will expect prior enablement leadership Tom cannot show.",
+   "Sales methodology fluency (MEDDICC, Command of the Message) expected; Tom's evidence is CS-side, not sales-floor."
+  ],
+  "id": "gh-datadog-8173964",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 4.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Field enablement for sales, SDR and CS teams: in-scope enablement function.",
+  "shot": 3.6,
+  "title": "Manager, Field Enablement EMEA",
+  "verdict": "Great company and market, but a people-leader-of-enablers role demanding 7+ years in enablement; Tom has neither the tenure nor reports.",
+  "want": 8.1
+ },
  "gh-gitlab-8931313002": {
   "at": "2026-11-13T01:46:30.140436+00:00",
   "captured_at": "2026-11-12T17:47:39.621018+00:00",
@@ -3255,6 +3284,34 @@
   "title": "Customer Success Engineer",
   "verdict": "Technical DevSecOps consulting role at a strong brand; Tom lacks the engineering depth and it does nothing for the RevOps pivot.",
   "want": 4.8
+ },
+ "gh-gitlab-8943456002": {
+  "at": "2026-11-21T01:48:51.108669+00:00",
+  "captured_at": "2026-11-21T01:25:41.331964+00:00",
+  "company": "GitLab",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 5.0,
+   "location_visa": 6.0,
+   "seniority": 7.0,
+   "skills": 5.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "Role is mostly global event logistics, vendor contracts and field comms, not RevOps systems or analytics work.",
+   "Requirements section was truncated, so must-haves like years of event or program management experience are unverified."
+  ],
+  "id": "gh-gitlab-8943456002",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 5.9,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Enablement operations for revenue teams, an in-scope enablement and RevOps route",
+  "shot": 5.5,
+  "title": "Enablement Operations Manager",
+  "verdict": "Strong pay at a tier-1 brand, but this is event and PMO operations; Tom has no event-logistics track record to show.",
+  "want": 6.7
  },
  "gh-gitlab-8945942002": {
   "at": "2026-11-20T01:46:03.334482+00:00",
@@ -4316,6 +4373,64 @@
   "verdict": "Solid CSM fit on paper, but a lateral, unpriced US startup role that does nothing for the RevOps pivot.",
   "want": 4.7
  },
+ "hc-ashby___liveramp-inc___28fa638c-3790-42cf-af06-11052afa1bec": {
+  "at": "2026-11-21T01:48:51.108968+00:00",
+  "captured_at": "2026-11-21T01:25:38.217658+00:00",
+  "company": "LiveRamp",
+  "dimensions": {
+   "domain": 6.0,
+   "experience": 6.0,
+   "location_visa": 8.0,
+   "seniority": 7.0,
+   "skills": 6.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "CSM in UK-London at a non-standout company",
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is heavily commercial and field-based, with upsell and new-opportunity hunting closer to account management than CS.",
+   "No adtech or media network; UK advertiser and agency relationships appear expected from day one."
+  ],
+  "id": "hc-ashby___liveramp-inc___28fa638c-3790-42cf-af06-11052afa1bec",
+  "market": "UK-London",
+  "outcome": "scored",
+  "score": 6.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Senior Customer Success Manager at B2B company: in-scope account ownership and r",
+  "shot": 6.3,
+  "title": "Senior Customer Success Manager",
+  "verdict": "Lateral adtech CSM in London with a sponsor; enterprise renewal record fits, but no media background and the pivot stalls.",
+  "want": 6.3
+ },
+ "hc-ashby___maintainx___a866e588-f9ea-4534-836f-545d7b82e65a": {
+  "at": "2026-11-21T01:48:51.109120+00:00",
+  "captured_at": "2026-11-21T01:25:47.384011+00:00",
+  "company": "MaintainX",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 6.0,
+   "location_visa": 4.0,
+   "seniority": 7.0,
+   "skills": 6.5,
+   "trajectory": 7.0
+  },
+  "flags": [
+   "Enablement targets expansion and renewal AMs, a strong match for his LexisNexis renewal and QBR playbook work.",
+   "Quota-carrying AM history required; his LexisNexis upsell goal may need framing as quota to clear screening."
+  ],
+  "id": "hc-ashby___maintainx___a866e588-f9ea-4534-836f-545d7b82e65a",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 6.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement for account management expansion and renewals; explicitly in sc",
+  "shot": 6.4,
+  "title": "Sales Enablement Manager",
+  "verdict": "Credible enablement stepping stone built on his AM renewal work, but no enablement tenure and Canada sits low in preference.",
+  "want": 6.1
+ },
  "hc-ashby___modal___21227978-6373-480f-a700-53cad135d8c4": {
   "at": "2026-11-17T01:45:44.658096+00:00",
   "captured_at": "2026-11-17T01:18:17.170843+00:00",
@@ -4343,6 +4458,36 @@
   "title": "Revenue Operations",
   "verdict": "Great company and London fit, but a solo build-and-own RevOps seat demanding 3+ years in-seat, commissions and deal desk he lacks.",
   "want": 7.1
+ },
+ "hc-ashby___prefect___943b33ab-ff38-42c6-aa5d-08e35cf98c7c": {
+  "at": "2026-11-21T01:48:51.109294+00:00",
+  "captured_at": "2026-11-21T01:25:44.210004+00:00",
+  "company": "Prefect",
+  "dimensions": {
+   "domain": 7.0,
+   "experience": 6.0,
+   "location_visa": 4.0,
+   "seniority": 8.0,
+   "skills": 5.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "CSM in US-Remote at a non-standout company",
+   "pay not confirmed in the ad; 159000-237000 USD came from the feed",
+   "Expansion-quota farmer role: closes upsell and cross-sell against expansion ARR and NDR targets, closer to sales than his CS history.",
+   "Developer-tooling product across Prefect and Dagster demands hands-on data-pipeline fluency he cannot show from GRC and legal accounts."
+  ],
+  "id": "hc-ashby___prefect___943b33ab-ff38-42c6-aa5d-08e35cf98c7c",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 5.8,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Senior Customer Success Manager owning renewals and expansion; target function",
+  "shot": 6.2,
+  "title": "Senior Customer Success Manager",
+  "verdict": "Solid renewal-and-expansion overlap, but a technical developer-tools CS seat in the US; only OTE is published, base unstated.",
+  "want": 5.0
  },
  "hc-ashby___tremendous___3de2d063-4828-4537-848c-9f2c3bf50657": {
   "at": "2026-11-10T13:37:55.800775+00:00",
@@ -4441,6 +4586,35 @@
   "screen_model": "haiku",
   "screen_reason": "Business controlling, budgeting and audit: finance, not commercial operations.",
   "title": "Sales Operations Manager"
+ },
+ "hc-avature___lenovo___84023": {
+  "at": "2026-11-21T01:48:51.109483+00:00",
+  "captured_at": "2026-11-20T17:48:32.639060+00:00",
+  "company": "Lenovo",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 4.0,
+   "location_visa": 6.0,
+   "seniority": 6.0,
+   "skills": 4.0,
+   "trajectory": 4.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Posting body reads 'TBD': no duties, requirements or language checks could be read.",
+   "ISG Client Manager at Lenovo is usually quota-carrying infrastructure hardware sales, not renewals of an existing SaaS book."
+  ],
+  "id": "hc-avature___lenovo___84023",
+  "market": "NL",
+  "outcome": "scored",
+  "score": 4.7,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Client Manager on existing customer book; posting too sparse to kill.",
+  "shot": 4.5,
+  "title": "Sr Client Manager ISG",
+  "verdict": "Empty posting for what is likely Lenovo server/storage enterprise sales; unsupported fit, verify scope before spending any time.",
+  "want": 5.1
  },
  "hc-bamboohr___euna___814": {
   "at": "2026-11-11T01:46:05.400041+00:00",
@@ -4563,6 +4737,35 @@
   "title": "Coordinator, Sales Operations",
   "verdict": "Junior ad-sales admin coordinator at a media publisher on low pay; off-target and overqualified, skip.",
   "want": 2.7
+ },
+ "hc-bamboohr___triumph___299": {
+  "at": "2026-11-21T01:48:51.109620+00:00",
+  "captured_at": "2026-11-21T01:25:48.250543+00:00",
+  "company": "Triumph Group of Companies",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 5.0,
+   "location_visa": 3.0,
+   "seniority": 7.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "Construction group, not SaaS: pipeline is bids, estimating and tenders, far from his post-sale retention strengths.",
+   "Role centres on running the CRO Office operating rhythm, which he has contributed to but never owned.",
+   "Regular site presence across the GTA expected, so this is a field-heavy office role, not desk RevOps."
+  ],
+  "id": "hc-bamboohr___triumph___299",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 5.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales operations: CRO office coordination, pipeline tracking and CRM reporting",
+  "shot": 5.8,
+  "title": "Group Sales Operations & Execution Manager",
+  "verdict": "Real sales-ops title reporting to the CEO and CRO, but construction domain, admin-heavy scope and Canada make it a weak use of time.",
+  "want": 4.1
  },
  "hc-bamboohr___vendasta___849": {
   "at": "2026-11-12T13:48:40.867128+00:00",
@@ -4892,6 +5095,35 @@
   "shot": 5.3,
   "title": "Lead Sales Strategy & Planning Analyst",
   "verdict": "Well-paid GTM analytics role at a strong HR-tech brand, but analytics-tooling depth he lacks makes it a stretch.",
+  "want": 6.5
+ },
+ "hc-eightfold___ukg___893398584236": {
+  "at": "2026-11-21T01:48:51.109841+00:00",
+  "captured_at": "2026-11-21T01:25:39.118100+00:00",
+  "company": "UKG",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 6.0,
+   "location_visa": 5.0,
+   "seniority": 7.0,
+   "skills": 6.0,
+   "trajectory": 7.0
+  },
+  "flags": [
+   "Qualifications section is truncated, so years-of-experience and must-have requirements could not be checked.",
+   "Enterprise sales performance consulting role; his enablement evidence is CS-side, with no AE or sales-floor enablement track record.",
+   "Body describes an Enterprise Sales Enablement Performance Partner, not the program manager title advertised."
+  ],
+  "id": "hc-eightfold___ukg___893398584236",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 6.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement for enterprise GTM teams, an in-scope revenue enablement functi",
+  "shot": 6.3,
+  "title": "Lead Sales Enablement Program Manager",
+  "verdict": "Credible US runway: well-paid enterprise sales enablement at a strong SaaS brand, but CS-only enablement evidence makes it a stretch.",
   "want": 6.5
  },
  "hc-grnhse___6sense___8394425": {
