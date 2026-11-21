@@ -5200,6 +5200,192 @@ def shadow_flush(rows, path=SHADOW_QUEUE_FILE, now=None):
     except Exception as e:
         print(f"  shadow queue not written ({str(e)[:120]})")
 
+# ---------------------------------------------------------------- subscription scoring
+# Since Nov 2026 the screen and the deep score run on Tom's Claude subscription instead of
+# the API, after an 11-day side-by-side trial (shadow.py) found the two within 0.24 of a
+# point on average over 307 roles. The model calls moved out of this process entirely:
+#
+#   scan.py         a role that clears every free check goes on scoring/queue.json (main)
+#   subscore.py     a scheduled Claude Code session answers the queue, following
+#                   scoring/ROUTINE.md, and pushes raw answers to scoring/results.json on
+#                   the claude/scores branch -- never to main
+#   --apply-scores  turns those answers into dashboard rows, kills and drops, with this
+#                   file's own parse_score_result() and overrule_kill(). It runs at the start
+#                   of every scan and on every push to claude/scores (apply-scores.yml).
+#
+# The session only ever supplies the model's JSON. Every decision made from it -- the
+# overrules, the disqualifiers, the weighted total, the flags -- is made here, by the code
+# on main at the moment it is applied, exactly as score_job() would have made it.
+#
+# On unless SCORER=api, which restores the old in-process path for as long as an
+# ANTHROPIC_API_KEY is still around to use it.
+SCORE_QUEUE_FILE = "scoring/queue.json"
+SCORE_RESULTS_FILE = "scoring/results.json"
+SCORE_RESULTS_REF = "origin/claude/scores"
+# A queued role that has had no answer for this long is given up on, and said so in
+# excluded.json, rather than waiting forever: the posting is a week old by then.
+SCORE_QUEUE_DAYS = 7
+
+def subscription_scoring():
+    return os.environ.get("SCORER", "subscription").strip().lower() != "api"
+
+def score_queue_entry(job, kind="new", skip_screen=False, now=None):
+    """What the session needs to score `job`, and what --apply-scores needs to finish it.
+
+    `message` is job_message() as it stands right now, on the full description -- the
+    exact user turn score_job() would have sent -- so the prompt is unaffected by the
+    stored copy of the ad being cut to DESC_STORE_CAP. `job` is the row as it will go on
+    the dashboard, minus the pipeline's private underscore keys."""
+    row = {k: v for k, v in job.items() if not str(k).startswith("_")}
+    row["description"] = sample_desc(job.get("description"), DESC_STORE_CAP)
+    return {"id": str(job["id"]), "kind": kind, "skip_screen": bool(skip_screen),
+            "message": job_message(job),
+            "queued_at": (now or datetime.now(timezone.utc)).isoformat(), "job": row}
+
+def queue_for_scoring(entries, path=SCORE_QUEUE_FILE):
+    """Add `entries` to the queue file. A role already waiting keeps its first entry,
+    except that a rescore replaces a waiting rescore: it carries the newer posting."""
+    if not entries:
+        return 0
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    queue = load_json(path, {})
+    for e in entries:
+        if e["id"] not in queue or e["kind"] == "rescore":
+            queue[e["id"]] = e
+    json.dump(queue, open(path, "w"), indent=0, sort_keys=True)
+    print(f"  queued {len(entries)} role(s) for subscription scoring ({len(queue)} waiting)")
+    return len(queue)
+
+def load_score_results(ref=SCORE_RESULTS_REF, path=SCORE_RESULTS_FILE):
+    """The session's answers, as they stand on the claude/scores branch. Falls back to a
+    local file, which is how the tests and a hand run feed it."""
+    try:
+        out = subprocess.run(["git", "show", f"{ref}:{path}"], capture_output=True,
+                             text=True, check=True).stdout
+        return json.loads(out)
+    except Exception:
+        return load_json(path, {})
+
+def subscription_outcome(entry, answer):
+    """One queued role plus the session's raw answers -> what happens to it.
+
+    {"outcome": "killed", "reason"} | {"outcome": "dropped", "stage", "reason"} |
+    {"outcome": "scored", "result"} | None when the answer is not complete yet.
+    Mirrors main()'s stage 1 and stage 2 line for line."""
+    job = entry["job"]
+    if not entry.get("skip_screen"):
+        screen = (answer or {}).get("screen")
+        if not isinstance(screen, dict):
+            return None
+        keep = bool(screen.get("keep", True))
+        reason = str(screen.get("reason", ""))[:80]
+        if not keep and not overrule_kill(job.get("title"), reason):
+            return {"outcome": "killed", "reason": reason or "screened out"}
+    data = (answer or {}).get("score")
+    if not isinstance(data, dict):
+        return None
+    result = parse_score_result(job, data)
+    if result.get("disqualified"):
+        return {"outcome": "dropped", "stage": result["stage"], "reason": result["reason"]}
+    return {"outcome": "scored", "result": result}
+
+def finish_row(j):
+    """The per-row fields main() writes on every row of the board, for a row that joins it
+    between scans. The next scan recomputes all of them anyway; this is so the row looks
+    right in the hours before it does."""
+    import findform      # deferred, for the same import cycle main() describes
+    j["track"] = "cs" if is_csm_title(j.get("title")) else "revops"
+    j["in_domain"] = in_home_domain(j)
+    if j.get("dimensions"):
+        j.update(rank_axes(j))
+    ats, fillable = submit.application_status(j)
+    j["ats"], j["ats_fillable"] = ats, fillable
+    j["apply_link"] = findform.apply_link_state(j.get("apply_url") or j.get("url"), fillable)
+    return j
+
+def cmd_apply_scores(results=None, now=None, notify=True):
+    """Move every answered role off scoring/queue.json and onto the board. Idempotent: a
+    role is applied once, because applying it is what takes it off the queue."""
+    now =now or datetime.now(timezone.utc)
+    queue = load_json(SCORE_QUEUE_FILE, {})
+    if not queue:
+        print("Scoring queue is empty.")
+        return {"applied": 0, "pending": 0}
+    results = load_score_results() if results is None else results
+    jobs = load_json("docs/jobs.json", [])
+    by_id = {str(j.get("id")): j for j in jobs}
+    kills = prune_kills(load_json(KILLS_FILE, []), now)
+    cutoff = (now - timedelta(days=SCORE_QUEUE_DAYS)).isoformat()
+    added, gone = [], set()
+    counts = {"scored": 0, "rescored": 0, "killed": 0, "dropped": 0, "expired": 0}
+    for qid, entry in sorted(queue.items()):
+        j = dict(entry["job"])
+        try:
+            out = subscription_outcome(entry, results.get(qid))
+        except Exception as e:
+            print(f"  ERR   {j.get('title')} @ {j.get('company')} ({str(e)[:80]}); left queued")
+            out = None
+        if out is None:
+            if (entry.get("queued_at") or "") < cutoff:
+                record_drop(j, "not-scored", f"no subscription score after {SCORE_QUEUE_DAYS} days")
+                del queue[qid]
+                counts["expired"] += 1
+            continue
+        del queue[qid]
+        if out["outcome"] == "killed":
+            record_drop(j, "stage1-kill", out["reason"])
+            kills = remember_kill(kills, j, out["reason"], now)
+            counts["killed"] += 1
+            print(f"  kill  {j.get('title')} @ {j.get('company')} ({out['reason']})")
+        elif out["outcome"] == "dropped":
+            record_drop(j, out["stage"], out["reason"]
+                        + (" (read off the recovered posting)" if entry["kind"] == "rescore" else ""))
+            if entry["kind"] == "rescore":
+                gone.add(qid)
+            counts["dropped"] += 1
+            print(f"  drop  {j.get('title')} @ {j.get('company')} ({out['stage']}: {out['reason']})")
+        elif entry["kind"] == "rescore":
+            row = by_id.get(qid)
+            if row is None:
+                continue        # aged off the board while it waited; nothing to update
+            before = row.get("score")
+            row["description"], row["desc_chars"] = j.get("description"), j.get("desc_chars")
+            row.update(out["result"])
+            row.pop("evidence", None)
+            finish_row(row)
+            counts["rescored"] += 1
+            print(f"  {before} -> {row['score']:<5} {(row.get('company') or '?')[:28]} "
+                  f"| {(row.get('title') or '')[:40]}")
+        else:
+            j.update(out["result"])
+            j["found_at"] = now.isoformat()
+            finish_row(j)
+            added.append(j)
+            counts["scored"] += 1
+            print(f"  [{j.get('score')}] {j.get('title')} @ {j.get('company')}")
+    jobs = [j for j in jobs if str(j.get("id")) not in gone
+            and str(j.get("id")) not in {str(a["id"]) for a in added}] + added
+    jobs.sort(key=lambda j: (j.get("score") or 0, j.get("found_at", "")), reverse=True)
+
+    json.dump(jobs, open("docs/jobs.json", "w"), indent=1)
+    json.dump(kills, open(KILLS_FILE, "w"), indent=1)
+    json.dump(queue, open(SCORE_QUEUE_FILE, "w"), indent=0, sort_keys=True)
+    if DROPS:
+        prev = load_json("docs/excluded.json", {})
+        prev["rows"] = trim_drop_rows(DROPS + prev.get("rows", []))
+        json.dump(prev, open("docs/excluded.json", "w"), indent=1)
+    status = load_json("docs/status.json", {})
+    status["scoring"] = {"scorer": "subscription", "last_applied": now.isoformat(),
+                         "waiting": len(queue), "last_batch": counts}
+    json.dump(status, open("docs/status.json", "w"), indent=1)
+    applied = sum(counts.values())
+    print(f"Applied {applied} answered role(s): " + ", ".join(f"{k} {v}" for k, v in counts.items())
+          + f". {len(queue)} still waiting.")
+    if notify and added:
+        notify_strong_matches(added)
+        notify_outreach_list(added)
+    return {"applied": applied, "pending": len(queue), **counts}
+
 def cmd_selftest():
     """Replay the stored dimension scores through the current engine and report every row
     whose score moves. No network, no API key.
@@ -5625,6 +5811,8 @@ def rescore_recovered(jobs, stale):
     stale = [j for j in stale if not is_thin(j.get("description"))]
     if not stale:
         return
+    if subscription_scoring():
+        return queue_rescores(jobs, stale)
     if not api_key:
         print(f"\n{len(stale)} row(s) now have a real posting but keep a score formed "
               f"without one. Set ANTHROPIC_API_KEY and re-run to rescore them.")
@@ -5680,8 +5868,35 @@ def rescore_recovered(jobs, stale):
     print(f"Rescored {rescored}, dropped {len(dropped)}, "
           f"{len(stale) - rescored - len(dropped)} left as they were.")
 
+def queue_rescores(jobs, stale):
+    """rescore_recovered() for the subscription scorer: the same free checks first, then
+    the row goes on the queue as a rescore instead of to score_job(). It stays on the board
+    as it is until the answer comes back; --apply-scores then updates it in place, so a
+    Hide or a Mark-applied recorded against its id still holds."""
+    dropped, entries = set(), []
+    for j in stale:
+        quote = says_no_sponsorship(j.get("description"))
+        stage = "no-sponsorship" if quote else ""
+        if not quote:
+            quote = requires_other_language(j.get("description"))
+            stage = "language-required" if quote else ""
+        if quote:
+            dropped.add(id(j))
+            record_drop(j, stage, f'JD (recovered): "{quote}"')
+            print(f"  drop  {j.get('title')} @ {j.get('company')} ({stage})")
+            continue
+        entries.append(score_queue_entry(j, kind="rescore", skip_screen=True))
+    if dropped:
+        json.dump([j for j in jobs if id(j) not in dropped], open("docs/jobs.json", "w"),
+                  indent=1)
+        prev = load_json("docs/excluded.json", {})
+        prev["rows"] = trim_drop_rows(DROPS + prev.get("rows", []))
+        json.dump(prev, open("docs/excluded.json", "w"), indent=1)
+    queue_for_scoring(entries)
+    print(f"Queued {len(entries)} rescore(s) for the subscription, dropped {len(dropped)}.")
+
 def main():
-    verify, dry = "--verify" in sys.argv, "--dry" in sys.argv
+    verify, dry ="--verify" in sys.argv, "--dry" in sys.argv
     here = os.path.dirname(os.path.abspath(__file__))
     os.chdir(here)
     companies = json.load(open("companies.json")).get("companies", []) if os.path.exists("companies.json") else []
@@ -5706,6 +5921,8 @@ def main():
         return cmd_dedupe()
     if "--retry-thin" in sys.argv:
         return cmd_retry_thin()
+    if "--apply-scores" in sys.argv:
+        return cmd_apply_scores(notify=os.environ.get("APPLY_NO_NOTIFY") != "1")
     if "--backfill-jd" in sys.argv:
         days = 7
         if "--days" in sys.argv:
@@ -5995,6 +6212,7 @@ def main():
     import findform
     board_cache = findform.load_cache()
     shadow_rows = []   # what this run screened, for the subscription trial (shadow.py)
+    to_score = []      # queue entries for the subscription scorer (subscore.py)
 
     for j in new_jobs[:MAX_SCREENED_PER_RUN]:
         # Get the real posting text before anything reads it -- only for survivors of the
@@ -6107,6 +6325,15 @@ def main():
             except Exception:
                 pass
 
+        # Both model calls happen on the subscription now (see subscription_scoring()). The
+        # row is seen from here on: it waits on the queue, not in the feed. The home-domain
+        # rule below carries over as skip_screen.
+        if not dry and subscription_scoring():
+            to_score.append(score_queue_entry(
+                j, skip_screen=bool(home_domain_company(j.get("company")))))
+            seen.add(j["id"])
+            continue
+
         if dry or not api_key:
             j.update({"score": 0, "score_raw": 0, "caps_applied": [], "dimensions": {},
                       "tier": j.get("market") or "", "flags": [], "verdict": "(not scored)"})
@@ -6145,6 +6372,11 @@ def main():
 
     if shadow_enabled():
         shadow_flush(shadow_rows)
+    if to_score:
+        waiting = queue_for_scoring(to_score)
+        src_status["subscription scoring"] = (
+            f"{len(to_score)} role(s) queued this run; {waiting} waiting for the scheduled "
+            f"Claude session")
 
     # PASS B: deep score, best first, until the budget runs out.
     survivors.sort(key=lambda j: priority(j, deferrals), reverse=True)

@@ -1,0 +1,47 @@
+name: Apply subscription scores
+
+# The radar's roles are scored on Tom's Claude subscription by a scheduled Claude Code
+# session (scoring/ROUTINE.md), which pushes the model's answers to the claude/scores
+# branch. This puts them on the dashboard: kills and drops recorded, scored rows added, and
+# the usual phone notification for a strong match. It never calls a model.
+#
+# Triggered by the session's own pushes. A push on that branch runs the copy of this file
+# in the pushed commit, which is main's copy, because the session merges main first.
+# Everything below works on main regardless: the checkout is main, and the branch is only
+# read for scoring/results.json.
+on:
+  push:
+    branches: [claude/scores]
+  workflow_dispatch:
+
+# Its own group, not the scan's. In one shared group a queued apply would cancel a queued
+# scan (GitHub keeps only the newest pending run per group). tools/push_main.sh handles the
+# two landing on main at once instead.
+concurrency:
+  group: apply-scores
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Apply
+        env:
+          # The outreach-company push reads the company list from the tracker web app.
+          TRACKER_TOKEN: ${{ secrets.TRACKER_TOKEN }}
+        run: |
+          git config user.name "radar-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git fetch -q origin +refs/heads/claude/scores:refs/remotes/origin/claude/scores
+          python scan.py --apply-scores
+          bash tools/push_main.sh "scores: $(date -u +%F)" apply
