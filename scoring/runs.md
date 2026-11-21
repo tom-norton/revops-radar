@@ -1,1 +1,2 @@
 - 2026-11-21 14:33 UTC: screened 0, deep-scored 0; finished (queue empty); 0 still waiting. claude/scores branch did not exist on origin, created from main.
+- 2026-11-21 15:03 UTC: screened 22 (2 killed), deep-scored 20; finished (queue empty); 0 still waiting (22 answered, awaiting main to apply). Manual run after late morning scan.
