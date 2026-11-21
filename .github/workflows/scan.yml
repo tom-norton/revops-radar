@@ -73,6 +73,17 @@ jobs:
         # Pure functions only -- no network, no API key. Catches a broken filter or a
         # mis-weighted rubric before it spends tokens producing wrong scores.
         run: python tests/test_scoring.py
+      - name: Apply subscription scores
+        # Scoring runs on Tom's Claude subscription now, in a scheduled session that pushes
+        # its answers to claude/scores (scoring/ROUTINE.md). apply-scores.yml puts them on
+        # the board as they arrive; this is the backstop, so a missed apply run costs at
+        # most one scan's wait. Never fails the scan.
+        continue-on-error: true
+        env:
+          TRACKER_TOKEN: ${{ secrets.TRACKER_TOKEN }}
+        run: |
+          git fetch -q origin +refs/heads/claude/scores:refs/remotes/origin/claude/scores || echo "no claude/scores branch yet"
+          python scan.py --apply-scores
       - name: Backfill full job descriptions
         # Repair of rows already on the dashboard, manual only. A carried-forward row is
         # never re-fetched by an ordinary run, so two kinds of row stay broken until they
@@ -80,14 +91,10 @@ jobs:
         # and has been holding a folded-away duplicate's link ever since. This goes and
         # gets both. The scan step below is skipped when this runs.
         #
-        # The API key is here because a row that crosses from stub to real posting gets
-        # rescored: its stored score was formed under EVIDENCE: THIN, with no ad to read,
-        # and leaving that number next to the recovered ad would be the worse half of the
-        # repair. Without the key the text is still recovered and the command says which
-        # rows kept a score formed without one.
+        # A row that crosses from stub to real posting is rescored: its stored score was
+        # formed under EVIDENCE: THIN, with no ad to read. The rescore goes on the
+        # subscription scoring queue and lands on the board after the next scoring run.
         if: inputs.backfill_jd
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scan.py --backfill-jd --days "${{ inputs.backfill_jd_days }}"
 
       - name: Free past stage-1 kills
@@ -128,7 +135,8 @@ jobs:
         # the commit step below still runs either way so the repair gets pushed.
         if: ${{ !inputs.backfill_jd && steps.recent.outputs.skip != 'true' }}
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # No ANTHROPIC_API_KEY: the screen and the deep score run on the subscription
+          # (scan.py, subscription_scoring()). This run queues roles; it scores none.
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           REED_API_KEY: ${{ secrets.REED_API_KEY }}
@@ -138,20 +146,14 @@ jobs:
           # Reads the outreach list (company names only) from the tracker web app, for the
           # push when a listed company posts a role. Unset, the push is skipped.
           TRACKER_TOKEN: ${{ secrets.TRACKER_TOKEN }}
-          # Subscription-scoring trial: also write the roles this run screens to
-          # shadow/queue.json for shadow.py to score side by side. Delete this line (or set
-          # it to "0") to stop the trial; nothing else in the scan depends on it.
-          SHADOW_QUEUE: "1"
         run: python scan.py ${{ inputs.ignore_age && '--ignore-age' || '' }}
       - name: Retry set-aside LinkedIn rows
         # A LinkedIn row set aside for want of text is usually a guest-page fetch that was
         # turned away, and the same page answers a later run. Bounded to the last 3 days
-        # and 10 rows; a recovered row is rescored, so it needs the API key. Failure here
+        # and 10 rows; a recovered row is queued for a subscription rescore. Failure here
         # must never cost the scan its commit.
         if: ${{ !inputs.backfill_jd && steps.recent.outputs.skip != 'true' }}
         continue-on-error: true
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scan.py --retry-thin
       - name: Commit results
         run: |
@@ -170,7 +172,7 @@ jobs:
           # queue of ids to give a second look, which the scan empties once it has freed them.
           # entities.json caches each employer's legal name as its own website states it,
           # for the sponsor check, so a company's site is read once a quarter, not every run.
-          git add seen.json deferred.json dealt.json kills.json unkill.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json entities.json nl_sponsors_extra.txt 2>/dev/null || git add seen.json deferred.json dealt.json kills.json unkill.json docs/jobs.json docs/status.json docs/excluded.json board-cache.json entities.json
-          git add shadow/queue.json 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "scan: $(date -u +%F)"
-          git push
+          # scoring/queue.json is the subscription scorer's to-do list (see subscore.py).
+          # The file list and the retry on a rejected push live in tools/push_main.sh,
+          # because apply-scores.yml writes to main too and either can land first.
+          bash tools/push_main.sh "scan: $(date -u +%F)" scan

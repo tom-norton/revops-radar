@@ -16,13 +16,16 @@ by hand again, in a Claude project, because the automation was not earning what 
 Opus calls. Everything below about the apply queue still describes working code; it just
 does not run on its own any more. The scan and the scoring are untouched.
 
-**A subscription-scoring trial is running side by side** (Nov 2026). With `SHADOW_QUEUE=1`
-(set in `scan.yml`) each scan also writes the roles it is about to screen to
-`shadow/queue.json`. A scheduled Claude Code session follows `shadow/ROUTINE.md`: it screens
-and scores those same roles on Tom's Claude subscription, using `shadow.py` and scan.py's own
-prompts and parsers, and writes the comparison to `shadow/compare.md` on the
-`claude/shadow-results` branch, never on main. The scan's own scoring is untouched. To stop
-the trial, delete the scheduled task and the `SHADOW_QUEUE` line. Tom's side of it is in
+**Scoring runs on Tom's Claude subscription, not the API** (since Nov 2026, after an 11-day
+side-by-side trial in `shadow/`: 307 roles, mean gap 0.24). The scan makes no model calls.
+A role that clears every free check goes on `scoring/queue.json`. A scheduled Claude Code
+session follows `scoring/ROUTINE.md` with `subscore.py`. It asks the screen and the deep
+score using scan.py's own prompts, then pushes the raw answers to `scoring/results.json` on
+the `claude/scores` branch, never to main. `scan.py --apply-scores` turns them into rows,
+kills and drops with scan.py's own parsers. It runs on every push to that branch
+(`apply-scores.yml`) and at the start of every scan. The two writers to main share
+`tools/push_main.sh`, which redoes the work if the other landed first. `SCORER=api` (with
+an `ANTHROPIC_API_KEY`) restores in-process scoring. Tom's side is in
 `MIGRATION-CHECKLIST.md`.
 
 **Markets, in preference order:** Netherlands (anywhere) · Ireland (anywhere) · UK (London
@@ -1304,7 +1307,8 @@ changed since it was approved is refused rather than guessed at.
 ## Setup / secrets
 
 Repository secrets (Settings → Secrets and variables → Actions):
-- `ANTHROPIC_API_KEY` — your Claude key (already set)
+- `ANTHROPIC_API_KEY` — no longer used by the scan (scoring runs on the subscription). Only
+  the mothballed apply queue and `SCORER=api` read it; safe to delete.
 - `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` — free, https://developer.adzuna.com/ (already set)
 - `REED_API_KEY` — free, https://www.reed.co.uk/developers/jobseeker
 - `APIFY_API_TOKEN` — from https://console.apify.com/settings/integrations, needed for hiring.cafe
