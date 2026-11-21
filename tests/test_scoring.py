@@ -313,8 +313,7 @@ def test_plain_csm_admitted_in_netherlands_only():
 
 
 def test_include_title_covers_the_newly_added_revops_vocabulary():
-    for t in ["Sales Compensation Manager", "Sales Compensation Design Lead",
-              "Incentive Compensation Analyst", "Quota Planning Manager",
+    for t in ["Quota Planning Manager",
               "Territory Planning Manager", "Revenue Analytics Manager",
               "Revenue Systems Manager", "Revenue Technology Analyst",
               "Renewals Manager", "Renewals Specialist", "Strategy & Ops, Intercept",
@@ -2020,7 +2019,7 @@ def test_us_titles_go_through_the_two_narrow_gates_not_the_broad_one():
     European targets and all still out in the US."""
     for title in ["Revenue Operations Manager", "Senior RevOps Analyst",
                   "GTM Strategy Manager", "Manager, Sales Strategy & Operations",
-                  "Sales Compensation Manager",
+                  "Enablement Manager", "Field Enablement Lead",
                   # these two were in the search but missing from the regex
                   "Sales Enablement Manager", "Commercial Operations Lead",
                   # CS at any seniority, admitted now
@@ -2283,6 +2282,17 @@ def test_the_location_dimension_states_a_band_for_every_market():
     # and it has to say, in terms, that it is not a feasibility score -- the US is the
     # market where those two readings diverge and the expensive one to get wrong
     assert "preference" in guide
+
+
+def test_a_remote_offer_outside_the_us_loses_location_points():
+    """Review of 16 Nov 2026: Tom hid Busuu (NL), Kinaxis (CA) and HubSpot (IE) as "remote",
+    and the scorer had flagged HubSpot as "remote or Dublin hybrid" and still given Location
+    & Visa 8. The rubric has to mark a remote offer down outside the US, and the profile
+    must no longer call a remote Canadian role as good as an on-site one."""
+    guide = dict((k, g) for k, _l, _w, g in scan.RUBRIC)["location_visa"]
+    assert "offers the role as remote" in guide
+    assert "never above 6" in guide
+    assert "remote or on-site" not in scan.load_profile()
 
 
 def test_the_us_transfer_case_is_reachable_from_the_prompt():
@@ -3995,6 +4005,10 @@ def test_code_overrules_the_kills_the_screen_prompt_forbids():
         ("Senior Customer Success Manager", "quota-carrying sales: drives net revenue "
                                             "retention through upsell"),
         ("Senior Revenue Operations Analyst", "function unclear: advertising services"),
+        # Review of 16 Nov 2026: ServiceChannel. A commission plan is not a new-business quota.
+        ("Customer Success Manager", "quota-carrying sales: sales incentives/commissions "
+                                     "structure"),
+        ("Senior Customer Success Manager", "Quota-carrying role with variable incentive pay"),
     ]
     for title, reason in overruled:
         assert scan.overrule_kill(title, reason), title
@@ -4012,6 +4026,11 @@ def test_code_overrules_the_kills_the_screen_prompt_forbids():
         ("Operations Manager", "Function unclear: likely warehouse operations"),
         # A CSM killed on something other than a sales reading is the screen's call.
         ("Customer Success Manager", "Support desk ticket handling, not retention"),
+        # Commission on a CSM stands when the reason names new-business selling, and the
+        # commission guard never reaches a sales-seat title.
+        ("Customer Success Manager", "Quota-carrying: commission on new logo bookings"),
+        ("Customer Success Manager", "Hunting role, prospecting with commission plan"),
+        ("Account Executive", "Quota-carrying sales with a commission plan"),
     ]
     for title, reason in stands:
         assert not scan.overrule_kill(title, reason), title
@@ -4275,3 +4294,73 @@ def test_nl_account_management_never_admits_hunter_or_technical_titles():
 
 if __name__ == "__main__":
     sys.exit(_run())
+
+
+def test_off_function_titles_are_cut_before_the_screen():
+    """Subscription trial, 10-20 Nov 2026: Opus scored every role the screen let through,
+    and these titles topped out at 5.9 with none ever applied to."""
+    for t in ["Marketing Operations Manager", "GTM Product Marketing Manager EMEA",
+              "Business Operations Manager, Experiential Marketing",
+              "Customer Success Engineer", "Staff Software Engineer, Revenue Systems",
+              "Business Intelligence Engineer, ASP Ops - WWSO Sales & Ops",
+              "Solutions Engineer / Customer Success Manager - Law",
+              "Customer Success Operations Evaluator", "GTM Strategy Expert - Marketing",
+              "GTM Analyst - Fully Remote | Upto $160/hr"]:
+        assert scan.off_function_title(t), t
+        assert scan.prefilter(t, "London", "gb") is not None, t
+
+
+def test_off_function_cut_spares_core_titles_and_gtm_engineers():
+    """GTM engineers stay (Tom's call, 20 Nov 2026), and a title that also names core RevOps
+    or Strategy & Operations is not an off-function role."""
+    for t in ["GTM Engineer", "Go-to-market engineer GroundIQ", "GTM Engineering - ShareGate",
+              "Senior GTM AI Engineer: Revenue Automation & Insights",
+              "Sales Operations Engineer", "Marketing & Revenue Operations Lead",
+              "Sales and Marketing Operations Manager", "Global Marketing Revenue Operations Lead",
+              "Senior Strategy & Operations Manager, Prime Video Global Marketing",
+              "Revenue Operations Manager", "Senior Customer Success Manager",
+              "Key Account Manager"]:
+        assert not scan.off_function_title(t), t
+    assert scan.prefilter("GTM Engineer", "Amsterdam", "nl") is None
+
+
+def test_compensation_roles_are_out_everywhere():
+    """Dropped as a target 20 Nov 2026: Tom hid every comp role the radar showed him."""
+    for t in ["Sales Compensation Manager", "Sales Compensation Design Lead",
+              "Incentive Compensation Analyst", "Senior Sales Compensation Analyst",
+              "GTM, Compensation Manager", "Analyst/Sr. Analyst, Global Incentive Compensation",
+              "GTM Compensation Business Partner - MXRM"]:
+        for loc, cc in [("London", "gb"), ("Amsterdam", "nl"), ("Remote (US)", ""),
+                        ("Toronto, ON", "")]:
+            assert scan.prefilter(t, loc, cc) is not None, (t, loc)
+    # quota and territory design are planning work, and stay
+    assert scan.prefilter("Quota Planning Manager", "London", "gb") is None
+    assert scan.prefilter("Territory Planning Manager", "London", "gb") is None
+
+
+def test_enablement_is_a_target_in_every_wording_and_every_market():
+    """Tom's call, 20 Nov 2026, after the Moss interview: enablement is a route into RevOps.
+    Every one of these used to die at the title gate except the sales/revenue/GTM ones."""
+    titles = ["Revenue Enablement Specialist", "Sales Enablement Manager",
+              "Enablement Manager", "Senior Enablement Lead", "Field Enablement Lead",
+              "Partner Enablement Manager", "Channel Enablement Specialist",
+              "CS Enablement Manager", "Customer Success Enablement Lead",
+              "Post-Sales Enablement Manager", "Head of Sales Ops & Enablement",
+              "Manager, Revenue Strategy & Enablement, EMEA", "GTM Enablement Manager",
+              "Senior Product Marketing Manager, Sales Enablement (AI & Research)",
+              "Principal Revenue Enablement Specialist - Sales Engineering"]
+    for t in titles:
+        for loc, cc in [("London", "gb"), ("Amsterdam", "nl"), ("Remote (US)", ""),
+                        ("Toronto, ON", ""), ("Dublin", "ie")]:
+            assert scan.prefilter(t, loc, cc) is None, (t, loc, scan.prefilter(t, loc, cc))
+        assert scan.revops_core_title(t), t          # sorts with the pivot proper
+    # enablement that is not about revenue teams still has no target word
+    for t in ["IT Enablement Engineer", "Digital Enablement Consultant, Public Sector"]:
+        assert scan.prefilter(t, "London", "gb") is not None, t
+
+
+def test_the_prompts_name_enablement_as_core_and_drop_compensation():
+    assert "Enablement for revenue teams" in scan.SCREEN_SYSTEM
+    assert "sales/incentive compensation" not in scan.SCREEN_SYSTEM
+    assert "revenue, sales or GTM enablement" in scan.score_system()
+    assert "route INTO RevOps" in scan.load_profile()

@@ -186,6 +186,20 @@ def linkedin_queries():
     return ([(g, LINKEDIN_KEYWORDS, LINKEDIN_PAGES) for g in LINKEDIN_GEO_IDS]
             + list(LINKEDIN_EXTRA_QUERIES))
 
+# Enablement in every wording the market uses for the revenue side of it. Until Nov 2026 only
+# "sales enablement" and "revenue enablement" (plus GTM enablement in the US gate) got past
+# the title gate, so "Enablement Manager", "Field Enablement Lead", "Partner Enablement" and
+# "CS Enablement" were dropped for free. Tom's call, 20 Nov 2026, after an interview for
+# Moss's Revenue Enablement Specialist (which sits in RevOps): enablement is a real route
+# into RevOps, so it is a target, not a fallback. The screen still kills IT or digital
+# "enablement" that has nothing to do with revenue teams.
+ENABLEMENT_TITLE = (r"(?:sales|revenue|gtm|go[- ]to[- ]market|field|partner|channel|seller"
+                    r"|commercial|customer success|cs|post[- ]sales?|product)\s+enablement"
+                    r"|\benablement\s+(?:manager|lead|leader|specialist|partner|program"
+                    r"|programme|director|strategist|analyst)"
+                    r"|^\s*(?:senior |sr\.? |lead |principal )?enablement\b"
+                    r"|(?:operations|ops|strategy)\s*(?:&|and)\s*enablement")
+
 INCLUDE_TITLE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
     r"|gtm|go[- ]to[- ]market"
@@ -204,11 +218,12 @@ INCLUDE_TITLE = re.compile(
     r"(op(eration)?s|planning|analytics)\b"
     r"|strategic operations|\bs ?& ?o\b|business strategy"
     r"|business operations|commercial operations|biz ?ops"
-    r"|sales strategy|revenue strategy|revenue enablement|sales enablement"
-    # Comp, quota and territory design are core RevOps work the filter had no words for --
-    # 5 of 5 sales-compensation roles on the watched boards were being dropped. "territory"
-    # is deliberately narrow so quota-carrying "Territory Sales Director" titles stay out.
-    r"|sales compensation|incentive compensation|quota"
+    r"|sales strategy|revenue strategy|" + ENABLEMENT_TITLE +
+    # Quota and territory design are core RevOps work the filter had no words for.
+    # "territory" is deliberately narrow so quota-carrying "Territory Sales Director" titles
+    # stay out. Sales and incentive compensation sat here until 20 Nov 2026, when Tom
+    # dropped them as a target: he had hidden every one the radar showed him.
+    r"|quota"
     r"|territory (planning|design|management|operations)"
     r"|revenue analytics|revenue systems|revenue technology"
     # Renewals: adjacent to the RevOps pivot, but a direct match for the renewal-forecasting
@@ -272,7 +287,7 @@ REVOPS_CORE = re.compile(
     r"revenue operations|revops|rev ops|sales operations|sales ops"
     r"|cs operations|customer success operations"
     r"|revenue strategy|sales strategy|revenue analytics|revenue systems"
-    r"|revenue technology|revenue enablement|sales enablement|commercial operations"
+    r"|revenue technology|commercial operations|" + ENABLEMENT_TITLE +
     # GTM needs an operations/strategy noun beside it, in either word order. A bare \bgtm\b
     # admitted "GTM Recruiter, AMER" and "Staff, Analytics Engineer, GTM Data Science" on
     # the first US run -- a recruiting role and an engineering role. Both would have died
@@ -281,7 +296,6 @@ REVOPS_CORE = re.compile(
     r"|(gtm|go[- ]to[- ]market)[ ,&-]{1,3}(strategy|operations|ops|enablement|analytics"
     r"|systems|planning)"
     r"|(strategy|operations|ops|enablement|analytics|systems)[ ,&-]{1,3}(gtm|go[- ]to[- ]market)"
-    r"|sales compensation|incentive compensation"
     r"|territory (planning|design|management|operations)"
     r"|strategy[ ,&]{1,3}(and[ ,&]{1,3})?(planning|business|revenue|sales|commercial)?[ ,&]{0,3}"
     r"(op(eration)?s)\b"
@@ -290,7 +304,41 @@ REVOPS_CORE = re.compile(
 EXCLUDE_TITLE = re.compile(
     r"deal desk|quote[- ]to[- ]cash|order management|billing specialist"
     r"|intern\b|internship|working student|apprentice|graduate scheme"
-    r"|\bvp\b|vice president|chief |\bsvp\b|\bevp\b", re.I)
+    r"|\bvp\b|vice president|chief |\bsvp\b|\bevp\b"
+    # Sales and incentive compensation, dropped as a target 20 Nov 2026.
+    r"|\bcompensation\b|\bcomp (?:analyst|manager|partner|lead|design)", re.I)
+
+# Off-function words that a target keyword in the same title ("GTM", "Sales Enablement",
+# "Business Operations") lets through the include gate. Measured on the subscription
+# trial of 10-20 Nov 2026, where Opus deep-scored every role the screen let through:
+# 25 marketing titles topped out at 5.1, 7 engineer titles (other than GTM engineer) at
+# 5.9 and 5 gig-style evaluator / expert / hourly postings at 5.6; none was ever applied to.
+# Each still paid a screen and, more often than not, an Opus score. A title that also names
+# core RevOps keeps its place, as does any GTM engineer (Tom's call, 20 Nov 2026: they score
+# up to 6.5 and he wants to see them).
+OFF_FUNCTION_TITLE = re.compile(
+    r"\bmarketing\b|\bengineer(?:ing)?\b|\bevaluator\b|\bexpert\b"
+    r"|/\s?h(?:ou)?r\b|\bper hour\b", re.I)
+OFF_FUNCTION_ESCAPE = re.compile(
+    r"revenue operations|\brevops\b|\brev ops\b|sales operations|sales ops\b"
+    r"|sales (?:&|and) marketing operations"
+    # Enablement is a target (Tom, 20 Nov 2026), even in "Product Marketing Manager, Sales
+    # Enablement" or "Revenue Enablement Specialist - Sales Engineering".
+    r"|enablement"
+    # Strategy & Operations inside a marketing org is still S&O (the screen prompt says so).
+    r"|strateg\w*[ ,&]{1,3}(?:and[ ,&]{1,3})?(?:planning[ ,&]{1,3})?op(?:eration)?s\b"
+    r"|\bs ?& ?o\b", re.I)
+GTM_ENGINEER_TITLE = re.compile(r"\b(?:gtm|go[- ]to[- ]market)\b.*\bengineer", re.I)
+
+def off_function_title(title):
+    """The off-function word that drops this title, or "" if it stays."""
+    t = title or ""
+    m = OFF_FUNCTION_TITLE.search(t)
+    if not m or OFF_FUNCTION_ESCAPE.search(t):
+        return ""
+    if m.group(0).lower().startswith("engineer") and GTM_ENGINEER_TITLE.search(t):
+        return ""
+    return m.group(0).strip()
 
 # Europe is where Tom needs a work permit, and two kinds of role cannot realistically give
 # him one: a fully remote role, which his own hide note calls "too much of a long shot for
@@ -964,7 +1012,16 @@ RUBRIC = [
      "expedite with no fallback if it is refused. He no longer expects that route to work "
      "in time. Use 4 when the employer is large enough to absorb a delayed start or the "
      "posting signals a flexible start date; 3 when it signals urgency (immediate start, "
-     "backfill, ASAP)."),
+     "backfill, ASAP).\n"
+     "  * Outside the US, a posting that offers the role as remote -- remote-first, \"remote "
+     "or hybrid\", \"remote or Dublin office\", work from anywhere in the country -- scores 2 "
+     "below its market's band above, and never above 6. A remote hire competes with "
+     "everyone already in the country and gives the employer no reason to relocate or "
+     "sponsor anyone, and Tom has hidden every such role he was shown (Busuu NL, Kinaxis "
+     "CA, HubSpot IE, Oct-Nov 2026). A fully remote European role is dropped in code before "
+     "you see it, so this is for the mixed offers there and for any remote role in Canada. "
+     "An office-based hybrid role with the odd home day or \"flexible working\" is not a "
+     "remote offer."),
     ("trajectory", "Career Trajectory", 8,
      "Does the role advance the RevOps/GTM pivot? Pure CS maintenance is a penalty -- except "
      "in the Netherlands, where a Customer Success Manager role at any seniority, or an "
@@ -1660,7 +1717,7 @@ Nothing else is grounds for a kill. Specifically, and these are all real kills y
 - NOT the pay, or that no pay is stated.
 - NOT a skills, tooling or technical gap. A Sales Operations role that asks for AI/ML, SQL, a CRM certification or a technical background is still Sales Operations: whether the candidate has the skill is the deep scorer's Skills Match question, never a function kill. Decide the function from what the role DOES, and when a title names a target function ("Sales Operations", "Revenue Strategy", "GTM", "Monetization Strategy & Operations") and the posting is ambiguous about the rest, KEEP.
 - NOT deal desk, quote-to-cash, billing or order management duties inside a role whose TITLE names a target function. A deal desk kill needs the title to say deal desk (or quote-to-cash, billing, order management). "Revenue Operations Specialist", "Revenue Operations Analyst", "Head of Revenue Operations" and "Sales Operations Manager" are KEEPS even when the posting lists quoting, CPQ, contracts, order forms or billing among the duties: plenty of RevOps teams own the deal desk, and that is part of the job, not a different job. You killed Diligent's Revenue Operations Specialist six times, Cpl's Revenue Operations Analyst and Oliver Wyman's Regional Head of Revenue Operations this way.
-- NOT a retention target. Net revenue retention (NRR), gross retention, renewal rates, churn and expansion targets are how customer success and RevOps are measured; they are not a sales quota. A Customer Success Manager who "drives NRR through upsell" or owns renewals and expansion is a KEEP, not quota-carrying sales. A quota kill needs the posting to put the candidate on a new-business or bookings number of their own, in a role whose title is a sales seat. You killed Trulioo's Senior Customer Success Manager as "quota-carrying sales: drives net revenue retention through upsell" the same week Tom applied to Trulioo's Strategic CSM.
+- NOT a retention target. Net revenue retention (NRR), gross retention, renewal rates, churn and expansion targets are how customer success and RevOps are measured; they are not a sales quota. A Customer Success Manager who "drives NRR through upsell" or owns renewals and expansion is a KEEP, not quota-carrying sales. A quota kill needs the posting to put the candidate on a new-business or bookings number of their own, in a role whose title is a sales seat. You killed Trulioo's Senior Customer Success Manager as "quota-carrying sales: drives net revenue retention through upsell" the same week Tom applied to Trulioo's Strategic CSM. The same goes for pay: a commission plan, incentive or variable bonus on a Customer Success role is how it is paid, not a quota. You killed ServiceChannel's Customer Success Manager as "quota-carrying sales: sales incentives/commissions structure".
 - NOT "function unclear". When the TITLE says Sales Operations, Revenue Operations, RevOps or Revenue Strategy, the title has settled the function: a kill needs the posting to show plainly that the work is something else, and a reason like "function unclear", "ambiguous", or a reading of the employer's business ("advertising services") is a KEEP. You killed Epsilon's Senior Revenue Operations Analyst as "function unclear: advertising services" and LSEG's Sales Operations Lead as a "data engineering role", both on titles that name core RevOps.
 - NOT "technical" customer success. A Customer Success Manager at a B2B software or hardware-plus-software company is in scope even when the posting calls the role technical, mentions APIs, integrations, IoT or onboarding engineers, or asks for a technical background. That is a Skills Match question for the deep scorer. Kill a customer success role only when it is really support-desk ticket handling or field engineering under a CS name.
 
@@ -1671,8 +1728,9 @@ IN SCOPE - never kill these on function. A title filter in code has already deci
 - Sales strategy, revenue strategy, GTM strategy, business strategy, commercial strategy
 - ANY "Strategy & Operations" or "Strategy and Operations" or "Strategy, Planning & Operations" or "S&O" role, including partner-scoped, field-scoped, segment-scoped, regional and international variants. These are core target roles, not generalist strategy jobs. Do not kill one because it sits inside a partner, product, marketing or regional org - the deep scorer takes the domain into account.
 - GTM systems, RevOps systems, revenue systems, revenue technology, RevOps architecture, CRM and GTM tool-stack ownership. Systems ownership is a target track, not "tool administration".
-- Revenue analytics, sales/incentive compensation, quota and territory design
-- Renewals and renewal management, sales enablement, revenue enablement
+- Revenue analytics, quota and territory design
+- Renewals and renewal management
+- Enablement for revenue teams in any wording: sales, revenue, GTM, field, partner, post-sales or customer success enablement, including onboarding, sales training, playbooks and coaching programmes. This is a direct route into RevOps for this candidate, above all when the role sits in or reports to RevOps.
 - Senior / Principal / Enterprise / Strategic Customer Success, and Customer Success Manager at a B2B company, technical or not
 - In the Netherlands only: Account Manager, Client Manager or Customer Manager roles that own an existing customer book (renewals, retention, upsell and expansion). Kill one only when the posting is plainly new-logo hunting (prospecting, cold outreach, new business targets) -- that is quota-carrying sales.
 
@@ -1681,6 +1739,29 @@ Renewals is NOT quota-carrying sales for this purpose. Enablement is NOT marketi
 Be lenient - when unsure, KEEP. A wrong keep costs one cheap scoring call. A wrong kill loses a job Tom would have applied to, and he never sees it. Your reason must name the function you read the role as; a reason that names a place, an industry or a seniority band is a kill you should not have made.
 
 Reply with ONLY this JSON: {{"keep": true or false, "reason": "<max 12 words>"}}"""
+
+# The screen for the subscription (Claude Code's current Haiku). SCREEN_SYSTEM was tuned
+# against claude-haiku-4-5, which over-killed, so most of it is about what NOT to kill. The
+# newer Haiku reads all of that literally: in the subscription trial of 10-20 Nov 2026 it
+# killed 13 of 463 roles where the API's Haiku 4.5 killed 140, nearly always reasoning "the
+# title names a target function". Opus then scored the 127 roles only the API had killed at
+# 6.5 at most (median 4.3), about 28% of the trial's Opus calls. This adds the function
+# kills a target word in the title does not rule out, each one taken from those 127, and
+# leaves every protection above in force.
+SCREEN_SUBSCRIPTION_EXTRA = """A TARGET WORD IN THE TITLE IS NOT THE WHOLE ANSWER. Everything above stands: never kill on location, seniority, industry, employer, pay, skills or a retention target, and a core RevOps or Customer Success role is a KEEP. But a word like "Commercial Operations", "Business Operations", "GTM", "Go-to-Market", "Strategy" or "Customer Success" in the title does not by itself make the job commercial operations. Read what the job actually does. Kill on FUNCTION, even with a target word in the title, when the posting plainly shows one of these:
+
+- Non-commercial operations at a goods business. The work is running stores, boutiques, showrooms, stock, inventory, fleets, plants, sites or distribution for a retailer, luxury house, consumer-goods brand, manufacturer or distributor. Examples: a luxury jeweller's "Commercial Operations Project Manager" running boutique operations; a "General Manager - Sales & Commercial Operations" running a manufacturing site; a "Sales Operations Manager" whose duties are stock levels and supply chain.
+- Client-delivery consulting. The job is advising or delivering projects for the employer's clients (management, strategy, finance, sourcing or transformation consulting), not running the employer's own go-to-market. Examples: a Big Four "Go-to-Market Leader - Consulting Director"; a consultancy's "Business Strategy, Senior Principal"; a sourcing advisory "Principal Consultant of Business Operations".
+- A sales seat under a GTM or business title. The candidate carries their own revenue, bookings or new-logo number: "GTM Specialist" or "Business Developer" seats at cloud vendors, a "Head of GTM" or "GTM Director" who closes the deals personally. This is not the same as retention: a Customer Success Manager or account manager measured on NRR, renewals or expansion of an existing book is still a KEEP.
+- A support desk or service delivery under a CS or ops title. Ticket queues, member or patient service, technical troubleshooting, or delivering research to clients, rather than owning commercial outcomes with business accounts.
+- Gig work. AI-training, evaluation, annotation or "expert" review contracts, usually paid by the hour, whatever function they name.
+
+When one of these is plain from the posting, kill it, and name it in the reason ("retail store operations", "client consulting", "quota-carrying sales seat", "support desk", "gig evaluation work"). When the posting is mixed or you are unsure, KEEP.
+
+"""
+SCREEN_SYSTEM_SUBSCRIPTION = SCREEN_SYSTEM.replace(
+    "Reply with ONLY this JSON:", SCREEN_SUBSCRIPTION_EXTRA + "Reply with ONLY this JSON:")
+assert SCREEN_SYSTEM_SUBSCRIPTION != SCREEN_SYSTEM
 
 
 def score_system():
@@ -1705,7 +1786,7 @@ Thin evidence: some rows arrive with no retrievable posting text at all, and tho
 A title band (analyst / specialist / director_plus / normal) is given to you in the job details. It is a signal to read the posting carefully, not a verdict. Do not mark a role down merely because its title contains "Analyst", "Specialist", "Associate" or "Coordinator" -- score what the posting actually describes.
 
 Alongside the dimensions, report these observations from the posting:
-- function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those, including a Netherlands account management role that owns renewals and expansion of an existing book. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
+- function_match: "core" for RevOps / GTM strategy / sales ops / CS ops / revenue or sales strategy / revenue, sales or GTM enablement, or a Senior/Principal CSM role. "adjacent" for a related commercial-ops role that isn't quite one of those, including a Netherlands account management role that owns renewals and expansion of an existing book. "off_target" for deal desk, quote-to-cash, billing, pure marketing-ops admin, quota-carrying sales, engineering, or finance.
 - company_standout: true only if the employer is a genuine tier-1 SaaS or strong-brand technology company. This decides whether a CSM role outside the Netherlands gets a flag.
 - home_domain: true when the EMPLOYER's product is sold to governance, risk and compliance (GRC), ethics and compliance, legal or legal tech, KYC / AML / financial crime / identity verification, or audit and assurance buyers -- the buyers Tom served at NAVEX and LexisNexis. Judge the business unit the role sits in, not the parent: a tax or health division of a legal-information company is false. False when compliance is only a requirement of the job, or the company is merely in a regulated industry (a bank, a payments company, a healthtech) and sells something else. A "Home domain list: yes" line in the job details means Tom has listed the employer; treat it as a strong hint, not a verdict. This lifts the role on the dashboard and never lowers anything, so report it honestly either way.
 - language_hard_requirement: true only when the posting makes another language (Dutch, German, French, ...) a hard requirement to do the job -- "fluency required", "must speak", "native/business-level X required". False when it is merely preferred, a plus, advantageous, or nice to have. This one DROPS the role -- see above.
@@ -3027,6 +3108,9 @@ def prefilter(title, location, country="", company=""):
     m = EXCLUDE_TITLE.search(t)
     if m:
         return f"title: excluded term '{m.group(0).strip()}'"
+    m = off_function_title(t)
+    if m:
+        return f"title: off-function term '{m}'"
     if market is None:
         return f"location: outside target markets ({location or 'unspecified'})"
     if market in EUROPE_MARKETS:
@@ -4921,6 +5005,14 @@ _KILL_QUOTA = re.compile(r"quota", re.I)
 _KILL_RETENTION = re.compile(r"\bn?nrr\b|net (?:revenue|dollar) retention|\bretention\b"
                              r"|\brenewals?\b|\bchurn\b", re.I)
 _KILL_SALES = re.compile(r"quota|\bsales\b|upsell|bookings|commission", re.I)
+# Review of 16 Nov 2026: ServiceChannel's Customer Success Manager killed as "quota-carrying
+# sales: sales incentives/commissions structure". Plenty of CSM plans pay commission or a
+# variable bonus on renewals and expansion; that is pay, not a new-business number.
+_KILL_PAY = re.compile(r"commission|incentive|variable (?:pay|comp)|\bote\b"
+                       r"|on[- ]target earnings|\bbonus", re.I)
+_KILL_NEW_BUSINESS = re.compile(r"new[- ]?(?:logo|business|customer acquisition)|\bhunt"
+                                r"|prospect|cold|outbound|pipeline gen|bookings|close deals"
+                                r"|closing deals|\bacquisition", re.I)
 _KILL_UNCLEAR = re.compile(r"unclear|ambiguous|not clear|uncertain|vague", re.I)
 # The only seniority kill the prompt allows.
 _EARLY_CAREER_TITLE = re.compile(r"\bintern(?:ship)?\b|graduate|apprentice|working student"
@@ -4941,6 +5033,12 @@ def overrule_kill(title, reason):
     if ((is_csm_title(title) or revops_core_title(title))
             and _KILL_RETENTION.search(reason) and _KILL_SALES.search(reason)):
         return "sales kill on a retention target, but retention and NRR are not a quota"
+    # Same misread, on pay: commission or incentive pay on a CS title is not a quota unless
+    # the reason itself names new-business selling. CS titles only; a sales seat that pays
+    # commission is a sales seat.
+    if (is_csm_title(title) and _KILL_PAY.search(reason)
+            and not _KILL_NEW_BUSINESS.search(reason)):
+        return "sales kill on commission or incentive pay, but a CS pay plan is not a quota"
     # The function rules only bind where the title names a core target function, which is
     # how the prompt words them. "Head of GTM" or "Renewals Representative" killed as a
     # quota-carrying seat is a function call the screen is allowed to make.

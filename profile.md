@@ -8,7 +8,8 @@ version on the next run. Keep it factual. Do not add skills or experience you do
 11 years B2B SaaS across Customer Success and Account Management, GRC/compliance and legal
 information domains (NAVEX, LexisNexis). ESADE MBA (Barcelona) completed September 2026
 (conferral March 2027); BSBA in Marketing from University of Dayton. Pivoting into Revenue
-Operations / GTM Strategy / Sales Ops / CS Ops at Manager or senior IC level. Parallel
+Operations / GTM Strategy / Sales Ops / CS Ops / Revenue Enablement at Manager or senior IC
+level. Parallel
 track: Senior / Principal Customer Success Manager at established companies. US citizen;
 needs employer visa sponsorship for any EU role. Also a Canadian citizen by descent as of
 December 2025, but holds no citizenship certificate yet and the application runs about two
@@ -177,10 +178,16 @@ these are the facts behind them.
   hires in the Netherlands, Ireland or London, because an internal transfer later is a
   route to Europe without changing employer and sponsorship is a lighter ask once they
   know you.
-- Canada: anywhere in the country, remote or on-site. No sponsorship needed (citizen), but
+- Canada: anywhere in the country, on-site or hybrid. No sponsorship needed (citizen), but
   the certificate is unproven and the expedite is discretionary, and Tom no longer expects
   that route to work in time. Below the US now. Score 3-4, and only a genuinely strong fit
   is worth his time.
+
+Remote offers outside the US (review of 16 Nov 2026): a role offered as remote in Europe or
+Canada, "remote or hybrid" and "remote or [city] office" included, is a weaker basis for a
+move or a permit than an office job, and Tom has hidden every one he was shown (Busuu NL,
+Kinaxis CA, HubSpot IE). Fully remote European roles are dropped before scoring. The mixed
+offers, and remote Canadian roles, lose two points on Location & Visa and never score above 6.
 
 Reject entirely: Germany, Spain, other UK cities, on-site or hybrid US roles,
 remote-from-anywhere, and remote-EMEA roles.
@@ -209,8 +216,7 @@ staying somewhere he does not want to live comfortable for his family, and it de
 the track:
 - RevOps track — USD 100,000 base. Any core RevOps title, for example revenue, sales, CS or
   customer success operations, revenue or sales strategy, revenue or sales enablement,
-  commercial operations, GTM strategy or operations, sales compensation, territory
-  planning. A title that is both customer success and operations ("Customer Success
+  commercial operations, GTM strategy or operations, territory planning. A title that is both customer success and operations ("Customer Success
   Operations Manager") is RevOps.
 - Customer success track — USD 105,000 base. Any customer success title at any seniority,
   plain "Customer Success Manager" included, when the title is not also a RevOps title.
@@ -237,6 +243,19 @@ scores higher than a pure lateral CS move, all else equal, EXCEPT in the Netherl
 Customer Success Manager role at any seniority, or an Account Manager role that owns renewals
 and expansion of an existing book, is a primary target there and is not penalized as
 "lateral." Getting into the country is the goal; the pivot can continue from inside it.
+
+Revenue and sales enablement is a route INTO RevOps, not a lateral move or a fallback
+(November 2026: Tom reached interview for Moss's Revenue Enablement Specialist, a role that
+sits within RevOps). Score it as building the RevOps narrative. When the posting puts the
+role inside RevOps or reporting to it (a Revenue Enablement Lead within RevOps, KPIs agreed
+with RevOps, shared ownership of ramp, win-rate or forecast metrics), treat it as on par
+with a RevOps role for Career Trajectory. Enablement that reports into Sales, Marketing or
+L&D is still a credible stepping stone: score it a little below that, never as off-target.
+His CS onboarding, QBR and playbook work is directly relevant evidence for enablement, and
+sales-floor (AE/SDR) enablement is a stretch of that, not a different function.
+
+Sales and incentive compensation roles are out of scope (dropped November 2026) and are
+filtered before scoring.
 
 ## CSM track weighting (important)
 - Netherlands: CSM at an established company = primary target, score on par with RevOps

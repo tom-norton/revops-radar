@@ -90,7 +90,7 @@ def test_flush_writes_and_never_raises():
 def test_prompts_carry_scans_own_system_and_user_text():
     row = scan.shadow_row(job(), NOW)
     s = shadow.screen_prompt(row, "a.json")
-    assert scan.SCREEN_SYSTEM in s and scan.job_message(row) in s
+    assert scan.SCREEN_SYSTEM_SUBSCRIPTION in s and scan.job_message(row) in s
     system = scan.score_system()
     p = shadow.score_prompt(row, "b.json", system)
     assert system in p and scan.job_message(row) in p
