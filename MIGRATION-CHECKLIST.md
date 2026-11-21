@@ -17,21 +17,28 @@ to do all of it now. There are three stages:
 ## Stage 1: scoring moves to your subscription
 
 **What changes for you:** almost nothing. New roles still show up on the dashboard, a
-little later than before. The scan finds them at 8am, the scoring session runs at 8:30am,
+little later than before. The scan finds them at 8am, the scoring session runs at 9:30am,
 and they appear a few minutes after it finishes. Strong-match phone alerts arrive then too.
+Scoring runs at 9:30am and 9:30pm on weekdays and 10:30am at weekends (Eastern). Each run
+is an hour after the scan, so the scan has always finished first. On 21 Nov you moved the
+runs an hour later than the trial's times, after a scan finished after its scoring run.
 
-### ☐ 1. Merge the pull request
+### ☑ 1. Merge the pull request (done 21 Nov)
 On your phone (GitHub app) or PC (github.com):
 1. Open the **tom-norton/revops-radar** repository.
 2. Tap **Pull requests**, then open the one called **"Score roles on the Claude subscription"**.
 3. Scroll to the bottom and tap **Merge pull request**, then **Confirm merge**.
 4. If it offers to delete the branch, tap **Delete branch**. That's safe.
 
-### ☐ 2. Tell Claude it's merged
+### ☑ 2. Tell Claude it's merged (done 21 Nov)
+**First real run, 21 Nov:** the Saturday scan queued 22 roles. The scoring session
+screened all 22, dropped 2, and deep-scored 20 in about 5 minutes, using Haiku for the
+screen and Opus for the score. 17 new roles reached the dashboard, and 3 were set aside
+for hard disqualifiers. Nothing went to the API.
+
 Go back to the Claude Code session where this was built and say **"merged"**. Claude will:
 - point the two scheduled tasks at the new instructions and rename them from "trial" to
-  "RevOps Radar scoring". The times stay the same: 8:30am and 8:30pm on weekdays, 9:30am
-  at weekends (Eastern).
+  "RevOps Radar scoring".
 - run the weekday task once straight away and check that the new roles reached the
   dashboard.
 
