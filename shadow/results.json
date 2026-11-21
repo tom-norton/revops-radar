@@ -9149,6 +9149,49 @@
   "stage": "below-comp-floor",
   "title": "Manager of Customer Success"
  },
+ "js-https-www-indeed-com-viewjob-jk-be5aa5313b77cc60": {
+  "at": "2026-11-21T01:51:10.497292+00:00",
+  "captured_at": "2026-11-21T01:25:43.399225+00:00",
+  "company": "CaptivateIQ",
+  "id": "js-https-www-indeed-com-viewjob-jk-be5aa5313b77cc60",
+  "market": "US-Remote",
+  "outcome": "dropped",
+  "reason": "stated salary 52800-57600 USD entirely below the 105000 USD CS floor for taking a US-Remote role at all",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer success role at B2B SaaS, retention and adoption work, not quota sales",
+  "stage": "below-comp-floor",
+  "title": "Customer Success Associate, Velocity"
+ },
+ "js-https-www-indeed-com-viewjob-jk-c25a28c24ddf0e04": {
+  "at": "2026-11-21T01:51:10.497610+00:00",
+  "captured_at": "2026-11-21T01:25:39.932714+00:00",
+  "company": "WCG Clinical",
+  "dimensions": {
+   "domain": 5.0,
+   "experience": 5.0,
+   "location_visa": 4.0,
+   "seniority": 6.0,
+   "skills": 5.0,
+   "trajectory": 7.0
+  },
+  "flags": [
+   "band 82080-127500 USD starts below your 100000 USD RevOps floor -- only the top half clears it",
+   "Enablement serves field sales in a life-sciences services business, not B2B SaaS post-sale, so his CS evidence transfers only partly.",
+   "Role requires 10-20% travel despite being listed as remote."
+  ],
+  "id": "js-https-www-indeed-com-viewjob-jk-c25a28c24ddf0e04",
+  "market": "US-Remote",
+  "outcome": "scored",
+  "score": 5.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement for revenue teams, an in-scope target function",
+  "shot": 5.3,
+  "title": "Commercial Enablement & Excellence, Senior Manager",
+  "verdict": "Credible enablement stepping stone with a clearing band, but no enablement tenure and no life-sciences background make screening tough.",
+  "want": 5.1
+ },
  "js-https-www-indeed-com-viewjob-jk-ee43ced5fbd9ed87": {
   "at": "2026-11-16T13:48:34.821886+00:00",
   "captured_at": "2026-11-15T19:41:25.722861+00:00",
@@ -9223,6 +9266,20 @@
   "screen_reason": "Key account management of existing customers via upsell and share-of-wallet grow",
   "stage": "eu-remote",
   "title": "Key Account Manager"
+ },
+ "li-4440806276": {
+  "at": "2026-11-21T01:51:10.497687+00:00",
+  "captured_at": "2026-11-20T17:48:47.904170+00:00",
+  "company": "Milwaukee Tool Benelux",
+  "id": "li-4440806276",
+  "market": "NL",
+  "outcome": "dropped",
+  "reason": "deep score: posting requires non-English fluency (missed by the wording-based check)",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Key account management owning existing construction accounts; not plainly new-lo",
+  "stage": "language-required",
+  "title": "Key Account Manager Construction Job Site Solutions | Oost-Nederland"
  },
  "li-4464259849": {
   "at": "2026-11-16T13:49:25.824929+00:00",
@@ -12634,6 +12691,20 @@
   "verdict": "Entry-level sales ops admin at a tiny seed startup via a talent bank; sponsorship and visa-floor pay are near-impossible. Skip.",
   "want": 5.3
  },
+ "li-4491938174": {
+  "at": "2026-11-21T01:51:10.497801+00:00",
+  "captured_at": "2026-11-20T17:48:34.866470+00:00",
+  "company": "Qooling",
+  "id": "li-4491938174",
+  "market": "NL",
+  "outcome": "dropped",
+  "reason": "deep score: posting requires non-English fluency (missed by the wording-based check)",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Customer Success function at B2B software; retention role, not quota sales.",
+  "stage": "language-required",
+  "title": "Customer Success Manager"
+ },
  "li-4492020178": {
   "at": "2026-11-18T13:48:28.113854+00:00",
   "captured_at": "2026-11-18T13:15:48.245015+00:00",
@@ -13300,6 +13371,136 @@
   "title": "Kinexys- GTM Strategy & Business - Senior Associate (Kinexys - GTM Strategy & Commercialization)",
   "verdict": "Consulting-style strategy seat at JPM wanting banking or consulting modeling pedigree Tom lacks; London and sponsor help, fit does not.",
   "want": 6.5
+ },
+ "li-4492563863": {
+  "at": "2026-11-21T01:51:10.497853+00:00",
+  "captured_at": "2026-11-20T17:48:31.217121+00:00",
+  "company": "Horizon3.ai",
+  "id": "li-4492563863",
+  "market": "NL",
+  "outcome": "dropped",
+  "reason": "deep score: the posting describes a fully remote role, which is too weak a basis for a European work permit",
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue operations manager role; title names core RevOps function.",
+  "stage": "eu-remote",
+  "title": "Senior Revenue Operations Manager, EMEA"
+ },
+ "li-4492800128": {
+  "at": "2026-11-21T01:51:10.497995+00:00",
+  "captured_at": "2026-11-20T17:48:53.183289+00:00",
+  "company": "Google",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 3.0,
+   "location_visa": 4.0,
+   "seniority": 3.0,
+   "skills": 4.0,
+   "trajectory": 8.0
+  },
+  "flags": [
+   "Director-level role leading a global GTM Steering Committee; well above a first RevOps seat.",
+   "Ads business with agency-style Joint Business Plans; no post-sale SaaS angle to lean on."
+  ],
+  "id": "li-4492800128",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 4.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Strategy and Operations role owning GTM governance and business operations.",
+  "shot": 3.3,
+  "title": "Strategy and Operations Principal Lead, CG&E",
+  "verdict": "Prestigious GTM strategy role, but Director-level scope and 8 years in-seat make it a long shot.",
+  "want": 6.4
+ },
+ "li-4492853534": {
+  "at": "2026-11-21T01:51:10.498117+00:00",
+  "captured_at": "2026-11-21T01:25:50.628488+00:00",
+  "company": "MaintainX",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 6.0,
+   "location_visa": 4.0,
+   "seniority": 7.0,
+   "skills": 6.0,
+   "trajectory": 7.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Enablement sits inside the Account Management org, not RevOps, so it builds the pivot slightly less directly.",
+   "Recent Autodesk acquisition may reshape team structure, reporting lines or hiring priorities mid-process."
+  ],
+  "id": "li-4492853534",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 6.2,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales enablement for account management teams; explicitly in-scope revenue enabl",
+  "shot": 6.3,
+  "title": "Sales Enablement Manager",
+  "verdict": "Strong content match for his AM renewal and expansion background, but no dedicated enablement tenure and Canada ranks low.",
+  "want": 6.1
+ },
+ "li-4492912212": {
+  "at": "2026-11-21T01:51:10.498346+00:00",
+  "captured_at": "2026-11-21T01:25:35.648406+00:00",
+  "company": "SolarWinds",
+  "dimensions": {
+   "domain": 8.0,
+   "experience": 5.0,
+   "location_visa": 8.0,
+   "seniority": 5.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "no pay stated in the ad or the feed, verify vs floor",
+   "Role is program operations execution; priorities and content direction are set by the Director and Field Enablement roles.",
+   "Team includes instructional designers and an LMS administrator; no learning-design or LMS background on his CV."
+  ],
+  "id": "li-4492912212",
+  "market": "IE",
+  "outcome": "scored",
+  "score": 6.0,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Revenue enablement programme operations management; enablement is an in-scope fu",
+  "shot": 5.3,
+  "title": "Manager, Enablement Programs",
+  "verdict": "Revenue Enablement ops in Cork with permits, but it is a people-manager role he has never held; a stretch.",
+  "want": 7.5
+ },
+ "li-4492986886": {
+  "at": "2026-11-21T01:51:10.498482+00:00",
+  "captured_at": "2026-11-21T01:25:51.998223+00:00",
+  "company": "Triumph Group of Companies",
+  "dimensions": {
+   "domain": 4.0,
+   "experience": 5.0,
+   "location_visa": 3.0,
+   "seniority": 7.0,
+   "skills": 6.0,
+   "trajectory": 6.0
+  },
+  "flags": [
+   "Construction group, not SaaS: estimating, bids and tenders workflows are unfamiliar territory for a SaaS post-sale background.",
+   "Role centres on running the CRO Office operating rhythm and action register, which Tom has contributed to but never owned.",
+   "Heavy executive-support and administrative load; 'no expectation of a dedicated assistant' signals coordinator-grade work despite the title.",
+   "Regular site presence across the GTA expected, so travel between divisional locations is part of the job."
+  ],
+  "id": "li-4492986886",
+  "market": "CA",
+  "outcome": "scored",
+  "score": 5.3,
+  "score_model": "opus",
+  "screen_model": "haiku",
+  "screen_reason": "Sales operations: CRO Office coordination, pipeline and CRM reporting.",
+  "shot": 5.8,
+  "title": "Group Sales Operations & Execution Manager",
+  "verdict": "Real sales ops title but in construction, admin-heavy, modest pay, and Canada ranks low; not worth the time.",
+  "want": 4.1
  },
  "reed-57554986": {
   "at": "2026-11-11T01:52:18.790743+00:00",

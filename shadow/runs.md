@@ -18,3 +18,4 @@
 - 2026-11-19 13:47 UTC: screened 14, deep-scored 13, finished (queue empty), pending 0
 - 2026-11-20 01:51 UTC: screened 30, deep-scored 30, finished (queue empty), pending 0
 - 2026-11-20 13:49 UTC: screened 23, deep-scored 23, finished (queue worked through; 1 screen subagent launch for az-ca-5972722264 was denied by the session's permission classifier and left pending for next run), pending 1
+- 2026-11-21 01:51 UTC: screened 36, deep-scored 33, finished (queue empty), pending 0
